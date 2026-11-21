@@ -96,6 +96,10 @@ ItemChange item_change_read(obs_data_t *settings, const char *source = nullptr);
 // the item lies in it.
 void apply_item_change(obs_sceneitem_t *item, const ItemChange &change, obs_source_t *scene = nullptr);
 
+// A Show in Scenes press changes only the requested direction. An inherited way
+// uses the covering scene rule, then the item's installed transition, then a fade.
+bool set_item_visible(obs_sceneitem_t *item, bool show, const ItemChange &asked, obs_source_t *scene);
+
 // Some items have their transitions set for them by one filter of their
 // source's own (a Standby filter standing in for the source while it is
 // hidden: the source's way out and its stand-in's way in are one change).

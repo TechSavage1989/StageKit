@@ -10,7 +10,8 @@
 
 namespace replacement_test {
 
-inline std::vector<uint8_t> render(obs_source_t *src, uint32_t w, uint32_t h)
+inline std::vector<uint8_t> render(obs_source_t *src, uint32_t w, uint32_t h, uint32_t source_w = 0,
+				   uint32_t source_h = 0)
 {
 	std::vector<uint8_t> pixels(size_t(w) * h * 4);
 	obs_enter_graphics();
@@ -20,7 +21,8 @@ inline std::vector<uint8_t> render(obs_source_t *src, uint32_t w, uint32_t h)
 		vec4 clear;
 		vec4_zero(&clear);
 		gs_clear(GS_CLEAR_COLOR, &clear, 0.0f, 0);
-		gs_ortho(0.0f, (float)w, 0.0f, (float)h, -100.0f, 100.0f);
+		gs_ortho(0.0f, (float)(source_w ? source_w : w), 0.0f, (float)(source_h ? source_h : h), -100.0f,
+			 100.0f);
 		gs_blend_state_push();
 		gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
 		obs_source_video_render(src);

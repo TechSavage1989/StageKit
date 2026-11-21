@@ -19,6 +19,7 @@ obs_args=(--multi --disable-shutdown-check --disable-missing-files-check --disab
 status=0
 timeout 45 xvfb-run -a obs "${obs_args[@]}" > "$scratch/frontend.log" 2>&1 || status=$?
 if [[ "$status" == 0 ]] && test -f "$STAGEKIT_TEST_REPORT" && grep -qx PASS "$STAGEKIT_TEST_REPORT"; then
+  grep -F '[camera transition test]' "$scratch/frontend.log"
   echo 'PASS: replacement tools, labeled catalog search and clean OBS shutdown'
   exit 0
 fi

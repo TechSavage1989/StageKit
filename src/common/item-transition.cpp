@@ -12,6 +12,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "pick-list.hpp"
 #include "scene-filter-ids.hpp"
 #include "scene-util.hpp"
+#include "../placement/show-in-scenes.hpp"
 #include "../transition/morph-paint.hpp"
 #include "../transition/item-morph.hpp"
 #include "../transition/morph.hpp"
@@ -102,9 +103,30 @@ bool overridden(obs_sceneitem_t *item, obs_source_t *scene, ItemChange &theirs)
 	bool overrides = false;
 	return g_overriding.load() > 0 && !owned(item) && scene_says(item, scene, theirs, overrides) && overrides;
 }
-} // namespace
 
-ItemChange resolve_item_change(obs_sceneitem_t *item, const ItemChange &change, obs_source_t *scene)
+// Save the fallback duration on the fade we install. OBS saves its settings with the
+// item. A later edit to the switch can retime that fade, while a manually configured
+// fade (including one whose duration the user edited) keeps its own timing.
+constexpr const char *kSwitchFadeMs = "stagekit_show_in_scenes_fallback_ms";
+
+ItemWay switch_fallback(obs_sceneitem_t *item, bool show, uint32_t ms)
+{
+	if (obs_source_t *current = obs_sceneitem_get_transition(item, show)) {
+		const char *id = obs_source_get_unversioned_id(current);
+		if (!id || strcmp(id, kTransitionFade) != 0)
+			return ItemWay{kTransitionKeep, ms, {}};
+		const uint32_t duration = obs_sceneitem_get_transition_duration(item, show);
+		obs_data_t *settings = obs_source_get_settings(current);
+		const bool fallback = obs_data_has_user_value(settings, kSwitchFadeMs) &&
+				      obs_data_get_int(settings, kSwitchFadeMs) == duration;
+		obs_data_release(settings);
+		if (!fallback)
+			return ItemWay{kTransitionKeep, ms, {}};
+	}
+	return ItemWay{kTransitionFade, ms, std::string("{\"") + kSwitchFadeMs + "\":" + std::to_string(ms) + "}"};
+}
+
+ItemChange resolve_change(obs_sceneitem_t *item, const ItemChange &change, obs_source_t *scene, bool inherit_item)
 {
 	const bool show = change.show.kind == kTransitionScene, hide = change.hide.kind == kTransitionScene;
 	if (!show && !hide && g_overriding.load() <= 0)
@@ -117,15 +139,26 @@ ItemChange resolve_item_change(obs_sceneitem_t *item, const ItemChange &change, 
 	if (!show && !hide)
 		return change;
 	ItemChange out = change;
-	// Where no scene's filter covers the item: a fade of the way's own
-	// length, what an untouched filter did before this choice existed.
+	// Show in Scenes inherits an uncovered item's actual OBS transition, including its
+	// settings and duration. Other filters retain their historical fade fallback.
+	auto inherited = [&](bool appearing, const ItemWay &way, const ItemWay &scene_way) {
+		if (found && scene_way.kind != kTransitionScene)
+			return scene_way;
+		if (inherit_item)
+			return switch_fallback(item, appearing, way.ms);
+		return ItemWay{kTransitionFade, way.ms, {}};
+	};
 	if (show)
-		out.show = found && theirs.show.kind != kTransitionScene ? theirs.show
-									 : ItemWay{kTransitionFade, change.show.ms, {}};
+		out.show = inherited(true, change.show, theirs.show);
 	if (hide)
-		out.hide = found && theirs.hide.kind != kTransitionScene ? theirs.hide
-									 : ItemWay{kTransitionFade, change.hide.ms, {}};
+		out.hide = inherited(false, change.hide, theirs.hide);
 	return out;
+}
+} // namespace
+
+ItemChange resolve_item_change(obs_sceneitem_t *item, const ItemChange &change, obs_source_t *scene)
+{
+	return resolve_change(item, change, scene, false);
 }
 
 void cut_item_transitions(obs_sceneitem_t *item)
@@ -489,6 +522,11 @@ void apply_way(obs_sceneitem_t *item, bool show, const ItemWay &way, obs_source_
 	} else if (own) {
 		// The same kind as it has: its settings are made these, and no others.
 		obs_source_reset_settings(now, own);
+	} else if (way.kind == kTransitionFade) {
+		// An explicit fade now owns this direction, even if its duration is identical.
+		obs_data_t *settings = obs_source_get_settings(now);
+		obs_data_erase(settings, kSwitchFadeMs);
+		obs_data_release(settings);
 	}
 	obs_data_release(own);
 	if (obs_sceneitem_get_transition(item, show) && obs_sceneitem_get_transition_duration(item, show) != way.ms)
@@ -768,6 +806,7 @@ void build(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 	// lists do not offer it.
 	const char *owner_id = owner ? obs_source_get_unversioned_id(owner) : nullptr;
 	const bool scene_entry = !owner_id || strcmp(owner_id, kSceneTransitionsId) != 0;
+	const bool visibility_switch = owner_id && strcmp(owner_id, kShowInScenesId) == 0;
 	for (const bool show : {true, false}) {
 		const std::string kind_name = key(scope, show ? "transition" : "hide_transition");
 		const std::string ms_name = key(scope, show ? "transition_ms" : "hide_ms");
@@ -781,7 +820,9 @@ void build(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 		add_kinds(kinds, scene_entry);
 		std::string tip = obs_module_text(show ? "Change.ShowWith.Tip" : "Change.HideWith.Tip");
 		if (scene_entry)
-			tip = std::string(obs_module_text("Change.Scene.Tip")) + " " + tip;
+			tip = std::string(obs_module_text(visibility_switch ? "ShowIn.SceneTransition.Tip"
+									    : "Change.Scene.Tip")) +
+			      " " + tip;
 		set_tip(kinds, tip.c_str());
 		obs_property_set_modified_callback2(kinds, rebuild_cb, owner);
 		const std::string kind = obs_data_get_string(settings, kind_name.c_str());
@@ -795,7 +836,8 @@ void build(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 		obs_property_int_set_suffix(time, " ms");
 		set_tip(time, obs_module_text("Change.Duration.Tip"));
 		if (kind == kTransitionScene) {
-			set_tip(time, obs_module_text("Change.Time.Tip"));
+			set_tip(time,
+				obs_module_text(visibility_switch ? "ShowIn.FallbackTime.Tip" : "Change.Time.Tip"));
 			continue; // (its own settings are the scene's)
 		}
 		const std::string prefix = own_prefix(scope, show, kind);
@@ -907,6 +949,17 @@ void apply_item_change(obs_sceneitem_t *item, const ItemChange &asked, obs_sourc
 	const ItemChange change = resolve_item_change(item, asked, scene);
 	apply_way(item, true, change.show, scene);
 	apply_way(item, false, change.hide, scene);
+}
+
+bool set_item_visible(obs_sceneitem_t *item, bool show, const ItemChange &asked, obs_source_t *scene)
+{
+	if (!item || obs_sceneitem_visible(item) == show)
+		return false;
+	if (!owned(item)) {
+		const ItemChange change = resolve_change(item, asked, scene, true);
+		apply_way(item, show, show ? change.show : change.hide, scene);
+	}
+	return set_item_visible(item, show);
 }
 
 void apply_item_change_as_owner(obs_sceneitem_t *item, const ItemChange &asked, obs_source_t *scene)

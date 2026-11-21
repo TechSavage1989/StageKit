@@ -27,6 +27,11 @@ or shared transition controls. OBS calls load after creating sources from a save
 a filter with empty settings. Keep the original choice for those filters. Keep the Move Scene Item
 source and Stream Deck action IDs registered for existing setups.
 
+For Show in Scenes, resolve show and hide separately for each targeted item. An inherited
+transition uses the covering Scene Transitions rule, then the transition the Sources eye
+would play for that direction. Exercise the actual Stream Deck request, filter toggle,
+manually operated items and saved restore rules in the OBS frontend camera test.
+
 ## Checking setting names in the guide
 
 Run python3 scripts/check-guide-settings.py after changing a Setting table or an English

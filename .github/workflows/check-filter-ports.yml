@@ -11,6 +11,12 @@ on:
       - 'data/ports.json'
       - 'scripts/*obs-ports.py'
       - 'src/components/**'
+      - 'src/common/item-transition.*'
+      - 'src/placement/show-in-scenes.*'
+      - 'src/placement/scene-transitions.*'
+      - 'src/transition/**'
+      - 'src/view/cropped-view.*'
+      - 'tests/show-in-scenes-camera.hpp'
       - 'src/plugin-main.cpp'
       - 'src/third-party/ports/**'
       - 'streamdeck/**'
@@ -46,6 +52,20 @@ jobs:
           xvfb-run -a build-ports/tests/stagekit-replacement-test "$PWD/build-ports/stagekit.so" "$PWD/data" "$out/art.png" "$out" > "$out/render.log" 2>&1 || { grep -E 'FAIL|shader error|error:.*effect' "$out/render.log" || true; tail -150 "$out/render.log"; xvfb-run -a gdb -q --batch -ex run -ex 'bt 30' --args build-ports/tests/stagekit-replacement-test "$PWD/build-ports/stagekit.so" "$PWD/data" "$out/art.png" "$out" > "$out/debug.log" 2>&1 || true; tail -50 "$out/debug.log"; exit 1; }
           grep -E 'PASS|FAIL|mean difference' "$out/render.log"
           python3 tests/replacement-images.py "$out" sheet
+      - name: Check saved visibility settings and restore rules
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          set -eu
+          out="$PWD/build-ports/camera-results"
+          mkdir -p "$out"
+          python3 tests/make-test-image.py "$out"
+          for test in REVIEW_CONTROLS RESTORE_HIDDEN SWITCH_COMMAND; do
+            env "STAGEKIT_TEST_ONLY_$test=1" xvfb-run -a build-ports/tests/stagekit-ambient-test "$PWD/build-ports/stagekit.so" "$PWD/data" \
+              "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out" > "$out/$test.log" 2>&1 || { tail -90 "$out/$test.log"; exit 1; }
+            tail -3 "$out/$test.log"
+          done
       - name: Open the replacement catalog in a fresh OBS frontend
         if: always() && hashFiles('build-ports/tests/stagekit-replacement-probe.so') != ''
         run: bash tests/check-replacement-frontend.sh build-ports

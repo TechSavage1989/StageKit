@@ -1061,10 +1061,15 @@ group (the next five), the *Show/Hide transition* group, then the button.
 | Follow what is shown | Unticked as it comes. Ticked, the switch also goes by what is shown: when something else shows or hides its sources (a Link Visibility filter, the eye icon, another key), the switch turns on or off to match, so a Stream Deck key's light stays true. It reads *shown* only while every one of its sources is shown in the scenes it covers. Matching the switch never shows or hides anything, and pressing a switch that is already on still shows its sources. Best left unticked on a switch whose source is hidden on purpose in some scene: it would read off for good there |
 | Switch to scene | *Stay in this scene* as it comes. Choose a scene, and a press that shows the sources (turning the switch on, or off when *On means* is hidden) also changes OBS to that scene, with OBS's current transition, once the sources are shown (in Studio Mode, the preview changes). Nothing changes when the scene on screen already has one of the sources (shown or hidden, in a group too), or when that scene is already on screen. A press that hides them never changes scene, nor does *Apply the switch now*, nor the switch turning itself on under *Follow what is shown*. Any scene can be chosen, so it suits any layout: a capture's key that also brings up the game layout, a title's key that also brings up the holding scene |
 | Settings for | With sources on the list: *All sources*, or one of the listed sources. Choose a source and the controls below are that source's own: it can show and hide with another transition, another duration and other settings than the rest, or be left *As for all sources* |
-| Show transition / Duration | How each item appears: a fade (the default), any other transition OBS has, a cut, or whatever is already set on the item; and for how long. Under it come that transition's own settings, such as the way a slide goes. *Morph (StageKit)* and *Fade and Zoom (StageKit)* are on the list too (see [Morph between items](#morph-between-items) and [Fade and Zoom](#fade-and-zoom-transition)). A Slide and a Swipe have one more direction, *Off the nearest edge*: each item goes towards whichever edge of the screen it is nearest to when it hides, and comes in from that side when it shows |
+| Show transition / Duration | The default, *As the scene sets*, uses the covering Scene Transitions rule. If no rule covers the item, the switch uses the item’s OBS transition and duration for that direction. An item with no transition fades. You can also choose a specific transition or a cut. Under it come that transition's own settings, such as the way a slide goes. *Morph (StageKit)* and *Fade and Zoom (StageKit)* are on the list too (see [Morph between items](#morph-between-items) and [Fade and Zoom](#fade-and-zoom-transition)). A Slide and a Swipe have one more direction, *Off the nearest edge*: each item goes towards whichever edge of the screen it is nearest to when it hides, and comes in from that side when it shows |
 | Hide transition / Duration | How each item disappears: *The same as showing* (the default), or a transition of its own with its own settings, so an item can slide down into view and slide up out of it |
 | Link this source / With this source / Add this link / Linked sources | In the *Show/Hide transition* group, shown while *Morph (StageKit)* is chosen above: two sources that change into each other when one is hidden as the other is shown. See [Morph between items](#morph-between-items) |
 | Apply the switch now | The last control: shows or hides them to match how the filter is switched now |
+
+To match the Sources eye with a Stream Deck **Show in Scenes** key, open the filter selected on the key.
+Under **Show/Hide transition**, choose **Keep each source's own** for the show and hide transitions.
+Check **Settings for** if an individual camera has its own choice. **Show only what it hid** determines which
+items return. A camera already hidden before the press stays hidden when this option is on.
 
 OBS's own transitions move an item's image inside the item's own frame, so a slide leaves through
 the side of that frame, not across the screen. To have an item travel in from the screen's edge, use
@@ -1900,8 +1905,9 @@ or tick *Override other filters* here.
 **As the scene sets** is a new choice in every StageKit filter that shows and hides sources (Show in
 Scenes, Link Visibility, Program Trigger, the two switchers, Standby Image), and the one they start with.
 (Auto Capture's hide sets no transition: it uses the one the source carries.) With a Scene Transitions on
-the source's scene, the change is the one set there; where the scene has none, it is a fade of the filter's
-own duration, which is what those filters did before. A filter set to a transition of its own uses it for
+the source's scene, the change is the one set there. For an item outside a scene rule, Show in Scenes uses
+its installed OBS transition in each direction and falls back to a fade when that direction has none. The
+other filters use a fade of their own duration. A filter set to a transition of its own uses it for
 the changes it makes, and afterwards the source carries the scene's transitions again. A Standby Image that
 stands in for a source sets that source's transitions itself.
 
