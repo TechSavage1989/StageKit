@@ -31,7 +31,7 @@ bool previous_ndi(config_t *config)
 		if (saved.startsWith("\xEF\xBB\xBF"))
 			saved.remove(0, 3);
 		const auto modules = QJsonDocument::fromJson(saved).array();
-		for (const auto &item : modules) {
+		for (const auto item : modules) {
 			const auto module = item.toObject();
 			if (module.value("module_name").toString() != "stagekit-port-ndi")
 				continue;
