@@ -17,8 +17,9 @@ jobs:
       - name: Collect formatted timer files
         if: always()
         run: |
+          formatter="$(command -v clang-format-19 || command -v clang-format)"
           for file in src/countdown/countdown.hpp src/countdown/timer-options.cpp src/countdown/countdown.cpp src/countdown/stream-start.hpp src/countdown/countdown-dock.cpp tests/countdown-dock-test.hpp tests/countdown-test.hpp; do
-            /home/linuxbrew/.linuxbrew/opt/clang-format@19/bin/clang-format -i "$file"
+            "$formatter" -i "$file"
           done
           python3 - <<'PY'
           import base64
