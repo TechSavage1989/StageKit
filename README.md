@@ -1340,7 +1340,7 @@ Enable **Start when streaming starts** for any timer that should start or resume
 
 **Leading zero** selects 04:06 or 4:06. Enable **Format output** and enter a pattern such as **IN %time%**. The dock, overlay and settings preview use the same output. Both the output and end message accept %time%, %days%, %hours%, %minutes% and %seconds%. Add 2 to a unit name for two digits, such as %seconds2%.
 
-The dock fits its readout to the space above the playback buttons. In a scene, position the box around the bare digits. Formatted output and the end message fit inside that rectangle. They resize and fade in place when the display changes or you reset. Longer phrases can wrap. Enlarging the source renders sharper letters and digits.
+Position the running timer once. Its box, font size, baseline, and separators stay fixed as it ticks. If **Leading zero** is off, a hidden digit leaves its place empty. A prefix such as **IN** and any text after the time keep their positions. The end message automatically fits inside that box and can wrap. Finishing and resetting crossfade the text in place. The private dock uses the same fixed digit positions.
 
 ![Countdown in OBS when ready, paused and finished](docs/images/countdown-timer.png)
 
@@ -1348,7 +1348,7 @@ The dock fits its readout to the space above the playback buttons. In a scene, p
 
 ![Calendar, time display and finish actions in the timer settings](docs/images/countdown-settings.png)
 
-![Clock, formatted output and ending message inside the same OBS transform](docs/images/countdown-layout.png)
+![The prefix and clock stay aligned from 10:00 to 9:59, then the ending message fills the same box](docs/images/countdown-rollover.png)
 
 ![Timer glyphs enlarged five times in an OBS scene](docs/images/countdown-scaled.png)
 

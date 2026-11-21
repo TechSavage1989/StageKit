@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | fix/countdown-dock-readout. Release notes in docs/releases/0.1.0-beta241.md. |
+| Working branch | fix/steady-countdown-layout. Release notes in docs/releases/0.1.0-beta242.md. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -30,6 +30,8 @@ Visible bounds use the existing alpha threshold and fringe handling. Scene Fit t
 Two supplemental headless probes also reproduced their beta239 failures on both builds. FIT_TOOL reported 136 x 76 for its kept-size assertion and exited during cleanup. DOCK_BOUNDS exited during cleanup. The SHADOW_FLICKER probe passed on both.
 
 ## Countdown Timer
+
+Beta242 measures the running format once. The dock and scene source use the same digit advances, independent of numeral shape. Hidden leading digits reserve their positions, including in custom unit placeholders. Only an end message is fitted when the clock finishes. Tests compare unchanged pixel regions on both sides of a live minute rollover, across hour and day changes in count-up, and on reset.
 
 Beta241 fits the readout within the operator dock using a local font rule. The Windows OBS 32.2.2 fixture measured 58-pixel digits and a 10-pixel status caption in the 264-pixel readout of a 276-pixel dock. Its 241 by 61 overlay rendered a 239 by 59 clock and fitted both the format and end text within the same scene item. The native source draws glyphs at the observed scene scale, with separate logical dimensions and a bounded texture. Fivefold and sixteenfold scene-item tests compare its alpha edges with a scaled bitmap. Only clock glyphs determine source geometry. The fixture checks an adjacent source, right and bottom edge overscan, and intermediate frames in both directions. Textures are mixed on the GPU during a 240 ms change of display. The timer editor shares the output formatter with the dock and scene source. Pre-existing finish actions migrate from their stored message and scene. Stream-start dispatch includes hidden scene sources and the current collection's private timer. Stream Deck 0.37.0.0 addresses timers by source UUID or the current private timer using ListTimers and TimerControl. The native clock computes the next local slot at each press, including at midnight or a daylight-saving change. A cycle key shares its selected mark across controllers of that timer. A tap preserves playback and an 800 ms hold starts or stops without advancing the mark.
 
