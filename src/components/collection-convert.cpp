@@ -156,7 +156,8 @@ void convert_source(Json &source, const Map &mapping, const Path &data, Collecti
 	if (match != mapping.end()) {
 		const std::string version = string_at(source, "versioned_id");
 		const bool related = version.empty() || version == id || version.rfind(id + "_v", 0) == 0;
-		const std::string target = related && !version.empty() ? match->second + version.substr(id.size()) : match->second;
+		const std::string target = related && !version.empty() ? match->second + version.substr(id.size())
+								       : match->second;
 		if (related && (!registered_types || registered_types->count(target))) {
 			source["id"] = match->second;
 			if (!version.empty())

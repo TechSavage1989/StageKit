@@ -5,6 +5,7 @@
 #include <QFile>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMessageBox>
 #include <QTableWidget>
 #include <QTextStream>
 #include <QTimer>
@@ -25,6 +26,11 @@ static QAction *action_named(const QString &name)
 static void exercise()
 {
 	QStringList issues;
+	for (QWidget *widget : QApplication::topLevelWidgets()) {
+		const auto *box = qobject_cast<QMessageBox *>(widget);
+		if (box && box->isVisible() && box->text().contains("NDI", Qt::CaseInsensitive))
+			issues.append("Unexpected NDI startup dialog");
+	}
 	QStringList registered;
 	const char *id = nullptr;
 	for (size_t i = 0; obs_enum_filter_types(i, &id); ++i) {
@@ -32,8 +38,9 @@ static void exercise()
 		if (label)
 			registered.append(QString::fromUtf8(label));
 	}
-	const QStringList expected = {"Source Filter: Advanced Mask (StageKit)", "Source Filter: Gaussian Blur (StageKit)",
-				      "Scene Filter: Move Source (StageKit)", "Scene Filter: Move Source Swap (StageKit)"};
+	const QStringList expected = {"Source Filter: Advanced Mask (StageKit)",
+				      "Source Filter: Gaussian Blur (StageKit)", "Scene Filter: Move Source (StageKit)",
+				      "Scene Filter: Move Source Swap (StageKit)"};
 	for (const auto &name : expected)
 		if (!registered.contains(name))
 			issues.append(name);
@@ -98,7 +105,7 @@ bool obs_module_load()
 	obs_frontend_add_event_callback(
 		[](obs_frontend_event event, void *) {
 			if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING)
-				QTimer::singleShot(1500, qApp, &exercise);
+				QTimer::singleShot(2600, qApp, &exercise);
 		},
 		nullptr);
 	return true;

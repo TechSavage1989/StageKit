@@ -100,7 +100,8 @@ void convert_copy(QWidget *parent, const Catalog &catalog)
 			throw std::runtime_error(file.errorString().toStdString());
 		const auto bytes = file.readAll();
 		auto collection = Json::parse(bytes.begin(), bytes.end());
-		const auto report = convert_collection(collection, catalog.definitions, catalog.resources, &catalog.registered_types);
+		const auto report = convert_collection(collection, catalog.definitions, catalog.resources,
+						       &catalog.registered_types);
 		collection["name"] = QFileInfo(output).completeBaseName().toUtf8().toStdString();
 		const std::string result = collection.dump(2) + "\n";
 		QTemporaryFile tmp(QFileInfo(output).dir().filePath(".stagekit-copy-XXXXXX"));
@@ -155,7 +156,8 @@ void collection_tools_menu(QMenu *menu)
 							rows.emplace(
 								QString::fromStdString(type.at(3).get<std::string>()),
 								tr(type.at(2).get<std::string>().c_str()),
-								availability(catalog.registered_types, port, type.at(0).get<std::string>()));
+								availability(catalog.registered_types, port,
+									     type.at(0).get<std::string>()));
 					}
 				if (spec.contains("tool") && spec.contains("originalTool"))
 					rows.emplace(QString::fromStdString(spec.at("originalTool").get<std::string>()),

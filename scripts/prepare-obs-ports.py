@@ -133,6 +133,15 @@ static std::string stagekitBackupDir()
         text = text.replace('#define SECTION_NAME "NDIPlugin"', '#define SECTION_NAME "StageKitPortsNDI"')
         if filename == "plugin-main.cpp":
             text = text.replace("\tupdateCheckStart();", "")
+            # This is an optional port. Startup failures already have specific log entries;
+            # show their status in the catalog instead of opening an installer dialog on every launch.
+            declaration = text.index("void showCriticalUnloadingMessageBoxDelayed(")
+            begin = text.index("\n{", declaration)
+            end = text.index("\n}\n", begin) + 2
+            text = text[:begin] + (
+                '\n{\n\t(void)milliseconds;\n'
+                '\tobs_log(LOG_DEBUG, "Optional NDI component: %s: %s", QT_TO_UTF8(title), QT_TO_UTF8(message));\n}'
+            ) + text[end:]
             text = re.sub(r'\s*alpha_filter_info = create_alpha_filter_info\(\);\s*obs_register_source\(&alpha_filter_info\);', '', text)
     return text
 

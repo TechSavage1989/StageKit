@@ -39,6 +39,10 @@ To add a filter, right-click the source, group or scene in OBS, open **Filters**
 
 OBS supplies **Apply LUT, Chroma Key, Color Correction, Color Key, Compose SDR on HDR (Override), Crop/Pad, HDR Tone Mapping (Override), Image Mask/Blend, Luma Key, Render Delay, Scaling/Aspect Ratio, Scroll** and **Sharpen**. Existing instances continue using OBS's own implementation. [OBS Filters Guide](https://obsproject.com/kb/Filters-Guide)
 
+**Original input and seven filters rendered by OBS**
+
+![OBS render showing the same test image with seven replacement filters](images/filter-replacements.png)
+
 ## Tools and Stream Deck
 
 | Original Tools entry | Corresponding control |
