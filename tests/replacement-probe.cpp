@@ -5,6 +5,9 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QDialog>
+#include <QComboBox>
+#include <QPushButton>
+#include <QSpinBox>
 #include <QFile>
 #include <QListWidget>
 #include <QMainWindow>
@@ -110,6 +113,39 @@ static void check_native_layout(QStringList &issues)
 		issues.append("Native dock layouts did not read the existing WindowState entry");
 }
 
+static void check_native_table(QStringList &issues)
+{
+	auto *action = action_named("Transition Table (StageKit)");
+	if (!action) return;
+	QObject owner;
+	bool exercised = false;
+	QTimer::singleShot(100, &owner, [&] {
+		auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+		if (!dialog) return;
+		auto *from = dialog->findChild<QComboBox *>("nativeRuleFrom");
+		auto *to = dialog->findChild<QComboBox *>("nativeRuleTo");
+		auto *transition = dialog->findChild<QComboBox *>("nativeRuleTransition");
+		auto *add = dialog->findChild<QPushButton *>("nativeSetRule");
+		auto *duration = dialog->findChild<QSpinBox *>();
+		if (from && to && transition && add && duration) {
+			from->setCurrentText("Fixture source scene");
+			to->setCurrentText("Any");
+			transition->setCurrentText("Fade");
+			duration->setValue(416);
+			add->click();
+			calldata_t result = {};
+			calldata_set_string(&result, "from_scene", "Fixture source scene");
+			calldata_set_string(&result, "to_scene", "Other destination");
+			exercised = proc_handler_call(obs_get_proc_handler(), "stagekit_port_get_transition_table_transition", &result) &&
+				QString::fromUtf8(calldata_string(&result, "transition")) == "Fade" && calldata_int(&result, "duration") == 416;
+			calldata_free(&result);
+		}
+		dialog->reject();
+	});
+	action->trigger();
+	if (!exercised) issues.append("Native transition table did not resolve an edited wildcard rule through the saved procedure");
+}
+
 static void check_plugin_manager(QStringList &issues)
 {
 	const auto expected = qEnvironmentVariable("STAGEKIT_TEST_MODULE_NAMES").split('\n', Qt::SkipEmptyParts);
@@ -185,6 +221,11 @@ static void exercise()
 				for (int i = 0; i < table->rowCount(); ++i) {
 					const auto original = table->item(i, 0)->text();
 					const auto status = table->item(i, 2)->text();
+					const auto implementation = table->columnCount() == 4 ? table->item(i, 3)->text() : QString();
+					if ((original == "Freeze Filter" && implementation != "StageKit native") ||
+					    (original == "Composite Blur" && implementation != "Bundled port") ||
+					    (original == "Chroma Key" && implementation != "OBS built-in"))
+						issues.append(original + " has an incorrect implementation label");
 					if ((original == "Composite Blur" || original == "Source Copy") &&
 					    status != "Available")
 						issues.append(original + ": " + status);
@@ -212,6 +253,7 @@ static void exercise()
 	}
 	replacement_test::check_native_filters(qEnvironmentVariable("STAGEKIT_TEST_ART"), issues);
 	check_native_layout(issues);
+	check_native_table(issues);
 	check_plugin_manager(issues);
 	check_blur_output(issues);
 	QFile report(qEnvironmentVariable("STAGEKIT_TEST_REPORT"));

@@ -13,9 +13,15 @@
 
 namespace stagekit::native {
 namespace {
-constexpr std::array<const char *, 9> key_names{"skip_begin", "skip_end", "forward", "slow_forward", "fast_forward", "backward", "slow_backward", "fast_backward", "pause"};
-constexpr std::array<const char *, 9> key_labels{"Native.DelayOldest", "Native.DelayLive", "Native.PlayForward", "Native.SlowForward", "Native.FastForward", "Native.PlayBackward", "Native.SlowBackward", "Native.FastBackward", "Native.Pause"};
-constexpr std::array<EaseCurve, 11> curves{EaseCurve::Linear, EaseCurve::Quad, EaseCurve::Cubic, EaseCurve::Quart, EaseCurve::Quint, EaseCurve::Sine, EaseCurve::Circ, EaseCurve::Expo, EaseCurve::Elastic, EaseCurve::Bounce, EaseCurve::Back};
+constexpr std::array<const char *, 9> key_names{"skip_begin",    "skip_end",      "forward",
+						"slow_forward",  "fast_forward",  "backward",
+						"slow_backward", "fast_backward", "pause"};
+constexpr std::array<const char *, 9> key_labels{"Native.DelayOldest",  "Native.DelayLive",    "Native.PlayForward",
+						 "Native.SlowForward",  "Native.FastForward",  "Native.PlayBackward",
+						 "Native.SlowBackward", "Native.FastBackward", "Native.Pause"};
+constexpr std::array<EaseCurve, 11> curves{EaseCurve::Linear,  EaseCurve::Quad,   EaseCurve::Cubic, EaseCurve::Quart,
+					   EaseCurve::Quint,   EaseCurve::Sine,   EaseCurve::Circ,  EaseCurve::Expo,
+					   EaseCurve::Elastic, EaseCurve::Bounce, EaseCurve::Back};
 struct Delay {
 	struct Sample {
 		double time;
@@ -23,7 +29,11 @@ struct Delay {
 	};
 	obs_source_t *source;
 	std::deque<Sample> history;
-	struct Key { Delay *owner; int index; obs_hotkey_id id; };
+	struct Key {
+		Delay *owner;
+		int index;
+		obs_hotkey_id id;
+	};
 	std::array<Key, 9> bindings{};
 	std::atomic<int> next{-1};
 	std::array<double, 9> rates{1, 1, 1, .5, 2, -1, -.5, -2, 0};
@@ -66,15 +76,19 @@ struct Delay {
 	static obs_properties_t *properties(void *)
 	{
 		auto *p = obs_properties_create();
-		obs_property_float_set_suffix(obs_properties_add_float(p, "duration", text("Native.HistoryDuration"), 0, 10000, .1), " s");
-		auto *shape = obs_properties_add_list(p, "easing", text("Native.SpeedCurve"), OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+		obs_property_float_set_suffix(
+			obs_properties_add_float(p, "duration", text("Native.HistoryDuration"), 0, 10000, .1), " s");
+		auto *shape = obs_properties_add_list(p, "easing", text("Native.SpeedCurve"), OBS_COMBO_TYPE_LIST,
+						      OBS_COMBO_FORMAT_INT);
 		for (size_t i = 0; i < curves.size(); ++i)
 			obs_property_list_add_int(shape, text(kEaseCurves[int(curves[i])].text), int(i));
-		obs_property_float_set_suffix(obs_properties_add_float(p, "easing_duration", text("Native.SpeedTime"), 0, 10, .05), " s");
+		obs_property_float_set_suffix(
+			obs_properties_add_float(p, "easing_duration", text("Native.SpeedTime"), 0, 10, .05), " s");
 		const double limits[][2] = {{.1, 99.9}, {100.1, 1000}, {-99.9, -.1}, {-1000, -100.1}};
 		size_t j = 0;
 		for (size_t i : {3U, 4U, 6U, 7U}) {
-			auto *prop = obs_properties_add_float_slider(p, key_names[i], text(key_labels[i]), limits[j][0], limits[j][1], .1);
+			auto *prop = obs_properties_add_float_slider(p, key_names[i], text(key_labels[i]), limits[j][0],
+								     limits[j][1], .1);
 			obs_property_float_set_suffix(prop, "%");
 			++j;
 		}
@@ -86,12 +100,14 @@ struct Delay {
 	{
 		unbind();
 		for (auto &key : bindings)
-			key.id = obs_hotkey_register_source(parent, key_names[key.index], text(key_labels[key.index]),
+			key.id = obs_hotkey_register_source(
+				parent, key_names[key.index], text(key_labels[key.index]),
 				[](void *p, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
 					auto &key = *static_cast<Key *>(p);
 					if (pressed)
 						key.owner->next.store(key.index);
-				}, &key);
+				},
+				&key);
 	}
 	void unbind()
 	{
@@ -149,11 +165,14 @@ struct Delay {
 		const double bytes = gs_get_format_from_space(current_space) == GS_RGBA16F ? 8. : 4.;
 		const double budget = 256. * 1024. * 1024.;
 		const double area = double(size.width) * size.height;
-		const double scale = std::min(1., std::max(std::min(1., 180. / size.height),
-			std::sqrt(budget / (area * bytes * std::max(2., span * fps + 2)))));
-		const Size small{std::max(1U, uint32_t(std::round(size.width * scale))), std::max(1U, uint32_t(std::round(size.height * scale)))};
+		const double scale =
+			std::min(1., std::max(std::min(1., 180. / size.height),
+					      std::sqrt(budget / (area * bytes * std::max(2., span * fps + 2)))));
+		const Size small{std::max(1U, uint32_t(std::round(size.width * scale))),
+				 std::max(1U, uint32_t(std::round(size.height * scale)))};
 		const double capacity = std::max(2., std::floor(budget / (double(small.width) * small.height * bytes)));
-		if (canvas.width != size.width || canvas.height != size.height || small.width != stored.width || small.height != stored.height || space != current_space || now < frame_time) {
+		if (canvas.width != size.width || canvas.height != size.height || small.width != stored.width ||
+		    small.height != stored.height || space != current_space || now < frame_time) {
 			history.clear();
 			canvas = size;
 			stored = small;
@@ -169,7 +188,8 @@ struct Delay {
 			recycled = std::move(history.front().frame);
 			history.pop_front();
 		}
-		if (history.empty() || (now > history.back().time && now - history.back().time >= span / (capacity - 1))) {
+		if (history.empty() ||
+		    (now > history.back().time && now - history.back().time >= span / (capacity - 1))) {
 			if (!recycled)
 				recycled = std::make_unique<Frame>();
 			if (recycled->capture(source, small, space))
@@ -199,7 +219,8 @@ struct Delay {
 			obs_source_skip_video_filter(source);
 			return;
 		}
-		auto it = std::upper_bound(history.begin(), history.end(), cursor, [](double t, const Sample &sample) { return t < sample.time; });
+		auto it = std::upper_bound(history.begin(), history.end(), cursor,
+					   [](double t, const Sample &sample) { return t < sample.time; });
 		if (it != history.begin())
 			--it;
 		draw_texture(it->frame->texture(), size);
@@ -208,8 +229,12 @@ struct Delay {
 void load()
 {
 	auto info = video_filter<Delay>("stagekit_port_dynamic_delay_filter", "Ports.DynamicDelay");
-	info.filter_add = [](void *p, obs_source_t *parent) { static_cast<Delay *>(p)->bind(parent); };
-	info.filter_remove = [](void *p, obs_source_t *) { static_cast<Delay *>(p)->unbind(); };
+	info.filter_add = [](void *p, obs_source_t *parent) {
+		static_cast<Delay *>(p)->bind(parent);
+	};
+	info.filter_remove = [](void *p, obs_source_t *) {
+		static_cast<Delay *>(p)->unbind();
+	};
 	obs_register_source(&info);
 }
 } // namespace

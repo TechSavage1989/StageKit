@@ -139,16 +139,17 @@ void collection_tools_menu(QMenu *menu)
 			auto *search = new QLineEdit(&dialog);
 			search->setPlaceholderText(tr("Ports.Find"));
 			layout->addWidget(search);
-			auto *table = new QTableWidget(0, 3, &dialog);
+			auto *table = new QTableWidget(0, 4, &dialog);
 			table->setHorizontalHeaderLabels(
-				{tr("Ports.Original"), tr("Ports.StageKitControl"), tr("Ports.Availability")});
+				{tr("Ports.Original"), tr("Ports.StageKitControl"), tr("Ports.Availability"), tr("Native.Implementation")});
 			table->setEditTriggers(QAbstractItemView::NoEditTriggers);
 			table->verticalHeader()->hide();
 			table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
 			table->horizontalHeader()->setStretchLastSection(true);
 			layout->addWidget(table);
-			std::set<std::tuple<QString, QString, QString>> rows;
+			std::set<std::tuple<QString, QString, QString, QString>> rows;
 			for (const auto &[port, spec] : catalog.definitions.items()) {
+				const auto implementation = tr(spec.value("implementation", std::string()) == "stagekit" ? "Native.StageKitCode" : "Native.PortCode");
 				if (spec.contains("types"))
 					for (const auto &type : spec.at("types")) {
 						if (type.size() >= 4 &&
@@ -157,31 +158,34 @@ void collection_tools_menu(QMenu *menu)
 								QString::fromStdString(type.at(3).get<std::string>()),
 								tr(type.at(2).get<std::string>().c_str()),
 								availability(catalog.registered_types, port,
-									     type.at(0).get<std::string>()));
+									     type.at(0).get<std::string>()), implementation);
 					}
 				if (spec.contains("tool") && spec.contains("originalTool"))
 					rows.emplace(QString::fromStdString(spec.at("originalTool").get<std::string>()),
 						     tr(spec.at("tool").get<std::string>().c_str()),
-						     availability(catalog.registered_types, port, ""));
+						     availability(catalog.registered_types, port, ""), implementation);
 				if (spec.contains("controls"))
 					for (const auto &item : spec.at("controls"))
 						rows.emplace(QString::fromStdString(item.at(0).get<std::string>()),
 							     tr(item.at(1).get<std::string>().c_str()),
 							     tr(item.at(1) == "Ports.Deck" ? "Ports.Companion"
-											   : "Ports.Available"));
+											   : "Ports.Available"),
+							     tr(item.at(1) == "Ports.Deck" ? "Native.DeckCode" : (item.at(1) == "Ports.StockTool" || item.at(1) == "Ports.StockFilter") ? "Native.ObsCode" : "Native.StageKitCode"));
 			}
-			for (const auto &[old, next, status] : rows) {
+			for (const auto &[old, next, status, kind] : rows) {
 				const int row = table->rowCount();
 				table->insertRow(row);
 				table->setItem(row, 0, new QTableWidgetItem(old));
 				table->setItem(row, 1, new QTableWidgetItem(next));
 				table->setItem(row, 2, new QTableWidgetItem(status));
+				table->setItem(row, 3, new QTableWidgetItem(kind));
 			}
 			QObject::connect(search, &QLineEdit::textChanged, table, [table](const QString &s) {
 				for (int r = 0; r < table->rowCount(); ++r)
 					table->setRowHidden(
 						r, !table->item(r, 0)->text().contains(s, Qt::CaseInsensitive) &&
-							   !table->item(r, 1)->text().contains(s, Qt::CaseInsensitive));
+							   !table->item(r, 1)->text().contains(s, Qt::CaseInsensitive) &&
+							   !table->item(r, 3)->text().contains(s, Qt::CaseInsensitive));
 			});
 			auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
 			auto *convert = buttons->addButton(tr("Ports.ConvertCopy"), QDialogButtonBox::ActionRole);
@@ -189,7 +193,7 @@ void collection_tools_menu(QMenu *menu)
 					 [&] { convert_copy(&dialog, catalog); });
 			QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 			layout->addWidget(buttons);
-			dialog.resize(830, 530);
+			dialog.resize(980, 530);
 			dialog.exec();
 		} catch (const std::exception &e) {
 			QMessageBox::warning(menu, tr("Ports.Manager"), QString::fromUtf8(e.what()));

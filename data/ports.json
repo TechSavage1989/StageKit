@@ -234,6 +234,7 @@
     "originalTool": "SourceDock"
   },
   "table": {
+    "implementation": "stagekit",
     "tool": "Ports.Tool.table",
     "originalTool": "TransitionTable"
   },

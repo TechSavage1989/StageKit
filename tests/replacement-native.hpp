@@ -140,17 +140,24 @@ inline void check_native_filters(const QString &art, QStringList &issues)
 			render(source, w, h);
 			QThread::msleep(25);
 		}
-		struct PlaybackKey { obs_source_t *parent; obs_hotkey_id id; } key{source, OBS_INVALID_HOTKEY_ID};
-		obs_enum_hotkeys([](void *arg, obs_hotkey_id id, obs_hotkey_t *hotkey) {
-			auto &key = *static_cast<PlaybackKey *>(arg);
-			if (obs_hotkey_get_registerer_type(hotkey) == OBS_HOTKEY_REGISTERER_SOURCE &&
-			    std::strcmp(obs_hotkey_get_name(hotkey), "pause") == 0 &&
-			    obs_weak_source_references_source(static_cast<obs_weak_source_t *>(obs_hotkey_get_registerer(hotkey)), key.parent)) {
-				key.id = id;
-				return false;
-			}
-			return true;
-		}, &key);
+		struct PlaybackKey {
+			obs_source_t *parent;
+			obs_hotkey_id id;
+		} key{source, OBS_INVALID_HOTKEY_ID};
+		obs_enum_hotkeys(
+			[](void *arg, obs_hotkey_id id, obs_hotkey_t *hotkey) {
+				auto &key = *static_cast<PlaybackKey *>(arg);
+				if (obs_hotkey_get_registerer_type(hotkey) == OBS_HOTKEY_REGISTERER_SOURCE &&
+				    std::strcmp(obs_hotkey_get_name(hotkey), "pause") == 0 &&
+				    obs_weak_source_references_source(
+					    static_cast<obs_weak_source_t *>(obs_hotkey_get_registerer(hotkey)),
+					    key.parent)) {
+					key.id = id;
+					return false;
+				}
+				return true;
+			},
+			&key);
 		if (key.id == OBS_INVALID_HOTKEY_ID)
 			fail("The beta234 Dynamic Delay pause key was not registered on the parent");
 		else {
@@ -188,7 +195,8 @@ inline void check_native_filters(const QString &art, QStringList &issues)
 		for (int i = 0; i < 30 && !picked; ++i) {
 			QThread::msleep(25);
 			auto *value = obs_source_get_settings(source);
-			picked = QFileInfo(QString::fromUtf8(obs_data_get_string(value, "file"))).fileName() == "alternate.png";
+			picked = QFileInfo(QString::fromUtf8(obs_data_get_string(value, "file"))).fileName() ==
+				 "alternate.png";
 			obs_data_release(value);
 		}
 		if (!picked)
