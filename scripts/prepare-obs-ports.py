@@ -48,6 +48,27 @@ def adapt_file(text, key, filename, settings):
         text = text.replace('"' + name + '"', '"stagekit_port_' + name + '"')
         text = text.replace('"void ' + name + '(', '"void stagekit_port_' + name + '(')
     if key == "move":
+        if filename in ("move-source-filter.c", "move-source-swap-filter.c"):
+            swap = filename == "move-source-swap-filter.c"
+            prefix = "move_source_swap" if swap else "move_source"
+            marker = "struct obs_source_info " + prefix + "_filter = {"
+            detach = (
+                '    move_source_swap_source_changed(f, &f->source_name1, "", &f->scene_item1);\n'
+                '    move_source_swap_source_changed(f, &f->source_name2, "", &f->scene_item2);'
+                if swap else '    move_source_source_changed(f, "");')
+            # libobs clears the parent before deferred filter destruction. Disconnect while both objects are live.
+            handler = f"""static void sk_detach_move(void *data, obs_source_t *parent)
+{{
+    struct {prefix}_info *f = data;
+    signal_handler_t *signals = obs_source_get_signal_handler(parent);
+    signal_handler_disconnect(signals, "item_remove", {prefix}_item_remove, f);
+    signal_handler_disconnect(signals, "remove", {prefix}_scene_remove, f);
+    signal_handler_disconnect(signals, "destroy", {prefix}_scene_remove, f);
+{detach}
+}}
+
+"""
+            text = replace_once(text, marker, handler + marker + "\n\t.filter_remove = sk_detach_move,")
         text = re.sub(r'strcmp\((id(?:_a|_b)?), "source-clone"\) == 0',
                       lambda m: '(' + m[0] + ' || strcmp(' + m[1] + ', "stagekit_port_source-clone") == 0)', text)
         text = text.replace('obs_get_module("obs-shaderfilter")', 'obs_get_module("stagekit-port-shader")')

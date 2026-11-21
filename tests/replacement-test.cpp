@@ -350,6 +350,8 @@ int main(int argc, char **argv)
 	auto start_filter = [](obs_source_t *source) {
 		auto *props = obs_source_properties(source);
 		auto *start = props ? obs_properties_get(props, "move_filter_start") : nullptr;
+		if (!start && props)
+			start = obs_properties_get(props, "move_source_start");
 		check(start != nullptr, "Move Start control is available");
 		if (start)
 			obs_property_button_clicked(start, source);
@@ -369,6 +371,8 @@ int main(int argc, char **argv)
 	obs_source_update(move, movement);
 	obs_data_release(movement);
 	sleep_ms(100);
+	vec2 start_position{};
+	obs_sceneitem_set_pos(item, &start_position);
 	start_filter(move);
 	sleep_ms(300);
 	vec2 actual{};
@@ -415,11 +419,16 @@ int main(int argc, char **argv)
 	obs_source_release(edge);
 	obs_source_filter_remove(scene_source, move);
 	obs_source_release(move);
+	obs_wait_for_destroy_queue();
+	obs_sceneitem_remove(item);
 	obs_source_dec_showing(scene_source);
+	obs_source_remove(scene_source);
 	obs_scene_release(scene);
+	obs_wait_for_destroy_queue();
 
 	obs_source_dec_showing(image_source);
 	obs_source_release(image_source);
+	obs_wait_for_destroy_queue();
 	obs_shutdown();
 	return failures ? 1 : 0;
 }
