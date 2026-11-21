@@ -283,6 +283,7 @@
     "originalTool": "Dock Layout Manager"
   },
   "clone": {
+    "implementation": "stagekit",
     "types": [
       [
         "source-clone",

@@ -101,6 +101,10 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	obs_audio_info audio_info{};
+	audio_info.samples_per_sec = 48000;
+	audio_info.speakers = SPEAKERS_STEREO;
+	if (!obs_reset_audio(&audio_info)) return 1;
 	obs_video_info ovi = {};
 	ovi.graphics_module = "libobs-opengl";
 	ovi.fps_num = 60;
