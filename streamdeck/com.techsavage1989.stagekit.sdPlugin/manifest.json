@@ -1,6 +1,6 @@
 {
 	"Name": "StageKit",
-	"Version": "0.36.0.0",
+	"Version": "0.37.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
@@ -777,6 +777,29 @@
 				},
 				{
 					"Image": "imgs/actions/record/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			],
+			"DisableAutomaticStates": true
+		},
+		{
+			"Name": "Countdown Timer",
+			"UUID": "com.techsavage1989.stagekit.timer",
+			"Icon": "imgs/actions/timer/icon",
+			"Tooltip": "Set and start a StageKit timer at the next clock mark, or start, pause or stop it.",
+			"PropertyInspectorPath": "ui/timer.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/timer/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/timer/on",
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}

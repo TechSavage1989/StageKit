@@ -1326,6 +1326,10 @@ Open **Timer settings** in the dock or in the source properties.
 | Count down to a date and time | Pick a date from the calendar, click the hour and minute on the clock face, then choose AM or PM. Pausing freezes the readout. Resuming counts toward the original date and time. |
 | Count up | Start at zero. Enable **Stop after a duration** to set a finish time on the same clock. |
 
+From the dock, choose **Next quarter hour**, **Next :15**, **Next :30**, **Next :45**, or **Next full hour**, then press **Set and start**. These use the next matching local time, including across midnight. For example, at 2:38 the next quarter hour is 2:45, the next full hour is 3:00, and **Next :15** is 3:15. The date and time picker offers the same shortcuts. For a fixed duration, choose a minute preset such as **45 min** instead.
+
+In Stream Deck, add **StageKit > Countdown Timer**, select the private timer or a named scene timer, and choose a **Clock shortcut**. **Set and start / Stop** uses one key for both actions. For separate keys select **Set only**, **Set and start**, **Start or resume**, **Pause**, or **Stop and reset**. The key lights while its timer runs.
+
 Use **Start or resume**, **Pause** and **Reset** in the dock or source properties. **Reset** leaves the timer ready. For a scene source, **Restart when the scene goes live** starts it when the scene enters Program.
 
 **Time display** previews the number layout. Leave **Automatic format** on or select any combination of **Days**, **Hours**, **Minutes** and **Seconds**. Selecting minutes and seconds, for example, shows 90 minutes as **90:00**. The source properties also control the overlay font, size and color.

@@ -82,6 +82,7 @@ public:
 
 		auto *body = new QHBoxLayout;
 		clock_ = new ClockPicker(o.duration, target.time(), this);
+		clock_->date_picked = [this](QDate date) { date_->setDate(date); };
 		body->addWidget(clock_, 0, Qt::AlignTop);
 		auto *options_layout = new QVBoxLayout;
 		body->addLayout(options_layout, 1);

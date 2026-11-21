@@ -4,6 +4,7 @@ Copyright (C) 2026 StageKit contributors
 SPDX-License-Identifier: GPL-2.0-or-later
 */
 #include "countdown.hpp"
+#include "../api/vendor-api.hpp"
 #include "../common/timing.hpp"
 #include "../common/tooltip.hpp"
 
@@ -17,6 +18,7 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <QDateTime>
 #include <QFontMetricsF>
 #include <QStringList>
+#include <QVector>
 #include <array>
 #include <QImage>
 #include <QPainter>
@@ -354,24 +356,68 @@ public:
 			++*generation_;
 		}
 		obs_source_media_started(source_);
+		vendor_emit_timer_changed(source_);
 	}
 
 	void pause()
 	{
 		// Latch a deadline already crossed before accepting the pause.
 		tick();
-		std::lock_guard lock(mutex_);
-		if (clock_.state == OBS_MEDIA_STATE_PLAYING) {
+		{
+			std::lock_guard lock(mutex_);
+			if (clock_.state != OBS_MEDIA_STATE_PLAYING)
+				return;
 			clock_.position = clock_.elapsed();
 			clock_.state = OBS_MEDIA_STATE_PAUSED;
 		}
+		vendor_emit_timer_changed(source_);
 	}
 
 	void reset()
 	{
-		std::lock_guard lock(mutex_);
-		++*generation_;
-		clock_.reset();
+		{
+			std::lock_guard lock(mutex_);
+			++*generation_;
+			clock_.reset();
+		}
+		vendor_emit_timer_changed(source_);
+	}
+
+	bool command(const char *op, int mark)
+	{
+		const bool toggle = std::strcmp(op, "toggle") == 0;
+		if (std::strcmp(op, "stop") == 0 || (toggle && state() == OBS_MEDIA_STATE_PLAYING)) {
+			reset();
+			return true;
+		}
+		if (std::strcmp(op, "pause") == 0) {
+			pause();
+			return true;
+		}
+		if (std::strcmp(op, "start") == 0) {
+			start(false);
+			return true;
+		}
+		const bool set_only = std::strcmp(op, "set") == 0;
+		if (!set_only && !toggle && std::strcmp(op, "setStart") != 0)
+			return false;
+		if (mark != kSavedTimer) {
+			const auto next = next_timer_mark(QDateTime::currentDateTime(), mark);
+			if (!next.isValid())
+				return false;
+			OBSDataAutoRelease settings = obs_source_get_settings(source_);
+			obs_data_set_int(settings, "timer_mode", int(TimerMode::Deadline));
+			obs_data_set_int(settings, "deadline_ms", next.toMSecsSinceEpoch());
+			obs_data_set_bool(settings, "count_up_to_date", false);
+			obs_source_update(source_, settings);
+			// Apply the same settings before starting, including for a hidden or private timer.
+			update(settings);
+		}
+		if (set_only)
+			reset();
+		else
+			start(true);
+		return true;
 	}
 
 	void activate()
@@ -402,6 +448,7 @@ public:
 			run = generation_->load();
 		}
 		obs_source_media_ended(source_);
+		vendor_emit_timer_changed(source_);
 		if (!scene.isEmpty() && qApp) {
 			const OBSWeakSource weak = OBSGetWeakRef(source_);
 			QMetaObject::invokeMethod(
@@ -676,6 +723,19 @@ void defaults(obs_data_t *s)
 
 } // namespace
 
+bool timer_command(obs_source_t *source, const char *operation, int mark)
+{
+	if (!source || !operation || obs_source_removed(source) || std::strcmp(obs_source_get_id(source), kCountdownId) != 0)
+		return false;
+	calldata_t call{};
+	calldata_set_string(&call, "operation", operation);
+	calldata_set_int(&call, "mark", mark);
+	proc_handler_call(obs_source_get_proc_handler(source), "timer_command", &call);
+	const bool success = calldata_bool(&call, "success");
+	calldata_free(&call);
+	return success;
+}
+
 void register_countdown()
 {
 	obs_source_info info{};
@@ -709,6 +769,11 @@ void register_countdown()
 				calldata_set_bool(cd, "end_message", end_message);
 			},
 			timer);
+		proc_handler_add(obs_source_get_proc_handler(source), "void timer_command(in string operation, in int mark, out bool success)",
+				 [](void *data, calldata_t *params) {
+					 const char *op = calldata_string(params, "operation");
+					 calldata_set_bool(params, "success", op && static_cast<Countdown *>(data)->command(op, int(calldata_int(params, "mark"))));
+				 }, timer);
 		return timer;
 	};
 	info.destroy = [](void *d) {

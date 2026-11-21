@@ -21,6 +21,8 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <QResizeEvent>
 #include <QSignalBlocker>
 #include <QTimer>
+#include <QApplication>
+#include <QThread>
 #include <QVBoxLayout>
 #include <QWidget>
 #include <algorithm>
@@ -167,6 +169,22 @@ public:
 				[](obs_source_t *s) { obs_source_media_play_pause(s, true); });
 		button("countdownReset", "Countdown.Reset", obs_source_media_stop);
 		layout->addLayout(buttons);
+		auto *shortcuts = new QHBoxLayout;
+		auto *mark = new QComboBox(this);
+		mark->setObjectName("countdownMark");
+		mark->setAccessibleName(text("Countdown.ClockShortcut"));
+		for (size_t i = 0; i < std::size(timer_marks); ++i)
+			mark->addItem(text(timer_mark_labels[i]), timer_marks[i]);
+		auto *go = new QPushButton(text("Countdown.SetStart"), this);
+		go->setObjectName("countdownSetStart");
+		shortcuts->addWidget(mark, 1);
+		shortcuts->addWidget(go);
+		layout->addLayout(shortcuts);
+		connect(go, &QPushButton::clicked, this, [this, mark] {
+			auto source = target();
+			if (timer_command(source, "setStart", mark->currentData().toInt()))
+				obs_frontend_save();
+		});
 		layout->addStretch();
 		connect(targets_, &QComboBox::currentIndexChanged, this, [this] {
 			selected_ = targets_->currentData().toString();
@@ -214,6 +232,8 @@ public:
 			open_collection();
 		}
 	}
+
+	obs_source_t *private_timer() const { return loaded_ && !closed_ ? obs_source_get_ref(private_) : nullptr; }
 
 	void stream_started()
 	{
@@ -352,6 +372,64 @@ void frontend_event(obs_frontend_event e, void *)
 }
 
 } // namespace
+
+// The dock owns the private timer. Resolve it on the frontend thread before accessing a collection.
+void timer_vendor_list(obs_data_t *, obs_data_t *response, void *)
+{
+	auto list = [&] {
+		OBSDataArrayAutoRelease entries = obs_data_array_create();
+		auto append = [](obs_data_array_t *items, const char *id, const char *name) {
+			OBSDataAutoRelease entry = obs_data_create();
+			obs_data_set_string(entry, "value", id);
+			obs_data_set_string(entry, "label", name);
+			obs_data_array_push_back(items, entry);
+		};
+		OBSSourceAutoRelease hidden = dock ? dock->private_timer() : nullptr;
+		if (hidden)
+			append(entries, "private", obs_module_text("Countdown.Private"));
+		struct Context { obs_data_array_t *items; decltype(append) &add; } ctx{entries, append};
+		obs_enum_sources([](void *p, obs_source_t *s) {
+			auto &c = *static_cast<Context *>(p);
+			if (!obs_obj_is_private(s) && !obs_source_removed(s) && std::strcmp(obs_source_get_id(s), kCountdownId) == 0)
+				c.add(c.items, obs_source_get_uuid(s), obs_source_get_name(s));
+			return true;
+		}, &ctx);
+		obs_data_set_array(response, "timers", entries);
+		obs_data_set_bool(response, "success", true);
+	};
+	if (qApp && QThread::currentThread() != qApp->thread())
+		QMetaObject::invokeMethod(qApp, list, Qt::BlockingQueuedConnection);
+	else
+		list();
+}
+
+void timer_vendor_control(obs_data_t *request, obs_data_t *response, void *)
+{
+	auto apply = [&] {
+		const char *id = obs_data_get_string(request, "timer");
+		const char *op = obs_data_get_string(request, "operation");
+		OBSSourceAutoRelease timer = std::strcmp(id, "private") == 0 ? (dock ? dock->private_timer() : nullptr)
+									   : (*id ? obs_get_source_by_uuid(id) : nullptr);
+		bool ok = timer && !obs_source_removed(timer) && std::strcmp(obs_source_get_id(timer), kCountdownId) == 0;
+		if (ok && std::strcmp(op, "state") != 0) {
+			const auto mark = obs_data_has_user_value(request, "mark") ? obs_data_get_int(request, "mark") : kSavedTimer;
+			ok = mark >= kSavedTimer && mark <= 45 && timer_command(timer, op, int(mark));
+			if (ok && mark != kSavedTimer && obs_frontend_get_main_window())
+				obs_frontend_save();
+		}
+		obs_data_set_bool(response, "success", ok);
+		if (ok) {
+			obs_data_set_bool(response, "running", obs_source_media_get_state(timer) == OBS_MEDIA_STATE_PLAYING);
+			obs_data_set_string(response, "text", timer_readout(timer).toUtf8().constData());
+		} else {
+			obs_data_set_string(response, "error", "Choose an available StageKit timer and clock shortcut.");
+		}
+	};
+	if (qApp && QThread::currentThread() != qApp->thread())
+		QMetaObject::invokeMethod(qApp, apply, Qt::BlockingQueuedConnection);
+	else
+		apply();
+}
 
 void register_countdown_dock()
 {

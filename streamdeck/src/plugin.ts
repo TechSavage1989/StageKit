@@ -10,6 +10,7 @@ import { SceneModeKey } from "./actions/mode.ts";
 import { SceneBlurKey } from "./actions/scene-blur.ts";
 import { Hook } from "./actions/hook.ts";
 import { ObsControl } from "./actions/obs-control.ts";
+import { TimerKey } from "./actions/timer.ts";
 import { OutputKey } from "./actions/output.ts";
 import { Move } from "./actions/move.ts";
 import { PictureShape } from "./actions/shape.ts";
@@ -46,6 +47,7 @@ streamDeck.actions.registerAction(new Tool());
 streamDeck.actions.registerAction(new BlurAll());
 streamDeck.actions.registerAction(new DockOption());
 streamDeck.actions.registerAction(new Slide());
+streamDeck.actions.registerAction(new TimerKey());
 streamDeck.actions.registerAction(new OutputKey("stream"));
 streamDeck.actions.registerAction(new OutputKey("record"));
 // The first two keys there were, one for any switch and one for any move:

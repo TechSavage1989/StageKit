@@ -75,6 +75,18 @@ inline int ink_height(QLabel *label)
 	return last < first ? 0 : int((last - first + 1) / image.devicePixelRatio());
 }
 
+inline OBSDataAutoRelease vendor(const char *name, obs_data_t *request)
+{
+	calldata_t call{};
+	calldata_set_string(&call, "request", name);
+	calldata_set_string(&call, "data", obs_data_get_json(request));
+	proc_handler_call(obs_get_proc_handler(), "stagekit_vendor_call", &call);
+	const char *json = calldata_string(&call, "response");
+	OBSDataAutoRelease result = json ? obs_data_create_from_json(json) : obs_data_create();
+	calldata_free(&call);
+	return result;
+}
+
 inline void check(QStringList &issues, bool restart)
 {
 	auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
@@ -150,7 +162,31 @@ inline void check(QStringList &issues, bool restart)
 		return;
 	}
 	expect(choose(QStringLiteral("Private timer")), "private timer missing from the selector");
+	auto *mark = panel->findChild<QComboBox *>("countdownMark");
+	auto *set_start = panel->findChild<QPushButton *>("countdownSetStart");
+	OBSDataAutoRelease request = obs_data_create();
+	OBSDataAutoRelease found = vendor("ListTimers", request);
+	OBSDataArrayAutoRelease listed = obs_data_get_array(found, "timers");
+	expect(obs_data_get_bool(found, "success") && obs_data_array_count(listed) > 0, "Stream Deck timer list");
+	const auto press = [&](const char *id, const char *op, int minute) {
+		obs_data_set_string(request, "timer", id);
+		obs_data_set_string(request, "operation", op);
+		obs_data_set_int(request, "mark", minute);
+		return vendor("TimerControl", request);
+	};
+	if (mark && set_start) {
+		mark->setCurrentIndex(mark->findData(45));
+		set_start->click();
+		expect(until([&] { return status->text() == "Running"; }), "dock clock shortcut did not start the private timer");
+		OBSDataAutoRelease stopped = press("private", "toggle", 45);
+		expect(obs_data_get_bool(stopped, "success") && !obs_data_get_bool(stopped, "running"), "Stream Deck toggle did not stop the private timer");
+	} else {
+		expect(false, "dock clock shortcuts missing");
+	}
+	OBSDataAutoRelease wrong = press("missing-timer", "setStart", 15);
+	expect(!obs_data_get_bool(wrong, "success"), "a missing Stream Deck target controlled a different timer");
 	edit([&](QDialog *d) {
+		d->findChild<QComboBox *>("timerMode")->setCurrentIndex(0);
 		auto *days = d->findChild<QSpinBox *>("clockDays");
 		auto *preset = d->findChild<QPushButton *>("clockPreset15");
 		expect(days && preset, "duration presets or day picker missing");
@@ -185,6 +221,18 @@ inline void check(QStringList &issues, bool restart)
 	}
 	expect(choose(QStringLiteral("Operator timer")) && until([&] { return readout->text() == "01:13"; }),
 	       "the scene timer was not available in the dock");
+	const char *id = obs_source_get_uuid(source);
+	OBSDataAutoRelease set = press(id, "set", 30);
+	OBSDataAutoRelease saved = obs_source_get_settings(source);
+	const auto deadline = QDateTime::fromMSecsSinceEpoch(obs_data_get_int(saved, "deadline_ms"));
+	expect(obs_data_get_bool(set, "success") && !obs_data_get_bool(set, "running") && deadline.time().minute() == 30 && deadline.time().second() == 0, "Stream Deck set-only deadline");
+	OBSDataAutoRelease started = press(id, "setStart", 15);
+	expect(obs_data_get_bool(started, "running"), "Stream Deck set-and-start");
+	OBSDataAutoRelease stopped = press(id, "stop", -2);
+	expect(obs_data_get_bool(stopped, "success") && !obs_data_get_bool(stopped, "running"), "dedicated Stream Deck stop");
+	obs_data_set_int(data, "timer_mode", 0);
+	obs_source_update(source, data);
+	expect(until([&] { return readout->text() == "01:13"; }), "return to saved duration after a clock shortcut");
 	obs_source_set_name(source, shared_name.toUtf8().constData());
 	expect(until([&] { return targets->currentText() == shared_name; }),
 	       "renaming a linked timer broke the selection");
@@ -228,6 +276,13 @@ inline void check(QStringList &issues, bool restart)
 	const QTime at(19, 30, 0);
 	edit([&](QDialog *d) {
 		d->findChild<QComboBox *>("timerMode")->setCurrentIndex(1);
+		auto *quarter = d->findChild<QPushButton *>("clockMark-1");
+		expect(quarter && quarter->isVisible(), "next-quarter shortcut in the date picker");
+		if (quarter) {
+			quarter->click();
+			expect(d->findChild<QPushButton *>("clockMinute")->text().toInt() % 15 == 0 && d->findChild<QPushButton *>("clockSecond")->text() == "00", "clock shortcut did not select a quarter hour");
+		}
+
 		auto *calendar = d->findChild<QDateEdit *>("timerDate");
 		expect(calendar->calendarPopup() && calendar->isVisible(), "calendar picker missing in date mode");
 		calendar->setDate(date);

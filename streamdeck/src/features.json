@@ -29,6 +29,7 @@
 	"scenes": [
 		{ "key": "sceneblur", "kind": "stagekit_scene_blur", "name": "Scene Blur", "tip": "Blurs a scene's sources with its Scene Blur filter: on one scene, or on every scene that has a Scene Blur of that name. Lit while it is on." }
 	],
+	"timer": {"key": "timer", "name": "Countdown Timer", "tip": "Set and start a StageKit timer at the next clock mark, or start, pause or stop it."},
 	"sceneStarts": [
 		{"key": "movesourceport", "kind": "stagekit_port_move_source_filter", "name": "Move Source in Scene", "tip": "Starts a StageKit Move Source scene filter."},
 		{"key": "moveswapport", "kind": "stagekit_port_move_source_swap_filter", "name": "Swap Sources in Scene", "tip": "Starts a StageKit Move Source Swap scene filter."}

@@ -3,6 +3,8 @@
 #include "replacement-frame.hpp"
 #include "../src/common/alpha-bounds.hpp"
 #include "../src/countdown/stream-start.hpp"
+#include "../src/countdown/countdown.hpp"
+#include <QTimeZone>
 #include <QFileInfo>
 #include <QDir>
 #include <obs-module.h>
@@ -110,6 +112,29 @@ inline QString readout(obs_source_t *source)
 	const QString text = QString::fromUtf8(calldata_string(&call, "text"));
 	calldata_free(&call);
 	return text;
+}
+
+inline void clock_shortcuts(QStringList &issues)
+{
+	const QDate d(2026, 11, 21);
+	const QDateTime now(d, QTime(23, 38, 12, 777), Qt::UTC);
+	const auto expect = [&](const QDateTime &clock, int mark, const QDateTime &expected) {
+		if (stagekit::next_timer_mark(clock, mark) != expected)
+			issues.append(QStringLiteral("Countdown: wrong next clock mark %1").arg(mark));
+	};
+	expect(now, -1, QDateTime(d, QTime(23, 45), Qt::UTC));
+	expect(now, 45, QDateTime(d, QTime(23, 45), Qt::UTC));
+	for (int mark : {0, 15, 30})
+		expect(now, mark, QDateTime(d.addDays(1), QTime(0, mark), Qt::UTC));
+	expect(QDateTime(d, QTime(12, 15), Qt::UTC), 15, QDateTime(d, QTime(13, 15), Qt::UTC));
+	expect(now, 14, {});
+	const QTimeZone zone("America/New_York");
+	if (zone.isValid()) {
+		// Spring jumps to 03:00 while the autumn change revisits 01:00.
+		for (const QDateTime utc : {QDateTime(QDate(2026, 3, 8), QTime(6, 58), Qt::UTC),
+					     QDateTime(QDate(2026, 11, 1), QTime(5, 58), Qt::UTC)})
+			expect(utc.toTimeZone(zone), -1, utc.addSecs(120).toTimeZone(zone));
+	}
 }
 
 inline void modes(QStringList &issues)
@@ -393,20 +418,21 @@ inline bool sharp_scaled_timer(const QString &sheet_path, int font_size, int zoo
 	const QImage sharp(pixels.data(), w, h, w * 4, QImage::Format_RGBA8888_Premultiplied);
 	const QImage enlarged = original.scaled(w, h, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
 	auto coverage = [](const QImage &image) {
-		std::pair<int, int> totals{};
+		struct Coverage { int solid = 0, soft = 0; int64_t alpha = 0; } totals;
 		for (int y = 0; y < image.height(); ++y) {
 			const auto *line = image.constScanLine(y);
 			for (int x = 0; x < image.width(); ++x) {
 				const int a = line[4 * x + 3];
-				totals.first += a >= 224;
-				totals.second += a >= 32 && a < 224;
+				totals.solid += a >= 224;
+				totals.alpha += a;
+				totals.soft += a >= 32 && a < 224;
 			}
 		}
 		return totals;
 	};
 	const auto old = coverage(enlarged), current = coverage(sharp);
 	blog(LOG_INFO, "StageKit timer at %dx: solid pixels %d/%d, soft edge pixels %d/%d (bitmap/native)", zoom,
-	     old.first, current.first, old.second, current.second);
+	     old.solid, current.solid, old.soft, current.soft);
 	if (!sheet_path.isEmpty()) {
 		const int cell = 270;
 		const QRect crop(w / 2 - cell / 2, h / 2 - cell / 2, cell, cell);
@@ -423,8 +449,8 @@ inline bool sharp_scaled_timer(const QString &sheet_path, int font_size, int zoo
 		if (!sheet.save(QFileInfo(sheet_path).dir().filePath("countdown-scaled.png")))
 			return false;
 	}
-	return current.first > old.first * 0.88 && current.first < old.first * 1.12 && old.second > 100 &&
-	       current.second < old.second * 0.68 && int(obs_source_get_width(source)) == original.width() &&
+	return current.alpha > old.alpha * 0.88 && current.alpha < old.alpha * 1.12 && old.soft > 100 &&
+	       current.soft < old.soft * 0.68 && int(obs_source_get_width(source)) == original.width() &&
 	       int(obs_source_get_height(source)) == original.height();
 }
 
@@ -529,6 +555,7 @@ inline void check(QStringList &issues, const QString &sheet_path = {})
 	signal_handler_disconnect(obs_source_get_signal_handler(source), "media_ended", ended, &ends);
 	obs_source_dec_showing(source);
 	obs_source_release(source);
+	clock_shortcuts(issues);
 	modes(issues);
 	fitted_states(issues, sheet_path);
 	expect(sharp_scaled_timer(sheet_path, 100, 5),

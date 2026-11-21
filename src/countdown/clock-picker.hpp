@@ -5,6 +5,7 @@ SPDX-License-Identifier: GPL-2.0-or-later
 */
 #pragma once
 
+#include <QDate>
 #include <QTime>
 #include <QWidget>
 #include <array>
@@ -26,6 +27,7 @@ public:
 	int64_t duration_ms() const;
 	QTime local_time() const { return target_; }
 	std::function<void()> changed;
+	std::function<void(QDate)> date_picked;
 
 private:
 	void select_unit(int unit);
@@ -41,6 +43,7 @@ private:
 	QPushButton *am_, *pm_;
 	QTime duration_, target_;
 	int unit_ = 1;
+	QWidget *marks_row_ = nullptr;
 	bool wall_ = false;
 };
 
