@@ -260,11 +260,15 @@ static void finish_probe(const QStringList &issues)
 		auto *modal = QApplication::activeModalWidget();
 		auto *message = qobject_cast<QMessageBox *>(modal);
 		if (modal)
-			blog(LOG_INFO, "[replacement-probe] Shutdown modal %s: %s", modal->windowTitle().toUtf8().constData(),
+			blog(LOG_INFO, "[replacement-probe] Shutdown modal %s: %s",
+			     modal->windowTitle().toUtf8().constData(),
 			     message ? message->text().toUtf8().constData() : modal->metaObject()->className());
 	});
 	watchdog->start(1500);
-	QTimer::singleShot(50, qApp, &QApplication::quit);
+	// Close the OBS main window as the user would. QApplication::quit can close a
+	// floating dock first and queue OBS's first-time dock-close information dialog.
+	auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+	QTimer::singleShot(50, main, &QWidget::close);
 }
 
 static void exercise()
