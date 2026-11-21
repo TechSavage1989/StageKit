@@ -79,6 +79,7 @@
     ]
   },
   "delay": {
+    "implementation": "stagekit",
     "types": [
       [
         "dynamic_delay_filter",

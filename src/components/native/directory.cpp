@@ -27,10 +27,15 @@ Result find_file(Search query, uint64_t generation, bool random)
 	Result result{generation, {}};
 	if (query.directory.isEmpty())
 		return result;
-	QFileInfoList entries = QDir(query.directory).entryInfoList(QDir::Files | QDir::Readable | QDir::NoDotAndDotDot, QDir::Name);
-	entries.erase(std::remove_if(entries.begin(), entries.end(), [&](const QFileInfo &file) {
-		return (!query.suffix.isEmpty() && file.suffix().compare(query.suffix, Qt::CaseInsensitive) != 0) || !file.fileName().contains(query.contains);
-	}), entries.end());
+	QFileInfoList entries =
+		QDir(query.directory).entryInfoList(QDir::Files | QDir::Readable | QDir::NoDotAndDotDot, QDir::Name);
+	entries.erase(std::remove_if(entries.begin(), entries.end(),
+				     [&](const QFileInfo &file) {
+					     return (!query.suffix.isEmpty() &&
+						     file.suffix().compare(query.suffix, Qt::CaseInsensitive) != 0) ||
+						    !file.fileName().contains(query.contains);
+				     }),
+		      entries.end());
 	if (entries.empty())
 		return result;
 	auto stamp = [&](const QFileInfo &entry) {
@@ -38,13 +43,15 @@ Result find_file(Search query, uint64_t generation, bool random)
 		return query.order < 2 && created.isValid() ? created : entry.lastModified();
 	};
 	if (random || query.order == 6) {
-		result.selected = entries.at(QRandomGenerator::global()->bounded(int(entries.size()))).absoluteFilePath();
+		result.selected =
+			entries.at(QRandomGenerator::global()->bounded(int(entries.size()))).absoluteFilePath();
 	} else if (query.order >= 4) {
 		result.selected = (query.order == 4 ? entries.first() : entries.last()).absoluteFilePath();
 	} else {
-		const auto best = std::min_element(entries.cbegin(), entries.cend(), [&](const QFileInfo &a, const QFileInfo &b) {
-			return query.order % 2 ? stamp(a) < stamp(b) : stamp(a) > stamp(b);
-		});
+		const auto best =
+			std::min_element(entries.cbegin(), entries.cend(), [&](const QFileInfo &a, const QFileInfo &b) {
+				return query.order % 2 ? stamp(a) < stamp(b) : stamp(a) > stamp(b);
+			});
 		result.selected = best->absoluteFilePath();
 	}
 	return result;
@@ -71,7 +78,9 @@ struct Watch {
 	~Watch() { unbind(); }
 	void update(obs_data_t *s)
 	{
-		const auto qstring = [&](const char *key) { return QString::fromUtf8(obs_data_get_string(s, key)); };
+		const auto qstring = [&](const char *key) {
+			return QString::fromUtf8(obs_data_get_string(s, key));
+		};
 		search.directory = qstring("dir");
 		search.suffix = qstring("extension").trimmed();
 		if (search.suffix.startsWith('.'))
@@ -92,13 +101,17 @@ struct Watch {
 	{
 		auto *p = obs_properties_create();
 		obs_properties_add_path(p, "dir", text("Native.Directory"), OBS_PATH_DIRECTORY, nullptr, nullptr);
-		auto *order = obs_properties_add_list(p, "sort_by", text("Native.PickFile"), OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+		auto *order = obs_properties_add_list(p, "sort_by", text("Native.PickFile"), OBS_COMBO_TYPE_LIST,
+						      OBS_COMBO_FORMAT_INT);
 		int i = 0;
-		for (const char *label : {"Native.CreatedNew", "Native.CreatedOld", "Native.ModifiedNew", "Native.ModifiedOld", "Native.Alphabetical", "Native.ReverseAlphabetical", "Native.RandomFile"})
+		for (const char *label :
+		     {"Native.CreatedNew", "Native.CreatedOld", "Native.ModifiedNew", "Native.ModifiedOld",
+		      "Native.Alphabetical", "Native.ReverseAlphabetical", "Native.RandomFile"})
 			obs_property_list_add_int(order, text(label), i++);
 		obs_properties_add_text(p, "extension", text("Native.Extension"), OBS_TEXT_DEFAULT);
 		obs_properties_add_text(p, "filter", text("Native.NameContains"), OBS_TEXT_DEFAULT);
-		obs_property_int_set_suffix(obs_properties_add_int(p, "scan_interval", text("Native.Rescan"), 0, 3600000, 100), " ms");
+		obs_property_int_set_suffix(
+			obs_properties_add_int(p, "scan_interval", text("Native.Rescan"), 0, 3600000, 100), " ms");
 		return p;
 	}
 	template<Command C> static void press(void *ptr, obs_hotkey_id, obs_hotkey_t *, bool down)
@@ -124,7 +137,8 @@ struct Watch {
 				    {"dwm_delete_first", "Native.DeleteFirst", press<Command::DeleteFirst>},
 				    {"dwm_delete_last", "Native.DeleteLast", press<Command::DeleteLast>}};
 		for (size_t i = 0; i < bindings.size(); ++i)
-			bindings[i] = obs_hotkey_register_source(parent, keys[i].id, text(keys[i].label), keys[i].callback, this);
+			bindings[i] = obs_hotkey_register_source(parent, keys[i].id, text(keys[i].label),
+								 keys[i].callback, this);
 	}
 	void unbind()
 	{
@@ -193,8 +207,8 @@ struct Watch {
 			obs_source_update(parent, s);
 			if (command == Command::DeleteFirst || command == Command::DeleteLast) {
 				const auto dir = QDir(search.directory).canonicalPath();
-				if (!search.directory.isEmpty() && !dir.isEmpty() && !file.isSymLink() && file.isFile() &&
-				    file.canonicalPath() == dir)
+				if (!search.directory.isEmpty() && !dir.isEmpty() && !file.isSymLink() &&
+				    file.isFile() && file.canonicalPath() == dir)
 					QFile::remove(file.absoluteFilePath());
 			}
 		}
@@ -253,16 +267,32 @@ void load()
 	info.id = "stagekit_port_dir_watch_media";
 	info.type = OBS_SOURCE_TYPE_FILTER;
 	info.output_flags = OBS_SOURCE_VIDEO;
-	info.get_name = [](void *) { return text("Ports.DirectoryWatchMedia"); };
-	info.create = [](obs_data_t *s, obs_source_t *source) -> void * { return new Watch(s, source); };
-	info.destroy = [](void *p) { delete static_cast<Watch *>(p); };
-	info.update = [](void *p, obs_data_t *s) { static_cast<Watch *>(p)->update(s); };
+	info.get_name = [](void *) {
+		return text("Ports.DirectoryWatchMedia");
+	};
+	info.create = [](obs_data_t *s, obs_source_t *source) -> void * {
+		return new Watch(s, source);
+	};
+	info.destroy = [](void *p) {
+		delete static_cast<Watch *>(p);
+	};
+	info.update = [](void *p, obs_data_t *s) {
+		static_cast<Watch *>(p)->update(s);
+	};
 	info.get_defaults = Watch::defaults;
 	info.get_properties = Watch::properties;
-	info.filter_add = [](void *p, obs_source_t *parent) { static_cast<Watch *>(p)->bind(parent); };
-	info.filter_remove = [](void *p, obs_source_t *) { static_cast<Watch *>(p)->unbind(); };
-	info.video_tick = [](void *p, float elapsed) { static_cast<Watch *>(p)->tick(elapsed); };
-	info.video_render = [](void *p, gs_effect_t *) { obs_source_skip_video_filter(static_cast<Watch *>(p)->source); };
+	info.filter_add = [](void *p, obs_source_t *parent) {
+		static_cast<Watch *>(p)->bind(parent);
+	};
+	info.filter_remove = [](void *p, obs_source_t *) {
+		static_cast<Watch *>(p)->unbind();
+	};
+	info.video_tick = [](void *p, float elapsed) {
+		static_cast<Watch *>(p)->tick(elapsed);
+	};
+	info.video_render = [](void *p, gs_effect_t *) {
+		obs_source_skip_video_filter(static_cast<Watch *>(p)->source);
+	};
 	obs_register_source(&info);
 }
 } // namespace

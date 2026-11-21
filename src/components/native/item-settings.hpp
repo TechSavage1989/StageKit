@@ -2,6 +2,8 @@
 
 #include <obs.hpp>
 
+#include <initializer_list>
+
 namespace stagekit::native {
 inline void copy_transform(obs_sceneitem_t *from, obs_sceneitem_t *to)
 {

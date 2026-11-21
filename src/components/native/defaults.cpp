@@ -13,10 +13,14 @@ namespace stagekit::native {
 namespace {
 constexpr const char *video_id = "stagekit_port_source_defaults_video";
 constexpr const char *audio_id = "stagekit_port_source_defaults_audio";
-constexpr const char *options[] = {"copy_properties", "copy_filters", "copy_audio_monitoring", "copy_volume", "copy_muted",
-				  "copy_balance", "copy_sync_offset", "copy_audio_tracks", "copy_transform", "copy_visibility", "copy_visibility_transitions"};
-constexpr const char *labels[] = {"Native.CopyProperties", "Native.CopyFilters", "Native.CopyMonitor", "Native.CopyVolume", "Native.CopyMute",
-				 "Native.CopyBalance", "Native.CopySync", "Native.CopyTracks", "Native.CopyTransform", "Native.CopyVisible", "Native.CopyTransitions"};
+constexpr const char *options[] = {
+	"copy_properties", "copy_filters",    "copy_audio_monitoring",      "copy_volume",
+	"copy_muted",      "copy_balance",    "copy_sync_offset",           "copy_audio_tracks",
+	"copy_transform",  "copy_visibility", "copy_visibility_transitions"};
+constexpr const char *labels[] = {"Native.CopyProperties", "Native.CopyFilters",    "Native.CopyMonitor",
+				  "Native.CopyVolume",     "Native.CopyMute",       "Native.CopyBalance",
+				  "Native.CopySync",       "Native.CopyTracks",     "Native.CopyTransform",
+				  "Native.CopyVisible",    "Native.CopyTransitions"};
 std::atomic<bool> accepting{true};
 std::atomic<unsigned> collection_epoch{0};
 void frontend_event(obs_frontend_event e, void *)
@@ -39,7 +43,8 @@ void frontend_event(obs_frontend_event e, void *)
 bool marker(obs_source_t *source)
 {
 	const char *id = obs_source_get_unversioned_id(source);
-	return std::strcmp(id, video_id) == 0 || std::strcmp(id, audio_id) == 0 || std::strcmp(id, "source_defaults_video") == 0 || std::strcmp(id, "source_defaults_audio") == 0;
+	return std::strcmp(id, video_id) == 0 || std::strcmp(id, audio_id) == 0 ||
+	       std::strcmp(id, "source_defaults_video") == 0 || std::strcmp(id, "source_defaults_audio") == 0;
 }
 struct ItemSearch {
 	obs_source_t *source;
@@ -100,7 +105,8 @@ struct Template {
 		auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
 		auto *model = obs_filter_get_parent(self.filter);
 		if (!accepting.load() || !model || !source || source == model || !obs_source_enabled(self.filter) ||
-		    obs_obj_is_private(source) || obs_source_get_type(source) != OBS_SOURCE_TYPE_INPUT || obs_scene_from_source(source) || obs_group_from_source(source) ||
+		    obs_obj_is_private(source) || obs_source_get_type(source) != OBS_SOURCE_TYPE_INPUT ||
+		    obs_scene_from_source(source) || obs_group_from_source(source) ||
 		    std::strcmp(obs_source_get_unversioned_id(model), obs_source_get_unversioned_id(source)) != 0)
 			return;
 		std::lock_guard guard(self.mutex);
@@ -111,9 +117,11 @@ struct Template {
 		auto &self = *static_cast<Template *>(p);
 		auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
 		std::lock_guard guard(self.mutex);
-		self.pending.erase(std::remove_if(self.pending.begin(), self.pending.end(), [source](const NewSource &v) {
-			return obs_weak_source_references_source(v.source, source);
-		}), self.pending.end());
+		self.pending.erase(std::remove_if(self.pending.begin(), self.pending.end(),
+						  [source](const NewSource &v) {
+							  return obs_weak_source_references_source(v.source, source);
+						  }),
+				   self.pending.end());
 	}
 	static void renamed(void *p, calldata_t *cd)
 	{
@@ -133,10 +141,13 @@ struct Template {
 			obs_source_update(source, properties);
 		}
 		if (obs_data_get_bool(s, "copy_filters"))
-			obs_source_enum_filters(model, [](obs_source_t *, obs_source_t *child, void *arg) {
-				if (!marker(child))
-					obs_source_copy_single_filter(static_cast<obs_source_t *>(arg), child);
-			}, source);
+			obs_source_enum_filters(
+				model,
+				[](obs_source_t *, obs_source_t *child, void *arg) {
+					if (!marker(child))
+						obs_source_copy_single_filter(static_cast<obs_source_t *>(arg), child);
+				},
+				source);
 		if (obs_data_get_bool(s, "copy_audio_monitoring"))
 			obs_source_set_monitoring_type(source, obs_source_get_monitoring_type(model));
 		if (obs_data_get_bool(s, "copy_volume"))
@@ -216,13 +227,16 @@ obs_properties_t *properties(void *)
 	for (size_t i = 0; i < 8; ++i)
 		obs_properties_add_bool(p, options[i], text(labels[i]));
 	auto *items = obs_properties_create();
-	auto *scenes = obs_properties_add_list(items, "parent_scene", text("Native.TemplateScene"), OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	auto *scenes = obs_properties_add_list(items, "parent_scene", text("Native.TemplateScene"), OBS_COMBO_TYPE_LIST,
+					       OBS_COMBO_FORMAT_STRING);
 	obs_property_list_add_string(scenes, text("Native.AnyScene"), "");
-	obs_enum_scenes([](void *arg, obs_source_t *scene) {
-		const char *name = obs_source_get_name(scene);
-		obs_property_list_add_string(static_cast<obs_property_t *>(arg), name, name);
-		return true;
-	}, scenes);
+	obs_enum_scenes(
+		[](void *arg, obs_source_t *scene) {
+			const char *name = obs_source_get_name(scene);
+			obs_property_list_add_string(static_cast<obs_property_t *>(arg), name, name);
+			return true;
+		},
+		scenes);
 	for (size_t i = 8; i < 11; ++i)
 		obs_properties_add_bool(items, options[i], text(labels[i]));
 	obs_properties_add_group(p, "scene_item_settings", text("Native.ItemDefaults"), OBS_GROUP_CHECKABLE, items);
@@ -244,11 +258,21 @@ void load()
 		info.version = 1;
 		info.type = OBS_SOURCE_TYPE_FILTER;
 		info.output_flags = id == video_id ? OBS_SOURCE_VIDEO : OBS_SOURCE_AUDIO;
-		info.get_name = [](void *) { return text("Ports.SourceDefaults"); };
-		info.create = [](obs_data_t *, obs_source_t *source) -> void * { return new Template(source); };
-		info.destroy = [](void *p) { delete static_cast<Template *>(p); };
-		info.filter_add = [](void *p, obs_source_t *) { static_cast<Template *>(p)->attach(); };
-		info.filter_remove = [](void *p, obs_source_t *) { static_cast<Template *>(p)->detach(); };
+		info.get_name = [](void *) {
+			return text("Ports.SourceDefaults");
+		};
+		info.create = [](obs_data_t *, obs_source_t *source) -> void * {
+			return new Template(source);
+		};
+		info.destroy = [](void *p) {
+			delete static_cast<Template *>(p);
+		};
+		info.filter_add = [](void *p, obs_source_t *) {
+			static_cast<Template *>(p)->attach();
+		};
+		info.filter_remove = [](void *p, obs_source_t *) {
+			static_cast<Template *>(p)->detach();
+		};
 		info.get_properties = properties;
 		info.get_defaults = [](obs_data_t *s) {
 			for (const char *key : options)
@@ -257,7 +281,9 @@ void load()
 			obs_data_set_default_bool(s, "prefix_not_yet_applied", true);
 		};
 		if (id == video_id)
-			info.video_render = [](void *p, gs_effect_t *) { obs_source_skip_video_filter(static_cast<Template *>(p)->filter); };
+			info.video_render = [](void *p, gs_effect_t *) {
+				obs_source_skip_video_filter(static_cast<Template *>(p)->filter);
+			};
 		obs_register_source(&info);
 	}
 }
