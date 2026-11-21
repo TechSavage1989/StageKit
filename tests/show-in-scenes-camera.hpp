@@ -31,6 +31,7 @@ inline void check(QStringList &issues)
 	obs_data_release(cv);
 	auto *bottom = obs_scene_add(scene, square);
 	auto *top = obs_scene_add(scene, component);
+	auto *plain = obs_scene_add(other, square); // no assigned transitions in this scene
 	auto *already_hidden = obs_scene_add(other, square);
 	obs_sceneitem_set_visible(already_hidden, false);
 	obs_set_output_source(0, output);
@@ -124,20 +125,34 @@ inline void check(QStringList &issues)
 		obs_source_set_enabled(sw, show);
 		observe("OBS filter switch", show, true);
 	}
+	// Removing the scene rule leaves the square camera's assigned transitions in place.
+	obs_source_filter_remove(output, rules);
+	for (bool show : {false, true}) {
+		press_key(show);
+		observe("Item transitions on both cameras", show, true);
+	}
 	// An explicitly chosen per-source hide still outranks inheritance.
 	obs_data_set_string(settings, "for|Component test view|hide_transition", "fade_transition");
 	obs_data_set_int(settings, "for|Component test view|hide_ms", 700);
+	obs_data_set_int(settings, "transition_ms", 650);
 	obs_source_update(sw, settings);
 	obs_data_release(settings);
 	for (int i = 0; i < 5; ++i)
 		wait_frame();
 	press_key(false);
 	observe("Explicit per-source fade", false, false);
+	press_key(true);
+	observe("Restore after explicit fade", true, true);
+	for (bool show : {true, false}) {
+		auto *fallback = obs_sceneitem_get_transition(plain, show);
+		if (!fallback || strcmp(obs_source_get_unversioned_id(fallback), "fade_transition") != 0 ||
+		    obs_sceneitem_get_transition_duration(plain, show) != 650)
+			issues.append("The switch did not update its fallback fade on the unconfigured item");
+	}
 
 	obs_set_output_source(0, before);
 	obs_source_release(before);
 	obs_source_filter_remove(square, sw);
-	obs_source_filter_remove(output, rules);
 	obs_source_release(sw);
 	obs_source_release(rules);
 	obs_scene_release(other);

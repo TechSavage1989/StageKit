@@ -12,6 +12,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "pick-list.hpp"
 #include "scene-filter-ids.hpp"
 #include "scene-util.hpp"
+#include "../placement/show-in-scenes.hpp"
 #include "../transition/morph-paint.hpp"
 #include "../transition/item-morph.hpp"
 #include "../transition/morph.hpp"
@@ -103,6 +104,25 @@ bool overridden(obs_sceneitem_t *item, obs_source_t *scene, ItemChange &theirs)
 	return g_overriding.load() > 0 && !owned(item) && scene_says(item, scene, theirs, overrides) && overrides;
 }
 
+// Save the fallback duration on the fade we install. OBS saves its settings with the
+// item. A later edit to the switch can retime that fade, while a manually configured
+// fade (including one whose duration the user edited) keeps its own timing.
+constexpr const char *kSwitchFadeMs = "stagekit_show_in_scenes_fallback_ms";
+
+ItemWay switch_fallback(obs_sceneitem_t *item, bool show, uint32_t ms)
+{
+	if (obs_source_t *current = obs_sceneitem_get_transition(item, show)) {
+		obs_data_t *settings = obs_source_get_settings(current);
+		const bool fallback = strcmp(obs_source_get_unversioned_id(current), kTransitionFade) == 0 &&
+				      obs_data_has_user_value(settings, kSwitchFadeMs) &&
+				      obs_data_get_int(settings, kSwitchFadeMs) == obs_sceneitem_get_transition_duration(item, show);
+		obs_data_release(settings);
+		if (!fallback)
+			return ItemWay{kTransitionKeep, ms, {}};
+	}
+	return ItemWay{kTransitionFade, ms, std::string("{\"") + kSwitchFadeMs + "\":" + std::to_string(ms) + "}"};
+}
+
 ItemChange resolve_change(obs_sceneitem_t *item, const ItemChange &change, obs_source_t *scene, bool inherit_item)
 {
 	const bool show = change.show.kind == kTransitionScene, hide = change.hide.kind == kTransitionScene;
@@ -121,8 +141,8 @@ ItemChange resolve_change(obs_sceneitem_t *item, const ItemChange &change, obs_s
 	auto inherited = [&](bool appearing, const ItemWay &way, const ItemWay &scene_way) {
 		if (found && scene_way.kind != kTransitionScene)
 			return scene_way;
-		if (inherit_item && obs_sceneitem_get_transition(item, appearing))
-			return ItemWay{kTransitionKeep, way.ms, {}};
+		if (inherit_item)
+			return switch_fallback(item, appearing, way.ms);
 		return ItemWay{kTransitionFade, way.ms, {}};
 	};
 	if (show)
@@ -499,6 +519,11 @@ void apply_way(obs_sceneitem_t *item, bool show, const ItemWay &way, obs_source_
 	} else if (own) {
 		// The same kind as it has: its settings are made these, and no others.
 		obs_source_reset_settings(now, own);
+	} else if (way.kind == kTransitionFade) {
+		// An explicit fade now owns this direction, even if its duration is identical.
+		obs_data_t *settings = obs_source_get_settings(now);
+		obs_data_erase(settings, kSwitchFadeMs);
+		obs_data_release(settings);
 	}
 	obs_data_release(own);
 	if (obs_sceneitem_get_transition(item, show) && obs_sceneitem_get_transition_duration(item, show) != way.ms)

@@ -30,17 +30,6 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Show formatting differences for the camera check
-        run: |
-          if ! command -v clang-format-19 >/dev/null; then
-            sudo apt-get update -qq
-            sudo apt-get install -y clang-format-19
-          fi
-          for f in tests/replacement-frame.hpp tests/show-in-scenes-camera.hpp src/common/item-transition.cpp src/common/item-transition.hpp src/placement/show-in-scenes.cpp; do
-            clang-format-19 -i "$f"
-          done
-          git diff --no-color | sed 's/^/FORMAT|/'
-          git restore -- tests/replacement-frame.hpp tests/show-in-scenes-camera.hpp src/common/item-transition.cpp src/common/item-transition.hpp src/placement/show-in-scenes.cpp
       - name: Install OBS development files
         run: |
           sudo add-apt-repository -y ppa:obsproject/obs-studio
@@ -110,6 +99,17 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Show formatting differences for the camera check
+        run: |
+          if ! command -v clang-format-19 >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y clang-format-19
+          fi
+          for f in tests/replacement-frame.hpp tests/show-in-scenes-camera.hpp src/common/item-transition.cpp src/common/item-transition.hpp src/placement/show-in-scenes.cpp; do
+            clang-format-19 -i "$f"
+          done
+          git diff --no-color | sed 's/^/FORMAT|/'
+          git restore -- tests/replacement-frame.hpp tests/show-in-scenes-camera.hpp src/common/item-transition.cpp src/common/item-transition.hpp src/placement/show-in-scenes.cpp
       - uses: actions/setup-node@v4
         with:
           node-version: 24
