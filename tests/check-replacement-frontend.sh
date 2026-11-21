@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 build=$(realpath "$1")
+mkdir -p "$build/filter-results"
+export STAGEKIT_COUNTDOWN_CAPTURE="$build/filter-results/countdown-dock.png"
+export STAGEKIT_TIMER_EDITOR_CAPTURE="$build/filter-results/countdown-settings.png"
 scratch=$(mktemp -d)
 export HOME="$scratch/home" XDG_CONFIG_HOME="$scratch/config" STAGEKIT_TEST_REPORT="$scratch/result"
 mkdir -p "$HOME" "$XDG_CONFIG_HOME"

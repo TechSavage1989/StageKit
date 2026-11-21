@@ -18,8 +18,12 @@ inline AlphaBounds visible_alpha_bounds(const uint8_t *data, size_t stride, uint
 	AlphaBounds bounds{w, h, 0, 0};
 	if (!w || !h)
 		return bounds;
-	const auto row = [&](uint32_t y) { return data + (size_t)y * stride; };
-	const auto visible = [](const uint8_t *line, uint32_t x) { return line[(size_t)x * 4 + 3] > 12; };
+	const auto row = [&](uint32_t y) {
+		return data + (size_t)y * stride;
+	};
+	const auto visible = [](const uint8_t *line, uint32_t x) {
+		return line[(size_t)x * 4 + 3] > 12;
+	};
 	// Opposite corners alone establish all four edges, even with holes.
 	if ((visible(row(0), 0) && visible(row(h - 1), w - 1)) || (visible(row(0), w - 1) && visible(row(h - 1), 0)))
 		return {0, 0, w - 1, h - 1};

@@ -236,7 +236,8 @@ void glance_step(const void *asking, obs_source_t *scene, const std::vector<obs_
 			const AlphaBounds bounds = visible_alpha_bounds(data, linesize, kGlanceSize, kGlanceSize);
 			gs_stagesurface_unmap(g.stage);
 			if (bounds.left <= bounds.right)
-				seen = Glance{true, (int)bounds.left, (int)bounds.top, (int)bounds.right, (int)bounds.bottom};
+				seen = Glance{true, (int)bounds.left, (int)bounds.top, (int)bounds.right,
+					      (int)bounds.bottom};
 		}
 		obs_leave_graphics();
 		if (read) {

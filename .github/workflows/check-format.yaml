@@ -17,7 +17,7 @@ jobs:
       - name: Inspect formatted changes
         if: always()
         run: |
-          for path in src/common/alpha-bounds.hpp src/placement/fit-engine.cpp src/dock/arrange.cpp src/ambient/ambient-background.cpp tests/alpha-bounds-test.cpp; do
+          for path in src/common/alpha-bounds.hpp src/placement/fit-engine.cpp src/dock/arrange.cpp src/look/scene-shadow.cpp src/ambient/ambient-background.cpp tests/alpha-bounds-test.cpp src/countdown/countdown.cpp tests/countdown-test.hpp; do
             if clang-format-19 "$path" > "$RUNNER_TEMP/formatted.cpp"; then
               cp "$RUNNER_TEMP/formatted.cpp" "$path"
             fi
