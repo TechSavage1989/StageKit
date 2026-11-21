@@ -4,6 +4,7 @@ Copyright (C) 2026 StageKit contributors
 SPDX-License-Identifier: GPL-2.0-or-later
 */
 #include "countdown.hpp"
+#include "clock-picker.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -19,11 +20,8 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
-#include <QLocale>
 #include <QPushButton>
 #include <QStringList>
-#include <QSpinBox>
-#include <QTimeEdit>
 #include <QVBoxLayout>
 #include <algorithm>
 #include <array>
@@ -73,40 +71,24 @@ public:
 		limit_->setObjectName("timerLimit");
 		limit_->setChecked(o.limit);
 		timing->addRow(limit_);
-		duration_ = new QWidget(this);
-		auto *duration_layout = new QHBoxLayout(duration_);
-		duration_layout->setContentsMargins(0, 0, 0, 0);
-		int64_t duration = o.duration / 1000;
-		for (size_t i = 0; i < sizes.size(); ++i) {
-			auto *column = new QVBoxLayout;
-			auto *field = new QSpinBox(duration_);
-			values_[i] = field;
-			field->setObjectName(QString::fromLatin1(keys[i]));
-			field->setAccessibleName(label(names[i]));
-			field->setRange(0, max_values[i]);
-			field->setValue(int(duration / sizes[i]));
-			duration %= sizes[i];
-			column->addWidget(new QLabel(label(names[i]), duration_));
-			column->addWidget(field);
-			duration_layout->addLayout(column);
-		}
-		timing->addRow(duration_);
 		const auto target = o.deadline > 0 ? QDateTime::fromMSecsSinceEpoch(o.deadline)
 						   : QDateTime::currentDateTime().addSecs(3600);
 		date_ = new QDateEdit(target.date(), this);
 		date_->setObjectName("timerDate");
 		date_->setCalendarPopup(true);
 		date_->setDisplayFormat("ddd, MMM d, yyyy");
-		time_ = new QTimeEdit(target.time(), this);
-		time_->setObjectName("timerTime");
-		const bool am_pm = QLocale().timeFormat(QLocale::ShortFormat).contains("AP", Qt::CaseInsensitive);
-		time_->setDisplayFormat(am_pm ? "h:mm:ss AP" : "HH:mm:ss");
 		timing->addRow(label("Countdown.Date"), date_);
-		timing->addRow(label("Countdown.LocalTime"), time_);
+		layout->addLayout(timing);
+
+		auto *body = new QHBoxLayout;
+		clock_ = new ClockPicker(o.duration, target.time(), this);
+		body->addWidget(clock_, 0, Qt::AlignTop);
+		auto *options_layout = new QVBoxLayout;
+		body->addLayout(options_layout, 1);
+		layout->addLayout(body);
 		active_ = new QCheckBox(label("Countdown.Auto"), this);
 		active_->setChecked(o.on_program);
-		timing->addRow(active_);
-		layout->addLayout(timing);
+		options_layout->addWidget(active_);
 
 		auto *format = new QGroupBox(label("Countdown.Format"), this);
 		auto *format_layout = new QVBoxLayout(format);
@@ -129,7 +111,7 @@ public:
 		example_ = new QLabel(format);
 		example_->setObjectName("timerExample");
 		format_layout->addWidget(example_);
-		layout->addWidget(format);
+		options_layout->addWidget(format);
 
 		end_ = new QGroupBox(label("Countdown.AtEnd"), this);
 		auto *end_layout = new QFormLayout(end_);
@@ -150,7 +132,8 @@ public:
 		obs_frontend_source_list_free(&scenes);
 		scene_->setCurrentIndex(std::max(0, scene_->findData(o.scene)));
 		end_layout->addRow(label("Countdown.SwitchScene"), scene_);
-		layout->addWidget(end_);
+		options_layout->addWidget(end_);
+		options_layout->addStretch();
 
 		buttons_ = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
 		connect(buttons_, &QDialogButtonBox::accepted, this, &QDialog::accept);
@@ -160,11 +143,10 @@ public:
 			const auto options = read();
 			const bool target_mode = options.mode == TimerMode::Deadline;
 			limit_->setVisible(options.mode == TimerMode::CountUp);
-			duration_->setVisible(!target_mode && !options.unlimited());
-			for (QWidget *field : {static_cast<QWidget *>(date_), static_cast<QWidget *>(time_)}) {
-				field->setVisible(target_mode);
-				timing->labelForField(field)->setVisible(target_mode);
-			}
+			clock_->set_wall_time(target_mode);
+			clock_->setVisible(!options.unlimited());
+			date_->setVisible(target_mode);
+			timing->labelForField(date_)->setVisible(target_mode);
 			end_->setVisible(!options.unlimited());
 			for (auto *unit : units_)
 				unit->setEnabled(!automatic_->isChecked());
@@ -188,10 +170,8 @@ public:
 			connect(box, &QCheckBox::toggled, this, refresh);
 		for (auto *box : {limit_, automatic_})
 			connect(box, &QCheckBox::toggled, this, refresh);
-		for (auto *field : values_)
-			connect(field, &QSpinBox::valueChanged, this, refresh);
+		clock_->changed = refresh;
 		connect(date_, &QDateEdit::dateChanged, this, refresh);
-		connect(time_, &QTimeEdit::timeChanged, this, refresh);
 		refresh();
 	}
 
@@ -199,13 +179,11 @@ public:
 	{
 		TimerOptions o;
 		o.mode = static_cast<TimerMode>(mode_->currentIndex());
-		o.duration = 0;
-		for (size_t i = 0; i < sizes.size(); ++i) {
-			o.duration += values_[i]->value() * sizes[i] * 1000;
+		o.duration = clock_->duration_ms();
+		for (size_t i = 0; i < units_.size(); ++i)
 			if (!automatic_->isChecked() && units_[i]->isChecked())
 				o.units |= bits[i];
-		}
-		const QDateTime chosen(date_->date(), time_->time());
+		const QDateTime chosen(date_->date(), clock_->local_time());
 		o.deadline = chosen.isValid() ? chosen.toMSecsSinceEpoch() : 0;
 		o.limit = limit_->isChecked();
 		o.on_program = active_->isChecked();
@@ -219,14 +197,12 @@ public:
 private:
 	QComboBox *mode_, *scene_;
 	QDateEdit *date_;
-	QTimeEdit *time_;
+	ClockPicker *clock_;
 	QLineEdit *message_;
 	QCheckBox *limit_, *active_, *automatic_;
-	QWidget *duration_;
 	QGroupBox *end_;
 	QLabel *example_;
 	QDialogButtonBox *buttons_;
-	std::array<QSpinBox *, 4> values_{};
 	std::array<QCheckBox *, 4> units_{};
 };
 

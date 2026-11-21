@@ -11,6 +11,12 @@ on:
       - 'data/ports.json'
       - 'scripts/*obs-ports.py'
       - 'src/components/**'
+      - 'src/common/alpha-bounds.hpp'
+      - 'src/ambient/ambient-background.cpp'
+      - 'src/placement/fit-engine.cpp'
+      - 'src/dock/arrange.cpp'
+      - 'src/look/scene-shadow.cpp'
+      - 'tests/alpha-bounds-test.cpp'
       - 'src/countdown/**'
       - 'src/common/item-transition.*'
       - 'src/placement/show-in-scenes.*'
@@ -32,6 +38,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Check visible pixel bounds
+        run: |
+          c++ -std=c++17 -O2 tests/alpha-bounds-test.cpp -o "$RUNNER_TEMP/alpha-bounds"
+          "$RUNNER_TEMP/alpha-bounds"
       - name: Install OBS development files
         run: |
           sudo add-apt-repository -y ppa:obsproject/obs-studio
@@ -66,6 +76,20 @@ jobs:
           for test in REVIEW_CONTROLS RESTORE_HIDDEN SWITCH_COMMAND MAKE_ROOM MORPH_HOLDS; do
             env "STAGEKIT_TEST_ONLY_$test=1" xvfb-run -a build-ports/tests/stagekit-ambient-test "$PWD/build-ports/stagekit.so" "$PWD/data" \
               "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out" > "$out/$test.log" 2>&1 || { grep -F "  FAIL  " "$out/$test.log" || true; tail -90 "$out/$test.log"; exit 1; }
+            tail -3 "$out/$test.log"
+          done
+      - name: Check ambient lift and per-source shadow rendering
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          set -eu
+          out="$PWD/build-ports/camera-results"
+          mkdir -p "$out" "$out/../darkest"
+          python3 tests/make-test-image.py "$out"
+          for test in AMBIENT_DARKEST SHADOW_EACH; do
+            env "STAGEKIT_TEST_ONLY_$test=1" xvfb-run -a build-ports/tests/stagekit-ambient-test "$PWD/build-ports/stagekit.so" "$PWD/data" \
+              "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out" > "$out/$test.log" 2>&1 || { grep -F 'FAIL' "$out/$test.log" || true; tail -50 "$out/$test.log"; exit 1; }
             tail -3 "$out/$test.log"
           done
       - name: Open the replacement catalog in a fresh OBS frontend

@@ -1322,9 +1322,9 @@ Open **Timer settings** in the dock or in the source properties.
 
 | Mode | How to set the time |
 | --- | --- |
-| Count down for a duration | Enter days, hours, minutes and seconds. The default is five minutes. |
-| Count down to a date and time | Pick a date from the calendar and set a local time. Pausing freezes the readout. Resuming counts toward the original date and time. |
-| Count up | Start at zero. Enable **Stop after a duration** to finish at a set time. |
+| Count down for a duration | Choose a preset, or select Hours, Minutes or Seconds and click or drag the clock hand. Use Days for longer timers. |
+| Count down to a date and time | Pick a date from the calendar, click the hour and minute on the clock face, then choose AM or PM. Pausing freezes the readout. Resuming counts toward the original date and time. |
+| Count up | Start at zero. Enable **Stop after a duration** to set a finish time on the same clock. |
 
 Use **Start or resume**, **Pause** and **Reset** in the dock or source properties. **Reset** leaves the timer ready. For a scene source, **Restart when the scene goes live** starts it when the scene enters Program.
 

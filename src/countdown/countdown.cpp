@@ -95,7 +95,7 @@ struct Playback {
 			reset();
 		if (settings.mode == TimerMode::Deadline) {
 			const int64_t remaining = until_deadline();
-			if (!remaining) {
+			if (!remaining && state != OBS_MEDIA_STATE_PAUSED) {
 				position = span;
 				state = OBS_MEDIA_STATE_ENDED;
 				return false;

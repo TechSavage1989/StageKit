@@ -13,6 +13,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../placement/fit-engine.hpp"
 #include "../placement/fit-item.hpp"
 
+#include "../common/alpha-bounds.hpp"
 #include "../common/filter-input.hpp"
 #include "../common/shown-scale.hpp"
 #include "../shadow/shadow-backdrop.hpp"
@@ -182,17 +183,11 @@ void measure_drawn(obs_source_t *source, bool bare, uint32_t sw, uint32_t sh, ui
 		uint8_t *data = nullptr;
 		uint32_t linesize = 0;
 		if (gs_stagesurface_map(stage, &data, &linesize)) {
-			for (uint32_t y = 0; y < h; y++) {
-				const uint8_t *row = data + (size_t)y * linesize;
-				for (uint32_t x = 0; x < w; x++) {
-					if (row[x * 4 + 3] <= 12) // all but invisible
-						continue;
-					min_x = std::min(min_x, x);
-					max_x = std::max(max_x, x);
-					min_y = std::min(min_y, y);
-					max_y = std::max(max_y, y);
-				}
-			}
+			const AlphaBounds bounds = visible_alpha_bounds(data, linesize, w, h);
+			min_x = bounds.left;
+			min_y = bounds.top;
+			max_x = bounds.right;
+			max_y = bounds.bottom;
 			// A smoothed edge ends in one row of faint pixels, each much fainter
 			// than the one inside it. To the eye the picture ends before them,
 			// and counting them leaves a line of background showing along the

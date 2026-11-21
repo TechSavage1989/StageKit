@@ -182,6 +182,24 @@ inline void modes(QStringList &issues)
 	obs_source_media_stop(timer);
 	fail(wait_for([&] { return obs_source_media_get_state(timer) == OBS_MEDIA_STATE_STOPPED; }),
 	     "finished deadline reset");
+	const int64_t paused_target = QDateTime::currentMSecsSinceEpoch() + 1200;
+	obs_data_set_int(config, "deadline_ms", paused_target);
+	obs_source_update(timer, config);
+	fail(wait_for([&] { return obs_source_media_get_duration(timer) > 0; }), "second calendar preset");
+	std::atomic_int ends{0};
+	auto ended = [](void *data, calldata_t *) {
+		++*static_cast<std::atomic_int *>(data);
+	};
+	signal_handler_connect(obs_source_get_signal_handler(timer), "media_ended", ended, &ends);
+	obs_source_media_play_pause(timer, false);
+	obs_source_media_play_pause(timer, true);
+	fail(wait_for([&] { return QDateTime::currentMSecsSinceEpoch() >= paused_target; }), "paused target time");
+	fail(ends == 0 && obs_source_media_get_state(timer) == OBS_MEDIA_STATE_PAUSED,
+	     "paused calendar completed early");
+	obs_source_media_play_pause(timer, false);
+	fail(wait_for([&] { return ends == 1 && readout(timer) == "Break over"; }),
+	     "overdue resume missed finish actions");
+	signal_handler_disconnect(obs_source_get_signal_handler(timer), "media_ended", ended, &ends);
 }
 
 inline void check(QStringList &issues, const QString &sheet_path = {})

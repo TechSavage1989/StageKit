@@ -696,22 +696,33 @@ void SceneShadow::add_stages(const std::vector<obs_sceneitem_t *> &items,
 {
 	constexpr size_t kMostUnits = 6;
 	std::vector<obs_sceneitem_t *> whole, fading;
+	// The top layer's mask is precisely its cast picture when every
+	// contributing item casts and none needs a separate fading stage.
+	bool mask_is_cast = boxes && mask && hi == items.size();
 	for (size_t i = lo; i < hi && i < items.size(); i++) {
-		if ((boxes && !(*boxes)[i].present) || !(flags_of(items[i]) & kShadowCasts))
+		if (boxes && !(*boxes)[i].present)
 			continue;
+		if (!(flags_of(items[i]) & kShadowCasts)) {
+			mask_is_cast = false;
+			continue;
+		}
 		// (Without a mask of all the sources there is no presence to make.)
 		(mask && LookPaint::may_fade(items[i]) ? fading : whole).push_back(items[i]);
 	}
 	auto stage = [&](const std::vector<obs_sceneitem_t *> &group, bool with_presence) {
 		LookPaint::Stage out;
 		out.mask = mask;
-		gs_texrender_t *cast = canvas();
-		if (!paint_->begin_canvas(cast, cx, cy))
-			return;
-		for (obs_sceneitem_t *item : group)
-			draw(item);
-		paint_->end_canvas(cast);
-		out.cast = gs_texrender_get_texture(cast);
+		if (mask_is_cast && fading.empty()) {
+			out.cast = mask;
+		} else {
+			gs_texrender_t *cast = canvas();
+			if (!paint_->begin_canvas(cast, cx, cy))
+				return;
+			for (obs_sceneitem_t *item : group)
+				draw(item);
+			paint_->end_canvas(cast);
+			out.cast = gs_texrender_get_texture(cast);
+		}
 		if (!out.cast)
 			return;
 		if (look.box_line()) {

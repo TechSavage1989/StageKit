@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | feat/countdown-timer. Release notes in docs/releases/0.1.0-beta239.md. |
+| Working branch | perf/scene-fit-ambient-work. Release notes in docs/releases/0.1.0-beta240.md. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -23,7 +23,15 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Scene rendering performance
+
+Visible bounds use the existing alpha threshold and fringe handling. Scene Fit tracks each owner's claim directly. Scene Shadow can reuse the top layer mask when every contributing source casts and none is fading. Ambient Background can skip its darkest-level pass when the base image is the only input and the lift refers to that image. On the 1024 x 576 RGBA fixture with an inset opaque rectangle, the median scan time across five batches went from 0.260 ms to 0.054 ms (GCC -O2). This measures one CPU scan. All 12 Ambient Background and Scene Shadow reference frames matched beta239 byte for byte. Two software-renderer comparisons ran 450 frames per trial in before/after/after/before order. On the more consistent runner, the Live scene's median frame times were 157.034, 157.675, 156.043 and 155.211 ms in that order. StageKit tick time below the 1 ms cutoff was 219.0, 214.7, 209.5 and 209.0 microseconds per frame. The other runner ranged from 164.884 to 192.171 ms. Neither comparison showed a repeatable whole-frame reduction. Measure a hardware-backed collection separately before attributing a frame-time gain to these changes.
+
+Two supplemental headless probes also reproduced their beta239 failures on both builds. FIT_TOOL reported 136 x 76 for its kept-size assertion and exited during cleanup. DOCK_BOUNDS exited during cleanup. The SHADOW_FLICKER probe passed on both.
+
 ## Countdown Timer
+
+The shared editor uses a clock face for the duration, local deadline and optional count-up limit. Duration and deadline values are kept separately when switching modes. The OBS frontend fixture drives the dial using mouse events and verifies the saved readings.
 
 The native input stagekit_countdown and the StageKit Timer dock share one playback implementation. Each scene source or private timer owns its clock. Relative modes use monotonic time and calendar mode stores the local pick as an absolute instant. The dock selects public sources by UUID and persists its private settings per collection. A finish can display a message and switch Program to a scene by UUID. The headless and portable Windows fixtures exercise the clock, formats, rendered output, operator dock, calendar, scene switch and restart.
 
