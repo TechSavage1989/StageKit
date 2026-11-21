@@ -6,6 +6,7 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "countdown.hpp"
 #include "stream-start.hpp"
+#include "timer-line.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -25,7 +26,9 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <QVBoxLayout>
 #include <QWidget>
 #include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <optional>
 
 namespace stagekit {
 namespace {
@@ -53,21 +56,27 @@ public:
 		face_.setBold(true);
 	}
 
-	void display(const QString &value, bool message)
+	void display(const QString &value, const QString &layout, bool message)
 	{
-		if (value == text() && message == message_)
+		if (value == text() && layout == layout_ && message == message_)
 			return;
 		const bool changed_mode = message_ != message;
 		message_ = message;
+		layout_ = layout;
 		if (changed_mode) {
 			setWordWrap(message);
 			updateGeometry();
 		}
 		setText(value);
-		QString sample = value;
-		for (auto &c : sample)
-			if (c.isDigit())
-				c = QLatin1Char('8');
+		QString sample = layout_;
+		if (!message_) {
+			for (auto &c : sample) {
+				if (TimerLine::is_digit(c) || c == timer_digit_space)
+					c = QLatin1Char('8');
+				else if (c == timer_colon_space)
+					c = QLatin1Char(':');
+			}
+		}
 		if (changed_mode || sample != sample_) {
 			sample_ = sample;
 			fit();
@@ -78,6 +87,20 @@ public:
 	QSize minimumSizeHint() const override { return QSize(0, 68); }
 
 protected:
+	void paintEvent(QPaintEvent *event) override
+	{
+		if (message_ || !line_) {
+			QLabel::paintEvent(event);
+			return;
+		}
+		QFrame::paintEvent(event);
+		QPainter painter(this);
+		painter.setFont(face_);
+		painter.setPen(palette().color(foregroundRole()));
+		painter.setRenderHint(QPainter::TextAntialiasing);
+		line_->layout(layout_, &painter, QRectF(contentsRect()).center() - live_bounds_.center());
+	}
+
 	void resizeEvent(QResizeEvent *e) override
 	{
 		QLabel::resizeEvent(e);
@@ -98,13 +121,18 @@ private:
 				const QRect ink =
 					message_ ? metrics.boundingRect(QRect(0, 0, room.width(), 10000),
 									Qt::TextWordWrap, sample_)
-						 : QRect(0, 0, metrics.horizontalAdvance(sample_), metrics.height());
+						 : QRect(0, 0, int(std::ceil(TimerLine(face_).layout(sample_).width())), metrics.height());
 				if (ink.height() <= room.height() && ink.width() <= room.width())
 					low = mid;
 				else
 					high = mid - 1;
 			}
 			size = low;
+		}
+		face_.setPixelSize(size);
+		if (!message_) {
+			line_.emplace(face_);
+			live_bounds_ = line_->layout(sample_);
 		}
 		if (size != pixels_) {
 			pixels_ = size;
@@ -117,7 +145,9 @@ private:
 	}
 
 	QFont face_;
-	QString sample_;
+	QString sample_, layout_;
+	std::optional<TimerLine> line_;
+	QRectF live_bounds_;
 	int pixels_ = 0;
 	bool message_ = false;
 };
@@ -332,8 +362,9 @@ public:
 		if (!source)
 			return;
 		bool message = false;
-		const QString time = timer_readout(source, &message);
-		readout_->display(time, message);
+		QString layout;
+		const QString time = timer_readout(source, &message, &layout);
+		readout_->display(time, layout, message);
 		const auto state = obs_source_media_get_state(source);
 		const char *key = "Countdown.Ready";
 		if (state == OBS_MEDIA_STATE_PLAYING)
