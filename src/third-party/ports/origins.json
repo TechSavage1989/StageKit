@@ -1,0 +1,129 @@
+{
+  "projects": [
+    {
+      "key": "3d",
+      "project": "exeldro/obs-3d-effect",
+      "commit": "e0afa47fcebbfd4099fd8515145c483f550c85d1",
+      "version": "0.1.4"
+    },
+    {
+      "key": "masks",
+      "project": "FiniteSingularity/obs-advanced-masks",
+      "commit": "63f2eae2f9f174d781f4a127b66e878760430532",
+      "version": "1.5.4"
+    },
+    {
+      "key": "composite",
+      "project": "FiniteSingularity/obs-composite-blur",
+      "commit": "160f7ad4d464e85e24894187244cf71a3913aea9",
+      "version": "1.5.2"
+    },
+    {
+      "key": "retro",
+      "project": "FiniteSingularity/obs-retro-effects",
+      "commit": "35e9616a6f08692777578e3559d464ff8705929e",
+      "version": "1.0.2"
+    },
+    {
+      "key": "noise",
+      "project": "FiniteSingularity/obs-noise",
+      "commit": "0815be272ce2b49981dd37d9e28e0bc88f206edc",
+      "version": "1.0.0"
+    },
+    {
+      "key": "pixel",
+      "project": "dspstanky/pixel-art",
+      "commit": "c54ff2429510c46aade22a48b0835f2e5b568a9d",
+      "version": "0.0.4"
+    },
+    {
+      "key": "freeze",
+      "project": "exeldro/obs-freeze-filter",
+      "commit": "5de212bd067672f9349a85e0494a65c8b0156bd4",
+      "version": "0.3.5"
+    },
+    {
+      "key": "delay",
+      "project": "exeldro/obs-dynamic-delay",
+      "commit": "c6d4fbb7b7f30fb37c1e19738b37d4615df3f77a",
+      "version": "0.1.4"
+    },
+    {
+      "key": "recursion",
+      "project": "exeldro/obs-recursion-effect",
+      "commit": "61a835ecda4209e8678197b1e9582ede582aa876",
+      "version": "0.1.0"
+    },
+    {
+      "key": "warp",
+      "project": "exeldro/obs-time-warp-scan",
+      "commit": "12e224f3bda34c277487e434546a99ba5406e0fb",
+      "version": "0.1.7"
+    },
+    {
+      "key": "directory",
+      "project": "exeldro/obs-dir-watch-media",
+      "commit": "cc320fba63ac250eaefac6d0b8cc20f4bc88aa4f",
+      "version": "0.7.0"
+    },
+    {
+      "key": "defaults",
+      "project": "CodeYan01/source-defaults",
+      "commit": "3ce48509258379a7cb49351ad57d81abdf8963e9",
+      "version": "1.2.0"
+    },
+    {
+      "key": "move",
+      "project": "exeldro/obs-move-transition",
+      "commit": "d343b4e014fec5701fd31b13d63e31b68ba9c14a",
+      "version": "3.2.0"
+    },
+    {
+      "key": "shader",
+      "project": "exeldro/obs-shaderfilter",
+      "commit": "11a9d65b436b902eb2d6f6a0421894ee18a36196",
+      "version": "2.5.1"
+    },
+    {
+      "key": "copy",
+      "project": "exeldro/obs-source-copy",
+      "commit": "b7d5bac3572800011a3ec7f33955a35c06f748ca",
+      "version": "0.3.0"
+    },
+    {
+      "key": "dock",
+      "project": "exeldro/obs-source-dock",
+      "commit": "1ef24b0a805c4bc4cc9afe6a9ad13562a0d31586",
+      "version": "0.5.0"
+    },
+    {
+      "key": "table",
+      "project": "exeldro/obs-transition-table",
+      "commit": "1a85ab9de529ff521b7acad206ab55f4da72ac73",
+      "version": "0.2.7"
+    },
+    {
+      "key": "collections",
+      "project": "exeldro/obs-scene-collection-manager",
+      "commit": "30cde133fe7368672386c147fafd3e430cd15b46",
+      "version": "0.1.2"
+    },
+    {
+      "key": "quick",
+      "project": "FiniteSingularity/obs-quick-access-utility",
+      "commit": "5f7b613bf5d1494a408255650152be08ec5b0283",
+      "version": "1.0.4"
+    },
+    {
+      "key": "layouts",
+      "project": "RealProHenis/OBS-Dock-Layout-Manager",
+      "commit": "099d3941ebcf6563be6d1a1d917e8beef82e2a08",
+      "version": "1.1.5"
+    }
+  ],
+  "json_header": {
+    "project": "nlohmann/json",
+    "commit": "9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03",
+    "version": "3.11.3"
+  }
+}
