@@ -570,7 +570,8 @@ public:
 							 value != last_value_ &&
 							 (msg != last_message_ || style != last_style_) &&
 							 now - last_draw_ < 500000000ULL;
-				if (!update_texture(value, msg || options.format_output, wanted, switch_view, now))
+				const bool free_text = msg || (options.format_output && options.output_format != QStringLiteral("%time%"));
+				if (!update_texture(value, free_text, wanted, switch_view, now))
 					return;
 				last_value_ = value;
 				last_style_ = style;

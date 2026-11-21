@@ -226,14 +226,20 @@ inline void check(QStringList &issues, bool restart)
 	const char *id = obs_source_get_uuid(source);
 	for (const int minute : {15, 30, 45, 0, 15}) {
 		OBSDataAutoRelease cycled = press(id, "cycle", -2);
-		expect(obs_data_get_bool(cycled, "success") && !obs_data_get_bool(cycled, "running") && obs_data_get_int(cycled, "mark") == minute, "Stream Deck cycle order or idle state");
+		expect(obs_data_get_bool(cycled, "success") && !obs_data_get_bool(cycled, "running") &&
+			       obs_data_get_int(cycled, "mark") == minute,
+		       "Stream Deck cycle order or idle state");
 	}
 	OBSDataAutoRelease held_start = press(id, "cycleToggle", -2);
-	expect(obs_data_get_bool(held_start, "running") && obs_data_get_int(held_start, "mark") == 15, "hold did not start the displayed mark");
+	expect(obs_data_get_bool(held_start, "running") && obs_data_get_int(held_start, "mark") == 15,
+	       "hold did not start the displayed mark");
 	OBSDataAutoRelease live_cycle = press(id, "cycle", -2);
-	expect(obs_data_get_bool(live_cycle, "running") && obs_data_get_int(live_cycle, "mark") == 30, "cycling a running timer stopped it");
+	expect(obs_data_get_bool(live_cycle, "running") && obs_data_get_int(live_cycle, "mark") == 30,
+	       "cycling a running timer stopped it");
 	OBSDataAutoRelease held_stop = press(id, "cycleToggle", -2);
-	expect(obs_data_get_bool(held_stop, "success") && !obs_data_get_bool(held_stop, "running") && obs_data_get_int(held_stop, "mark") == 30, "hold did not stop without advancing");
+	expect(obs_data_get_bool(held_stop, "success") && !obs_data_get_bool(held_stop, "running") &&
+		       obs_data_get_int(held_stop, "mark") == 30,
+	       "hold did not stop without advancing");
 	OBSDataAutoRelease set = press(id, "set", 30);
 	OBSDataAutoRelease saved = obs_source_get_settings(source);
 	const auto deadline = QDateTime::fromMSecsSinceEpoch(obs_data_get_int(saved, "deadline_ms"));

@@ -117,22 +117,23 @@ inline QString readout(obs_source_t *source)
 inline void clock_shortcuts(QStringList &issues)
 {
 	const QDate d(2026, 11, 21);
-	const QDateTime now(d, QTime(23, 38, 12, 777), Qt::UTC);
+	const QTimeZone utc_zone(0);
+	const QDateTime now(d, QTime(23, 38, 12, 777), utc_zone);
 	const auto expect = [&](const QDateTime &clock, int mark, const QDateTime &expected) {
 		if (stagekit::next_timer_mark(clock, mark) != expected)
 			issues.append(QStringLiteral("Countdown: wrong next clock mark %1").arg(mark));
 	};
-	expect(now, -1, QDateTime(d, QTime(23, 45), Qt::UTC));
-	expect(now, 45, QDateTime(d, QTime(23, 45), Qt::UTC));
+	expect(now, -1, QDateTime(d, QTime(23, 45), utc_zone));
+	expect(now, 45, QDateTime(d, QTime(23, 45), utc_zone));
 	for (int mark : {0, 15, 30})
-		expect(now, mark, QDateTime(d.addDays(1), QTime(0, mark), Qt::UTC));
-	expect(QDateTime(d, QTime(12, 15), Qt::UTC), 15, QDateTime(d, QTime(13, 15), Qt::UTC));
+		expect(now, mark, QDateTime(d.addDays(1), QTime(0, mark), utc_zone));
+	expect(QDateTime(d, QTime(12, 15), utc_zone), 15, QDateTime(d, QTime(13, 15), utc_zone));
 	expect(now, 14, {});
 	const QTimeZone zone("America/New_York");
 	if (zone.isValid()) {
 		// Spring jumps to 03:00 while the autumn change revisits 01:00.
-		for (const QDateTime utc : {QDateTime(QDate(2026, 3, 8), QTime(6, 58), Qt::UTC),
-					    QDateTime(QDate(2026, 11, 1), QTime(5, 58), Qt::UTC)})
+		for (const auto &utc : {QDateTime(QDate(2026, 3, 8), QTime(6, 58), utc_zone),
+					    QDateTime(QDate(2026, 11, 1), QTime(5, 58), utc_zone)})
 			expect(utc.toTimeZone(zone), -1, utc.addSecs(120).toTimeZone(zone));
 	}
 }
@@ -326,7 +327,9 @@ inline void fitted_states(QStringList &issues, const QString &sheet_path)
 	const QRect clock_ink = painted(clock);
 	const QRect scene_ink = painted(placed_clock);
 	require(clock_ink.width() >= w * 0.90 && clock_ink.height() >= h * 0.90, "digits did not fill the transform");
-	require(std::abs(scene_ink.width() - clock_ink.width()) <= 3 && std::abs(scene_ink.height() - clock_ink.height()) <= 3 && !painted(reference.copy(0, 0, w, h)).isEmpty(),
+	require(std::abs(scene_ink.width() - clock_ink.width()) <= 3 &&
+			std::abs(scene_ink.height() - clock_ink.height()) <= 3 &&
+			!painted(reference.copy(0, 0, w, h)).isEmpty(),
 		"edge fixture placement");
 	auto inside = [&](const QImage &capture) {
 		QImage outside = capture;

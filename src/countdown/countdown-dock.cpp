@@ -423,7 +423,10 @@ void timer_vendor_control(obs_data_t *request, obs_data_t *response, void *)
 			const auto mark = obs_data_has_user_value(request, "mark") ? obs_data_get_int(request, "mark")
 										   : kSavedTimer;
 			ok = mark >= kSavedTimer && mark <= 45 && timer_command(timer, op, int(mark));
-			if (ok && (mark != kSavedTimer || std::strcmp(op, "cycle") == 0 || std::strcmp(op, "cycleToggle") == 0) && obs_frontend_get_main_window())
+			if (ok &&
+			    (mark != kSavedTimer || std::strcmp(op, "cycle") == 0 ||
+			     std::strcmp(op, "cycleToggle") == 0) &&
+			    obs_frontend_get_main_window())
 				obs_frontend_save();
 		}
 		obs_data_set_bool(response, "success", ok);

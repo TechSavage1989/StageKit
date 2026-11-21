@@ -62,7 +62,8 @@ inline QDateTime next_timer_mark(const QDateTime &now, int mark)
 }
 inline int saved_timer_mark(obs_data_t *settings)
 {
-	return obs_data_has_user_value(settings, "clock_shortcut") ? int(obs_data_get_int(settings, "clock_shortcut")) : kSavedTimer;
+	return obs_data_has_user_value(settings, "clock_shortcut") ? int(obs_data_get_int(settings, "clock_shortcut"))
+								   : kSavedTimer;
 }
 bool timer_command(obs_source_t *source, const char *operation, int mark = kSavedTimer);
 void timer_vendor_list(obs_data_t *request, obs_data_t *response, void *);
