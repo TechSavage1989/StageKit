@@ -202,11 +202,11 @@ void collection_tools_menu(QMenu *menu)
 			auto *ndi = new QCheckBox(tr("Native.LoadNdi"), &dialog);
 			ndi->setObjectName("stagekitLoadNdi");
 			ndi->setChecked(ndi_requested());
-			QObject::connect(ndi,&QCheckBox::toggled,&dialog,[ndi,&dialog](bool enabled){
+			QObject::connect(ndi, &QCheckBox::toggled, &dialog, [ndi, &dialog](bool enabled) {
 				if (!set_ndi_requested(enabled)) {
 					QSignalBlocker blocker(ndi);
 					ndi->setChecked(ndi_requested());
-					QMessageBox::warning(&dialog,dialog.windowTitle(),tr("Native.NdiSaveError"));
+					QMessageBox::warning(&dialog, dialog.windowTitle(), tr("Native.NdiSaveError"));
 				}
 			});
 			layout->addWidget(ndi);

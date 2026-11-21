@@ -13,9 +13,11 @@
 
 ## Replacing other OBS plugins
 
-In **Tools > Plugin Manager > Installed**, the main plugin is **StageKit** and each bundled plugin begins with **StageKit -**, such as **StageKit - Move Transition**.
+In **Tools > Plugin Manager > Installed**, independently implemented components have names such as **StageKit - Freeze Filter**. Components built from an upstream plugin end in **(port)**, for example **StageKit - Move Transition (port)**. In a StageKit-only collection, you can disable the matching standalone plugins. NDI defaults to off on fresh installations. You can change it under **Tools > StageKit > OBS filter replacements**.
 
-Open **Tools > StageKit > OBS filter replacements** to look up an existing filter or tool and save a converted copy of an OBS scene collection. In a Filters window, StageKit labels each entry **Source Filter** or **Scene Filter**. [Filter and tool equivalents, migration and requirements](docs/obs-filter-replacements.md)
+Open **Tools > StageKit > OBS filter replacements** to look up an existing filter or tool and save a converted copy of an OBS scene collection. In a Filters window, StageKit labels each entry **Source Filter** or **Scene Filter**. [Filter and tool equivalents, implementation details and migration](docs/obs-filter-replacements.md)
+
+![Four native StageKit filters rendered in OBS](docs/images/native-scene-effects.png)
 
 ## Features
 

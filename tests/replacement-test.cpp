@@ -138,7 +138,9 @@ int main(int argc, char **argv)
 		return 1;
 
 	QStringList native_issues;
+	obs_hotkey_enable_callback_rerouting(true);
 	replacement_test::check_native_filters(QString::fromUtf8(image), native_issues);
+	obs_hotkey_enable_callback_rerouting(false);
 	check(native_issues.isEmpty(),
 	      "native component renders and saved IDs: " + native_issues.join(", ").toStdString());
 
@@ -155,7 +157,7 @@ int main(int argc, char **argv)
 	const char *original_name = obs_get_module_name(obs_get_module("move-transition"));
 	const char *bundled_name = obs_get_module_name(obs_get_module("stagekit-port-move"));
 	check(original_name && strcmp(original_name, "Move Transition") == 0 && bundled_name &&
-		      strcmp(bundled_name, "StageKit - Move Transition") == 0,
+		      strcmp(bundled_name, "StageKit - Move Transition (port)") == 0,
 	      "standalone and bundled Move Transition report distinct plugin names");
 	auto move_callback = [](const char *proc, const char *filter) {
 		calldata_t data{};

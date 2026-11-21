@@ -6,6 +6,7 @@
 #include <atomic>
 #include <vector>
 #include <QFileInfo>
+#include <QFile>
 #include <QStringList>
 #include <QThread>
 #include <algorithm>
@@ -80,6 +81,14 @@ inline void check_native_filters(const QString &art, QStringList &issues)
 {
 	if (art.isEmpty())
 		return;
+	auto save_frame = [&](const QString &label, const std::vector<uint8_t> &pixels, uint32_t width, uint32_t height) {
+		if (pixels.size() != size_t(width) * height * 4) return;
+		QFile output(QFileInfo(art).absolutePath() + "/" + label + ".rgba");
+		if (!output.open(QIODevice::WriteOnly)) return;
+		output.write(reinterpret_cast<const char *>(&width),sizeof(width));
+		output.write(reinterpret_cast<const char *>(&height),sizeof(height));
+		output.write(reinterpret_cast<const char *>(pixels.data()),qint64(pixels.size()));
+	};
 	auto fail = [&](const char *message) {
 		issues.append(QString::fromUtf8(message));
 	};
@@ -118,6 +127,7 @@ inline void check_native_filters(const QString &art, QStringList &issues)
 			obs_source_update(source, settings);
 			QThread::msleep(160);
 			const auto still = render(source, w, h);
+			save_frame("native-freeze",still,w,h);
 			if (!retains_artwork(original) || still != original)
 				fail("Freeze did not retain the original frame while its source changed");
 			obs_source_filter_remove(source, hold);
@@ -141,6 +151,7 @@ inline void check_native_filters(const QString &art, QStringList &issues)
 			obs_source_filter_add(source, pixel);
 			QThread::msleep(100);
 			const auto changed = render(source, w, h);
+			save_frame("native-pixel",changed,w,h);
 			if (!retains_artwork(changed) || changed == original)
 				fail("Pixel Art did not render visible, changed pixels");
 			else {
@@ -171,6 +182,7 @@ inline void check_native_filters(const QString &art, QStringList &issues)
 			auto first = render(source, w, h);
 			QThread::msleep(70);
 			auto output = render(source, w, h);
+			save_frame(QString::fromUtf8(id),output,w,h);
 			if (hold_after_scan) {
 				auto alt = (QFileInfo(art).absolutePath() + "/alternate.png").toUtf8();
 				obs_data_set_string(settings, "file", alt.constData());

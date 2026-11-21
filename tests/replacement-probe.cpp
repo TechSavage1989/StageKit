@@ -333,6 +333,12 @@ static void exercise()
 			issues.append("Catalog search did not return the labeled Directory Watch Media filter");
 	}
 	replacement_test::check_native_filters(qEnvironmentVariable("STAGEKIT_TEST_ART"), issues);
+	for (const char *key : {"freeze", "pixel", "3d", "recursion", "warp", "layouts", "directory", "defaults", "delay", "table", "quick", "clone"}) {
+		const auto module_name = QByteArray("stagekit-port-") + key;
+		auto *module = obs_get_module(module_name.constData());
+		const char *author = module ? obs_get_module_author(module) : nullptr;
+		if (!author || QString::fromUtf8(author) != "StageKit contributors") issues.append("Incorrect author for " + QString::fromUtf8(module_name));
+	}
 	check_native_layout(issues);
 	check_native_table(issues);
 	check_native_quick(issues);

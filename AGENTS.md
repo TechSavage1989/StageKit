@@ -16,6 +16,8 @@ checks the owning plugins recorded in `plugin_manager/modules.json`.
 
 Keep Plugin Manager names under the Ports.Module prefix in the main locale. Each bundled module exports its own StageKit-prefixed display name. Its filename remains the identifier OBS uses for enablement and source ownership.
 
+In data/ports.json the implementation value "stagekit" selects independent component source in src/components/native. Keep the module filename, versioned OBS type IDs, saved settings and hotkeys compatible. A native component can identify StageKit as its author. Components still compiled from a supplier carry the (port) suffix in Plugin Manager and keep their notices. NDI is optional. Exercise both the enabled upgrade case and the disabled restart in the portable OBS fixture.
+
 Read [the replacement catalog](docs/obs-filter-replacements.md) before changing the compatibility modules. Preserve the pinned supplier files and licenses in src/third-party/ports. Integrations, OBS IDs and labels belong in scripts/prepare-obs-ports.py and data/ports.json. Source and scene filter labels identify the host in the OBS menu. A collection conversion must write a new file, preserve unsupported IDs, and retain the source and filter names used by chained Move actions.
 
 ## Saved scene settings and source renames

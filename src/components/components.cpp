@@ -21,61 +21,79 @@ constexpr auto preference = "LoadNDI";
 bool previous_ndi(config_t *config)
 {
 	char *raw = obs_module_config_path("../../");
-	if (!raw) return false;
+	if (!raw)
+		return false;
 	const QDir obs_config(QDir::cleanPath(QString::fromUtf8(raw)));
 	bfree(raw);
 	QFile records(obs_config.filePath("plugin_manager/modules.json"));
-	if(records.open(QIODevice::ReadOnly)) {
-		QByteArray saved=records.readAll();
-		if(saved.startsWith("\xEF\xBB\xBF")) saved.remove(0,3);
-		const auto modules=QJsonDocument::fromJson(saved).array();
-		for(const auto &item : modules) {
-			const auto module=item.toObject();
-			if(module.value("module_name").toString() != "stagekit-port-ndi") continue;
-			if(!module.value("enabled").toBool(true)) return false;
-			for(const char *field : {"sources","outputs"})
-				for(const auto &id : module.value(field).toArray())
-					if(id.toString().startsWith("stagekit_port_ndi_") || id.toString()=="stagekit_port_ndi_audiofilter") return true;
+	if (records.open(QIODevice::ReadOnly)) {
+		QByteArray saved = records.readAll();
+		if (saved.startsWith("\xEF\xBB\xBF"))
+			saved.remove(0, 3);
+		const auto modules = QJsonDocument::fromJson(saved).array();
+		for (const auto &item : modules) {
+			const auto module = item.toObject();
+			if (module.value("module_name").toString() != "stagekit-port-ndi")
+				continue;
+			if (!module.value("enabled").toBool(true))
+				return false;
+			for (const char *field : {"sources", "outputs"})
+				for (const auto &id : module.value(field).toArray())
+					if (id.toString().startsWith("stagekit_port_ndi_") ||
+					    id.toString() == "stagekit_port_ndi_audiofilter")
+						return true;
 		}
 	}
-	const char *active=config_get_string(config,"Basic","SceneCollectionFile");
-	if(!active || !*active) return false;
-	const QString name=QString::fromUtf8(active);
-	if(QFileInfo(name).fileName()!=name)return false;
-	QFile scene(obs_config.filePath("basic/scenes/"+name+".json"));
-	if(!scene.open(QIODevice::ReadOnly))return false;
+	const char *active = config_get_string(config, "Basic", "SceneCollectionFile");
+	if (!active || !*active)
+		return false;
+	const QString name = QString::fromUtf8(active);
+	if (QFileInfo(name).fileName() != name)
+		return false;
+	QFile scene(obs_config.filePath("basic/scenes/" + name + ".json"));
+	if (!scene.open(QIODevice::ReadOnly))
+		return false;
 	QByteArray tail;
 	while (!scene.atEnd()) {
-		const auto chunk=scene.read(65536);
-		if(chunk.isEmpty())break;
-		tail+=chunk;
-		if(tail.contains("\"stagekit_port_ndi_")) return true;
-		tail=tail.right(32);
+		const auto chunk = scene.read(65536);
+		if (chunk.isEmpty())
+			break;
+		tail += chunk;
+		if (tail.contains("\"stagekit_port_ndi_"))
+			return true;
+		tail = tail.right(32);
 	}
 	return false;
 }
-}
+} // namespace
 
 bool ndi_requested()
 {
-	if(!obs_frontend_get_main_window())return false;
-	auto *cfg=obs_frontend_get_user_config();
-	if(!cfg)return false;
-	if(config_has_user_value(cfg,"StageKit",preference))return config_get_bool(cfg,"StageKit",preference);
-	static const bool previous=previous_ndi(cfg);
+	if (!obs_frontend_get_main_window())
+		return false;
+	auto *cfg = obs_frontend_get_user_config();
+	if (!cfg)
+		return false;
+	if (config_has_user_value(cfg, "StageKit", preference))
+		return config_get_bool(cfg, "StageKit", preference);
+	static const bool previous = previous_ndi(cfg);
 	return previous;
 }
 
 bool set_ndi_requested(bool enabled)
 {
-	auto *cfg=obs_frontend_get_user_config();
-	if(!cfg)return false;
-	const bool had=config_has_user_value(cfg,"StageKit",preference);
-	const bool previous=config_get_bool(cfg,"StageKit",preference);
-	config_set_bool(cfg,"StageKit",preference,enabled);
-	if(config_save_safe(cfg,"tmp","bak")==CONFIG_SUCCESS)return true;
-	if(had)config_set_bool(cfg,"StageKit",preference,previous);
-	else config_remove_value(cfg,"StageKit",preference);
+	auto *cfg = obs_frontend_get_user_config();
+	if (!cfg)
+		return false;
+	const bool had = config_has_user_value(cfg, "StageKit", preference);
+	const bool previous = config_get_bool(cfg, "StageKit", preference);
+	config_set_bool(cfg, "StageKit", preference, enabled);
+	if (config_save_safe(cfg, "tmp", "bak") == CONFIG_SUCCESS)
+		return true;
+	if (had)
+		config_set_bool(cfg, "StageKit", preference, previous);
+	else
+		config_remove_value(cfg, "StageKit", preference);
 	return false;
 }
 
