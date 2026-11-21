@@ -45,6 +45,12 @@ def import_project(origin, src):
         elif path.name in {"LICENSE", "COPYING", "NOTICE", "AUTHORS", "LICENSE.md"}:
             install_file(path, dest / rel)
             install_file(path, assets / "notices" / rel)
+        elif name == "ndi" and rel.parts[:2] == ("lib", "ndi") and path.suffix == ".h":
+            if "Permission is hereby granted" not in path.read_text(encoding="utf-8-sig")[:4000]:
+                raise RuntimeError("Unexpected license on " + str(rel))
+            install_file(path, dest / rel)
+        elif name == "ndi" and rel.name == "NDI SDK License Agreement.pdf":
+            install_file(path, assets / "notices" / rel.name)
         elif rel.parts[0] == "src" or len(rel.parts) == 1:
             if path.suffix in CODE or path.name in {"version.h.in", "plugin-support.c.in", "README.md", "buildspec.json"}:
                 install_file(path, dest / rel)

@@ -119,6 +119,12 @@
       "project": "RealProHenis/OBS-Dock-Layout-Manager",
       "commit": "099d3941ebcf6563be6d1a1d917e8beef82e2a08",
       "version": "1.1.5"
+    },
+    {
+      "key": "ndi",
+      "project": "DistroAV/DistroAV",
+      "commit": "2bf2bd0ad4c074777d7ca4824182ea5ff2445cba",
+      "version": "6.1.1"
     }
   ],
   "json_header": {
