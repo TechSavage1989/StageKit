@@ -1,0 +1,222 @@
+#pragma once
+
+#include "countdown-test.hpp"
+#include <obs-frontend-api.h>
+#include <obs.hpp>
+#include <QApplication>
+#include <QComboBox>
+#include <QDateEdit>
+#include <QTimeEdit>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QCheckBox>
+#include <QLineEdit>
+#include <QTimer>
+#include <QDockWidget>
+#include <QLabel>
+#include <QLayout>
+#include <QMainWindow>
+#include <QPushButton>
+#include <QSpinBox>
+
+namespace countdown_dock_test {
+
+template<typename Predicate> bool until(Predicate predicate)
+{
+	return countdown_test::wait_for([&] {
+		QCoreApplication::processEvents(QEventLoop::AllEvents, 15);
+		return predicate();
+	});
+}
+
+inline void check(QStringList &issues, bool restart)
+{
+	auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+	auto *panel = main->findChild<QWidget *>("stagekitCountdownControls");
+	if (!panel) {
+		issues.append("Missing Countdown Timer dock");
+		return;
+	}
+	for (auto *p = panel->parentWidget(); p; p = p->parentWidget())
+		if (auto *dock = qobject_cast<QDockWidget *>(p)) {
+			dock->show();
+			dock->raise();
+			break;
+		}
+	auto *targets = panel->findChild<QComboBox *>("countdownTarget");
+	auto *readout = panel->findChild<QLabel *>("countdownReadout");
+	auto *status = panel->findChild<QLabel *>("countdownStatus");
+	auto *settings = panel->findChild<QPushButton *>("countdownSettings");
+	auto *start = panel->findChild<QPushButton *>("countdownStart");
+	auto *pause = panel->findChild<QPushButton *>("countdownPause");
+	auto *reset = panel->findChild<QPushButton *>("countdownReset");
+	if (!targets || !readout || !status || !settings || !start || !pause || !reset) {
+		issues.append("Countdown dock is missing operator controls");
+		return;
+	}
+	auto expect = [&](bool value, const char *message) {
+		if (!value)
+			issues.append(QStringLiteral("Countdown dock: ") + QString::fromLatin1(message));
+	};
+	auto choose = [&](const QString &name) {
+		if (!until([&] { return targets->findText(name) >= 0; }))
+			return false;
+		targets->setCurrentIndex(targets->findText(name));
+		return true;
+	};
+	auto edit = [&](auto action) {
+		bool opened = false;
+		QObject owner;
+		QTimer::singleShot(50, &owner, [&] {
+			auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+			if (dialog && dialog->objectName() == "stagekitTimerEditor") {
+				opened = true;
+				action(dialog);
+				auto *ok = dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok);
+				if (ok->isEnabled())
+					ok->click();
+				else
+					dialog->reject();
+			}
+		});
+		QTimer::singleShot(2400, &owner, [] {
+			if (auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget()))
+				dialog->reject();
+		});
+		settings->click();
+		expect(opened, "the timer settings dialog did not open");
+	};
+	const QString shared_name = QStringLiteral("Operator timer renamed");
+	if (restart) {
+		expect(until([&] { return targets->currentText() == shared_name && readout->text() == "01:13"; }),
+		       "the selected scene timer and its preset were not restored after restarting OBS");
+		choose(QStringLiteral("Private timer"));
+		expect(until([&] { return readout->text() == "00:07" && status->text() == "Ready"; }),
+		       "the private preset was not restored in a stopped state");
+		return;
+	}
+	expect(choose(QStringLiteral("Private timer")), "private timer missing from the selector");
+	edit([](QDialog *d) {
+		d->findChild<QSpinBox *>("minutes")->setValue(0);
+		d->findChild<QSpinBox *>("seconds")->setValue(7);
+	});
+	expect(until([&] { return readout->text() == "00:07"; }), "the private duration picker was not applied");
+	start->click();
+	expect(until([&] { return status->text() == "Running" && readout->text() == "00:06"; }),
+	       "the private timer did not run");
+	pause->click();
+	expect(until([&] { return status->text() == "Paused"; }), "the private timer did not pause");
+	const auto held = readout->text();
+	OBSDataAutoRelease data = obs_data_create();
+	obs_data_set_int(data, "minutes", 1);
+	obs_data_set_int(data, "seconds", 13);
+	OBSSourceAutoRelease source = obs_source_create("stagekit_countdown", "Operator timer", data, nullptr);
+	OBSSourceAutoRelease scene = obs_frontend_get_current_scene();
+	if (!source || !scene || !obs_scene_add(obs_scene_from_source(scene), source)) {
+		issues.append("Could not place the countdown test source in the fixture scene");
+		return;
+	}
+	expect(choose(QStringLiteral("Operator timer")) && until([&] { return readout->text() == "01:13"; }),
+	       "the scene timer was not available in the dock");
+	obs_source_set_name(source, shared_name.toUtf8().constData());
+	expect(until([&] { return targets->currentText() == shared_name; }),
+	       "renaming a linked timer broke the selection");
+	start->click();
+	expect(until([&] {
+		       return obs_source_media_get_state(source) == OBS_MEDIA_STATE_PLAYING && pause->isEnabled();
+	       }),
+	       "the dock did not start the scene source");
+	pause->click();
+	expect(until([&] { return obs_source_media_get_state(source) == OBS_MEDIA_STATE_PAUSED; }),
+	       "the dock did not pause the scene source");
+	obs_source_media_set_time(source, 30000);
+	expect(until([&] { return readout->text() == "00:43" && status->text() == "Paused"; }),
+	       "a change from OBS media controls did not appear in the dock");
+	const QString capture = qEnvironmentVariable("STAGEKIT_COUNTDOWN_CAPTURE");
+	if (!capture.isEmpty()) {
+		const int bottom = reset->mapTo(panel, QPoint(0, reset->height())).y() +
+				   panel->layout()->contentsMargins().bottom();
+		expect(panel->grab(QRect(0, 0, panel->width(), std::min(bottom, panel->height()))).save(capture),
+		       "could not capture the actual dock");
+	}
+	reset->click();
+	expect(until([&] {
+		       return obs_source_media_get_state(source) == OBS_MEDIA_STATE_STOPPED &&
+			      readout->text() == "01:13";
+	       }),
+	       "the dock did not reset the scene source");
+	expect(choose(QStringLiteral("Private timer")) &&
+		       until([&] { return readout->text() == held && status->text() == "Paused"; }),
+	       "operating the scene timer changed the private timer");
+	choose(shared_name);
+	OBSSceneAutoRelease destination = obs_scene_create("Timer finish fixture");
+	const QString dest_id = QString::fromUtf8(obs_source_get_uuid(obs_scene_get_source(destination)));
+	const QDate date = QDate::currentDate().addDays(2);
+	const QTime at(19, 30, 0);
+	edit([&](QDialog *d) {
+		d->findChild<QComboBox *>("timerMode")->setCurrentIndex(1);
+		auto *calendar = d->findChild<QDateEdit *>("timerDate");
+		expect(calendar->calendarPopup() && calendar->isVisible(), "calendar picker missing in date mode");
+		calendar->setDate(date);
+		d->findChild<QTimeEdit *>("timerTime")->setTime(at);
+		d->findChild<QLineEdit *>("timerMessage")->setText("Session complete");
+		auto *scene_list = d->findChild<QComboBox *>("timerEndScene");
+		const int index = scene_list->findData(dest_id);
+		expect(index > 0, "the finish scene was not listed");
+		if (index > 0)
+			scene_list->setCurrentIndex(index);
+		const QString image_path = qEnvironmentVariable("STAGEKIT_TIMER_EDITOR_CAPTURE");
+		if (!image_path.isEmpty())
+			expect(d->grab().save(image_path), "could not capture the date and time controls");
+	});
+	expect(until([&] {
+		       OBSDataAutoRelease saved = obs_source_get_settings(source);
+		       return obs_data_get_int(saved, "deadline_ms") == QDateTime(date, at).toMSecsSinceEpoch() &&
+			      obs_data_get_int(saved, "timer_mode") == 1 &&
+			      readout->text().count(QLatin1Char(':')) >= 2;
+	       }),
+	       "the local date and time did not reach the scene timer");
+	edit([](QDialog *d) {
+		d->findChild<QComboBox *>("timerMode")->setCurrentIndex(2);
+		d->findChild<QCheckBox *>("timerLimit")->setChecked(true);
+		d->findChild<QSpinBox *>("minutes")->setValue(0);
+		d->findChild<QSpinBox *>("seconds")->setValue(2);
+		d->findChild<QCheckBox *>("timerAutomatic")->setChecked(false);
+		for (const char *name : {"unit_days", "unit_hours", "unit_minutes"})
+			d->findChild<QCheckBox *>(name)->setChecked(false);
+		d->findChild<QCheckBox *>("unit_seconds")->setChecked(true);
+	});
+	expect(until([&] { return readout->text() == "00"; }), "count-up and seconds-only picker");
+	start->click();
+	expect(until([&] { return obs_source_media_get_state(source) == OBS_MEDIA_STATE_PLAYING; }),
+	       "bounded count-up did not start");
+	obs_source_media_set_time(source, 1830);
+	expect(until([&] {
+		       OBSSourceAutoRelease program = obs_frontend_get_current_scene();
+		       return readout->text() == "Session complete" &&
+			      program.Get() == obs_scene_get_source(destination);
+	       }),
+	       "finish message and Program scene switch did not complete");
+	obs_frontend_set_current_scene(scene);
+	expect(until([&] {
+		       OBSSourceAutoRelease program = obs_frontend_get_current_scene();
+		       return program.Get() == scene.Get();
+	       }),
+	       "could not restore the fixture scene");
+	QThread::msleep(130);
+	QCoreApplication::processEvents();
+	OBSSourceAutoRelease still = obs_frontend_get_current_scene();
+	expect(still.Get() == scene.Get(), "a finished timer switched Program more than once");
+	edit([](QDialog *d) {
+		d->findChild<QComboBox *>("timerMode")->setCurrentIndex(0);
+		d->findChild<QSpinBox *>("minutes")->setValue(1);
+		d->findChild<QSpinBox *>("seconds")->setValue(13);
+		d->findChild<QCheckBox *>("timerAutomatic")->setChecked(true);
+		d->findChild<QLineEdit *>("timerMessage")->clear();
+		d->findChild<QComboBox *>("timerEndScene")->setCurrentIndex(0);
+	});
+	expect(until([&] { return readout->text() == "01:13"; }), "restoring the test preset failed");
+	obs_frontend_save();
+}
+
+} // namespace countdown_dock_test

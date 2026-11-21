@@ -71,6 +71,7 @@ try {
         stagekit_ambient_background = 'stagekit'
         stagekit_cropped_view = 'stagekit'
         stagekit_start_image = 'stagekit'
+        stagekit_countdown = 'stagekit'
         stagekit_scene_fit = 'stagekit'
         stagekit_morph = 'stagekit'
         stagekit_gaussian_blur = 'stagekit'

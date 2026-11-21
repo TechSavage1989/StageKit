@@ -3,6 +3,7 @@
 #include <obs-nix-platform.h>
 #include "replacement-frame.hpp"
 #include "replacement-native.hpp"
+#include "countdown-test.hpp"
 #include <graphics/vec2.h>
 #include <QApplication>
 #include <dlfcn.h>
@@ -140,6 +141,7 @@ int main(int argc, char **argv)
 	QStringList native_issues;
 	obs_hotkey_enable_callback_rerouting(true);
 	replacement_test::check_native_filters(QString::fromUtf8(image), native_issues);
+	countdown_test::check(native_issues, QString::fromStdString(out + "/countdown-timer.png"));
 	obs_hotkey_enable_callback_rerouting(false);
 	check(native_issues.isEmpty(),
 	      "native component renders and saved IDs: " + native_issues.join(", ").toStdString());

@@ -1,5 +1,6 @@
 #include "replacement-frame.hpp"
 #include "replacement-native.hpp"
+#include "countdown-dock-test.hpp"
 #include "replacement-quick.hpp"
 #include "show-in-scenes-camera.hpp"
 #include <obs-module.h>
@@ -231,6 +232,7 @@ static void exercise()
 	check_ndi_preference(issues);
 	if (qEnvironmentVariable("STAGEKIT_TEST_NDI") == "restart") {
 		quick_test::check_restart(issues);
+		countdown_dock_test::check(issues, true);
 		finish_probe(issues);
 		return;
 	}
@@ -319,6 +321,8 @@ static void exercise()
 	check_native_layout(issues);
 	check_native_table(issues);
 	quick_test::check(issues, action_named("Quick Access Utility (StageKit)"));
+	countdown_test::check(issues);
+	countdown_dock_test::check(issues, false);
 	check_plugin_manager(issues);
 	check_blur_output(issues);
 	finish_probe(issues);
