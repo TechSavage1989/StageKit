@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | fix/timer-box-and-alignment. Release notes in docs/releases/0.1.0-beta243.md. |
+| Working branch | fix/timer-visible-pixels. Release notes in docs/releases/0.1.0-beta244.md. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -31,7 +31,13 @@ Two supplemental headless probes also reproduced their beta239 failures on both 
 
 ## Countdown Timer
 
-Beta243 stores the source box, text alignment and optional dock font size. Running text uses the source font at its configured pixel size. Only the ending message is fitted. Older saved sources keep their previous rectangle and derive a fixed font size for the reserved digit positions on first load. The Place grid and timer editor share a widget and the existing Fit to Space position IDs. The fitter measures the timer rectangle across ticks and treats it as occupied space for neighbors. The countdown and frontend fixtures cover preset changes, the nine anchors, OBS Edit Transform, a dock fit and collection reload.
+Beta244 restores the normal visible-pixel measurement for countdown sources. Place, Arrange, Fit to Space and Scene Fit measure the rendered text when their visible-pixel option is on, including timer obstacles and fitted timer claims. Ignore shadows & outlines uses the same filter-free measurement as other sources. Timers participate in the existing dynamic-text glance schedule so changes inside a fixed-size source can update its occupied area. Turning visible-pixel measurement off keeps full-box placement. The source canvas, font, digit advances and text alignment remain independent of measurement.
+
+The shared countdown render fixture checks a 30 px gap between a padded image and a padded timer, explicit box-mode spacing, alignment refresh, excluded and included outlines, a timer's own visible margin, and both published and held timer claims beside another fit. It verifies that the source box and configured font remain unchanged. The existing frontend whole-box fit now explicitly disables visible-pixel measurement. These fixtures run in the Linux replacement checks and the Windows OBS 32.2.2 frontend probe. Local checks cover formatting, repository layout, guide settings, release order and the alpha-bound scanner; the native render and frontend checks run in CI.
+
+The enlarged synthetic image uses point sampling for its strict rendered-gap assertion so interpolation fringe does not change the test's pixel edge. The native Make Room fixture also releases modern OBS canvas references and drains deferred UI work before standalone shutdown, with an assertion that its scenes, sources and transitions are no longer held. Its motion assertions are unchanged.
+
+Beta243 stores the source box, text alignment and optional dock font size. Running text uses the source font at its configured pixel size. Only the ending message is fitted. Older saved sources keep their previous rectangle and derive a fixed font size for the reserved digit positions on first load. The Place grid and timer editor share a widget and the existing Fit to Space position IDs. Beta243 measured the complete timer rectangle even with visible-pixel measurement enabled; Beta244 corrects that exception. The countdown and frontend fixtures cover preset changes, the nine anchors, OBS Edit Transform, a dock fit and collection reload.
 
 Beta242 measures the running format once. The dock and scene source use the same digit advances, independent of numeral shape. Hidden leading digits reserve their positions, including in custom unit placeholders. Only an end message is fitted when the clock finishes. Tests compare unchanged pixel regions on both sides of a live minute rollover, across hour and day changes in count-up, and on reset.
 

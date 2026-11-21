@@ -14837,13 +14837,27 @@ static void make_room_test(uint32_t w, uint32_t h, const std::string &out)
 			CHECK(false, "the transition %s is there", kind);
 			return;
 		}
-	auto block = [](const char *name, long long abgr, int bw, int bh) {
+	std::vector<obs_weak_source_t *> weak;
+	auto watch = [&](obs_source_t *source) {
+		if (source)
+			weak.push_back(obs_source_get_weak_source(source));
+	};
+	auto release_scene = [](obs_scene_t *scene) {
+#if LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(31, 1, 0)
+		// As in MORPH_HOLDS, release the canvas's reference before checking
+		// whether the item transitions have let go of the fixture.
+		obs_canvas_scene_remove(scene);
+#endif
+		obs_scene_release(scene);
+	};
+	auto block = [&](const char *name, long long abgr, int bw, int bh) {
 		obs_data_t *d = obs_data_create();
 		obs_data_set_int(d, "color", abgr);
 		obs_data_set_int(d, "width", bw);
 		obs_data_set_int(d, "height", bh);
 		obs_source_t *src = obs_source_create("color_source", name, d, nullptr);
 		obs_data_release(d);
+		watch(src);
 		return src;
 	};
 	auto put = [](obs_scene_t *scene, obs_source_t *src, float x, float y, float sx = 1.0f, float sy = 1.0f) {
@@ -14919,11 +14933,14 @@ static void make_room_test(uint32_t w, uint32_t h, const std::string &out)
 	// Three: nothing in the new scene but its background.
 	obs_scene_t *b3 = obs_scene_create("Room Three To");
 	put(b3, back_b, 0, 0);
+	for (obs_scene_t *scene : {a1, b1, a2, b2, b3})
+		watch(obs_scene_get_source(scene));
 
 	obs_data_t *ms = obs_data_create();
 	obs_data_set_int(ms, "ease_curve", 0); // linear, so half the time is half the way
 	obs_data_set_int(ms, "others", 3);     // Make room
 	obs_source_t *morph = obs_source_create_private("stagekit_morph", "Room Morph", ms);
+	watch(morph);
 	auto at_time = [&](obs_source_t *t, obs_scene_t *from, obs_scene_t *to, float time) {
 		obs_transition_set(t, obs_scene_get_source(from));
 		obs_transition_start(t, OBS_TRANSITION_MODE_MANUAL, 0, obs_scene_get_source(to));
@@ -15023,6 +15040,7 @@ static void make_room_test(uint32_t w, uint32_t h, const std::string &out)
 	obs_data_t *rs = obs_data_create();
 	obs_data_set_int(rs, "ease_curve", 0);
 	obs_source_t *room = obs_source_create_private("stagekit_make_room", "Make Room", rs);
+	watch(room);
 	CHECK(room != nullptr, "the Make Room transition is registered and can be created");
 	if (room) {
 		const std::vector<uint8_t> half = at_time(room, a1, b1, 0.5f);
@@ -15049,10 +15067,12 @@ static void make_room_test(uint32_t w, uint32_t h, const std::string &out)
 		obs_source_t *pa = block("Room Pair A", 0xFF00FF00, 80, 80);   // green
 		obs_source_t *pb = block("Room Pair B", 0xFF00FFFF, 160, 160); // yellow
 		obs_scene_t *is = obs_scene_create("Room Items");
+		watch(obs_scene_get_source(is));
 		put(is, back_a, 0, 0);
 		obs_sceneitem_t *si = put(is, small, 40, 150);
 		auto with = [&](obs_sceneitem_t *item, bool show, const char *kind, obs_data_t *d) {
 			obs_source_t *t = obs_source_create_private(kind, "Room Item Transition", d);
+			watch(t);
 			obs_sceneitem_set_transition(item, show, t);
 			obs_sceneitem_set_transition_duration(item, show, 1000);
 			obs_source_release(t);
@@ -15154,7 +15174,7 @@ static void make_room_test(uint32_t w, uint32_t h, const std::string &out)
 		      left_over.x0, left_over.x1, left_over.y0, layers, count_items(is));
 		obs_set_output_source(0, before_out);
 		obs_source_release(before_out);
-		obs_scene_release(is);
+		release_scene(is);
 		for (obs_source_t *src : {small, big, pa, pb})
 			obs_source_release(src);
 	}
@@ -15164,9 +15184,26 @@ static void make_room_test(uint32_t w, uint32_t h, const std::string &out)
 	obs_source_release(room);
 	obs_source_release(morph);
 	for (obs_scene_t *scene : {a1, b1, a2, b2, b3})
-		obs_scene_release(scene);
+		release_scene(scene);
 	for (obs_source_t *src : {back_a, back_b, game, lefty, corner})
 		obs_source_release(src);
+	// The video thread hands references to queued UI work. Process that work
+	// and verify it has released the fixture before the standalone gate shuts OBS down.
+	ui_tasks_release();
+	const std::string left = item_morph_left_over(weak.data(), weak.size());
+	for (int i = 0; i < 150 && ui_tasks_waiting(); ++i)
+		sleep_ms(10);
+	// Expired weak references do not mean OBS's deferred destructors have
+	// finished. Drain them while the module and graphics are still available,
+	// then process any UI releases they queued and finish those destructions too.
+	obs_wait_for_destroy_queue();
+	ui_tasks_release();
+	run_ui_tasks();
+	obs_wait_for_destroy_queue();
+	const size_t pending = ui_tasks_waiting();
+	CHECK(left.empty() && pending == 0,
+	      "Make Room releases its scenes, sources and transitions before shutdown (%s; %zu queued UI tasks)",
+	      left.empty() ? "nothing held" : left.c_str(), pending);
 }
 
 // ==== scene-filters:shadow ====
