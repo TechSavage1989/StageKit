@@ -5,6 +5,7 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QDialog>
+#include <QDockWidget>
 #include <QComboBox>
 #include <QPushButton>
 #include <QSpinBox>
@@ -116,12 +117,14 @@ static void check_native_layout(QStringList &issues)
 static void check_native_table(QStringList &issues)
 {
 	auto *action = action_named("Transition Table (StageKit)");
-	if (!action) return;
+	if (!action)
+		return;
 	QObject owner;
 	bool exercised = false;
 	QTimer::singleShot(100, &owner, [&] {
 		auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
-		if (!dialog) return;
+		if (!dialog)
+			return;
 		auto *from = dialog->findChild<QComboBox *>("nativeRuleFrom");
 		auto *to = dialog->findChild<QComboBox *>("nativeRuleTo");
 		auto *transition = dialog->findChild<QComboBox *>("nativeRuleTransition");
@@ -136,14 +139,51 @@ static void check_native_table(QStringList &issues)
 			calldata_t result = {};
 			calldata_set_string(&result, "from_scene", "Fixture source scene");
 			calldata_set_string(&result, "to_scene", "Other destination");
-			exercised = proc_handler_call(obs_get_proc_handler(), "stagekit_port_get_transition_table_transition", &result) &&
-				QString::fromUtf8(calldata_string(&result, "transition")) == "Fade" && calldata_int(&result, "duration") == 416;
+			exercised = proc_handler_call(obs_get_proc_handler(),
+						      "stagekit_port_get_transition_table_transition", &result) &&
+				    QString::fromUtf8(calldata_string(&result, "transition")) == "Fade" &&
+				    calldata_int(&result, "duration") == 416;
 			calldata_free(&result);
 		}
 		dialog->reject();
 	});
 	action->trigger();
-	if (!exercised) issues.append("Native transition table did not resolve an edited wildcard rule through the saved procedure");
+	if (!exercised)
+		issues.append(
+			"Native transition table did not resolve an edited wildcard rule through the saved procedure");
+}
+
+static void check_native_quick(QStringList &issues)
+{
+	auto *action=action_named("Quick Access Utility (StageKit)");
+	auto *main=static_cast<QMainWindow *>(obs_frontend_get_main_window());
+	if (!action || !main) return;
+	auto *source=obs_source_create("image_source","StageKit search fixture",nullptr,nullptr);
+	bool found=false;
+	QObject owner;
+	QTimer::singleShot(100,&owner,[&] {
+		auto *dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());
+		if (!dialog) return;
+		auto *title=dialog->findChild<QLineEdit *>("nativeQuickTitle");
+		auto *create=dialog->findChild<QPushButton *>("nativeCreateQuickDock");
+		if (title && create) {
+			title->setText("StageKit fixture dock");
+			create->click();
+			for (auto *dock: main->findChildren<QDockWidget *>()) {
+				if (dock->windowTitle()!="StageKit fixture dock") continue;
+				auto *search=dock->findChild<QLineEdit *>("nativeQuickSearch");
+				auto *list=dock->findChild<QListWidget *>("nativeQuickSources");
+				if (search && list) {
+					search->setText("StageKit search fixture");
+					found=list->count()==1 && list->item(0)->text()=="StageKit search fixture";
+				}
+			}
+		}
+		dialog->reject();
+	});
+	action->trigger();
+	if (!found) issues.append("The native Quick Access dock did not find a live OBS source");
+	obs_source_release(source);
 }
 
 static void check_plugin_manager(QStringList &issues)
@@ -221,7 +261,8 @@ static void exercise()
 				for (int i = 0; i < table->rowCount(); ++i) {
 					const auto original = table->item(i, 0)->text();
 					const auto status = table->item(i, 2)->text();
-					const auto implementation = table->columnCount() == 4 ? table->item(i, 3)->text() : QString();
+					const auto implementation =
+						table->columnCount() == 4 ? table->item(i, 3)->text() : QString();
 					if ((original == "Freeze Filter" && implementation != "StageKit native") ||
 					    (original == "Composite Blur" && implementation != "Bundled port") ||
 					    (original == "Chroma Key" && implementation != "OBS built-in"))
@@ -254,6 +295,7 @@ static void exercise()
 	replacement_test::check_native_filters(qEnvironmentVariable("STAGEKIT_TEST_ART"), issues);
 	check_native_layout(issues);
 	check_native_table(issues);
+	check_native_quick(issues);
 	check_plugin_manager(issues);
 	check_blur_output(issues);
 	QFile report(qEnvironmentVariable("STAGEKIT_TEST_REPORT"));

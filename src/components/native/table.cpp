@@ -82,7 +82,8 @@ void apply_rules()
 		const Rule rule = pick(entries, {from, obs_source_get_name(scene)});
 		OBSDataAutoRelease backup = obs_data_get_obj(data, "stagekit.table.override");
 		if (backup) {
-			if (std::string(obs_data_get_string(data, "transition")) == obs_data_get_string(backup, "applied") &&
+			if (std::string(obs_data_get_string(data, "transition")) ==
+				    obs_data_get_string(backup, "applied") &&
 			    obs_data_get_int(data, "transition_duration") == obs_data_get_int(backup, "applied_ms")) {
 				assign_field(data, backup, "transition", false);
 				assign_field(data, backup, "transition_duration", true);
@@ -105,10 +106,13 @@ void apply_rules()
 void changed()
 {
 	if (context)
-		QMetaObject::invokeMethod(context, [] {
-			apply_rules();
-			obs_frontend_save();
-		}, Qt::QueuedConnection);
+		QMetaObject::invokeMethod(
+			context,
+			[] {
+				apply_rules();
+				obs_frontend_save();
+			},
+			Qt::QueuedConnection);
 }
 
 bool decode(obs_data_t *data, Rules &result)
@@ -138,7 +142,8 @@ void read_matrix(obs_data_t *data, Rules &result)
 		OBSDataArrayAutoRelease columns = obs_data_get_array(row, "data");
 		for (size_t j = 0; j < obs_data_array_count(columns); ++j) {
 			OBSDataAutoRelease cell = obs_data_array_item(columns, j);
-			const std::string to = obs_data_get_string(cell, "to"), name = obs_data_get_string(cell, "transition");
+			const std::string to = obs_data_get_string(cell, "to"),
+					  name = obs_data_get_string(cell, "transition");
 			if (!from.empty() && !to.empty() && !name.empty())
 				result[{from, to}] = {name, obs_data_get_int(cell, "duration")};
 		}
@@ -169,8 +174,10 @@ void persist(obs_data_t *root, bool save, void *)
 		obs_data_set_bool(data, "enabled", enabled);
 		obs_data_array_t *on = nullptr, *off = nullptr;
 		obs_hotkey_pair_save(keys, &on, &off);
-		if (on) obs_data_set_array(data, "enable_hotkey", on);
-		if (off) obs_data_set_array(data, "disable_hotkey", off);
+		if (on)
+			obs_data_set_array(data, "enable_hotkey", on);
+		if (off)
+			obs_data_set_array(data, "disable_hotkey", off);
 		obs_data_array_release(on);
 		obs_data_array_release(off);
 		obs_data_set_obj(root, "stagekit.table", data);
@@ -179,14 +186,17 @@ void persist(obs_data_t *root, bool save, void *)
 		Rules next;
 		if (data) {
 			decode(data, next);
-			const int width = (int)obs_data_get_int(data, "dialog_width"), height = (int)obs_data_get_int(data, "dialog_height");
-			if (width > 0 && height > 0) dialog_size = {width, height};
+			const int width = (int)obs_data_get_int(data, "dialog_width"),
+				  height = (int)obs_data_get_int(data, "dialog_height");
+			if (width > 0 && height > 0)
+				dialog_size = {width, height};
 		} else {
 			OBSDataAutoRelease old = obs_data_get_obj(root, "obs-transition-matrix");
 			read_matrix(old, next);
 		}
 		enabled = !obs_data_has_user_value(data, "enabled") || obs_data_get_bool(data, "enabled");
-		OBSDataArrayAutoRelease on = obs_data_get_array(data, "enable_hotkey"), off = obs_data_get_array(data, "disable_hotkey");
+		OBSDataArrayAutoRelease on = obs_data_get_array(data, "enable_hotkey"),
+					off = obs_data_get_array(data, "disable_hotkey");
 		obs_hotkey_pair_load(keys, on, off);
 		std::lock_guard lock(model);
 		rules.swap(next);
@@ -196,7 +206,10 @@ void persist(obs_data_t *root, bool save, void *)
 QStringList names(bool transitions)
 {
 	obs_frontend_source_list items{};
-	if (transitions) obs_frontend_get_transitions(&items); else obs_frontend_get_scenes(&items);
+	if (transitions)
+		obs_frontend_get_transitions(&items);
+	else
+		obs_frontend_get_scenes(&items);
 	QStringList result;
 	for (size_t i = 0; i < items.sources.num; ++i)
 		result.append(QString::fromUtf8(obs_source_get_name(items.sources.array[i])));
@@ -209,7 +222,8 @@ bool set_rule(const Pair &pair, const Rule &rule)
 	if (pair.first.empty() || pair.second.empty() || rule.ms < 0)
 		return false;
 	std::lock_guard lock(model);
-	if (rule.name.empty()) return rules.erase(pair) != 0;
+	if (rule.name.empty())
+		return rules.erase(pair) != 0;
 	rules[pair] = rule;
 	return true;
 }
@@ -224,7 +238,8 @@ void editor()
 	layout->addWidget(active);
 	auto *list = new QTableWidget(0, 4, &dialog);
 	list->setObjectName("nativeTransitionRules");
-	list->setHorizontalHeaderLabels({text("Native.FromScene"), text("Native.ToScene"), text("Native.Transition"), text("Native.DurationMs")});
+	list->setHorizontalHeaderLabels({text("Native.FromScene"), text("Native.ToScene"), text("Native.Transition"),
+					 text("Native.DurationMs")});
 	list->setSelectionBehavior(QAbstractItemView::SelectRows);
 	list->setEditTriggers(QAbstractItemView::NoEditTriggers);
 	list->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
@@ -234,7 +249,8 @@ void editor()
 		for (const auto &[pair, value] : snapshot()) {
 			const auto row = list->rowCount();
 			list->insertRow(row);
-			const QStringList cells{QString::fromStdString(pair.first), QString::fromStdString(pair.second), QString::fromStdString(value.name), QString::number(value.ms)};
+			const QStringList cells{QString::fromStdString(pair.first), QString::fromStdString(pair.second),
+						QString::fromStdString(value.name), QString::number(value.ms)};
 			for (int col = 0; col < 4; ++col)
 				list->setItem(row, col, new QTableWidgetItem(cells.at(col)));
 		}
@@ -261,30 +277,43 @@ void editor()
 	ms->setSuffix(" ms");
 	inputs->addWidget(ms);
 	QObject::connect(list, &QTableWidget::currentCellChanged, &dialog, [&](int r) {
-		if (r < 0 || !list->item(r, 3)) return;
+		if (r < 0 || !list->item(r, 3))
+			return;
 		from->setCurrentText(list->item(r, 0)->text());
 		to->setCurrentText(list->item(r, 1)->text());
 		transition->setCurrentText(list->item(r, 2)->text());
 		ms->setValue(list->item(r, 3)->text().toInt());
 	});
-	QObject::connect(active, &QCheckBox::toggled, &dialog, [](bool state) { enabled = state; changed(); });
+	QObject::connect(active, &QCheckBox::toggled, &dialog, [](bool state) {
+		enabled = state;
+		changed();
+	});
 	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
 	auto button = [&](const char *label, auto fn) {
 		auto *btn = buttons->addButton(text(label), QDialogButtonBox::ActionRole);
 		QObject::connect(btn, &QPushButton::clicked, &dialog, fn);
 		return btn;
 	};
-	auto key = [&] { return Pair{from->currentText().toStdString(), to->currentText().toStdString()}; };
+	auto key = [&] {
+		return Pair{from->currentText().toStdString(), to->currentText().toStdString()};
+	};
 	button("Native.SetRule", [&] {
-		if (!transition->currentText().isEmpty() && set_rule(key(), {transition->currentText().toStdString(), ms->value()})) {
+		if (!transition->currentText().isEmpty() &&
+		    set_rule(key(), {transition->currentText().toStdString(), ms->value()})) {
 			refresh();
 			changed();
 		}
 	})->setObjectName("nativeSetRule");
-	button("Native.Remove", [&] { if (set_rule(key(), {})) { refresh(); changed(); } });
+	button("Native.Remove", [&] {
+		if (set_rule(key(), {})) {
+			refresh();
+			changed();
+		}
+	});
 	button("Native.Export", [&] {
 		const auto path = QFileDialog::getSaveFileName(&dialog, text("Native.Export"), {}, "JSON (*.json)");
-		if (path.isEmpty()) return;
+		if (path.isEmpty())
+			return;
 		OBSDataAutoRelease data = obs_data_create();
 		encode(data);
 		const QByteArray payload(obs_data_get_json(data));
@@ -294,7 +323,8 @@ void editor()
 	});
 	button("Native.Import", [&] {
 		const auto path = QFileDialog::getOpenFileName(&dialog, text("Native.Import"), {}, "JSON (*.json)");
-		if (path.isEmpty()) return;
+		if (path.isEmpty())
+			return;
 		OBSDataAutoRelease data = obs_data_create_from_json_file(path.toUtf8().constData());
 		Rules input;
 		if (!decode(data, input)) {
@@ -303,7 +333,8 @@ void editor()
 		}
 		{
 			std::lock_guard lock(model);
-			for (const auto &[pair, rule] : input) rules[pair] = rule;
+			for (const auto &[pair, rule] : input)
+				rules[pair] = rule;
 		}
 		refresh();
 		changed();
@@ -317,9 +348,11 @@ void editor()
 void renamed(void *, calldata_t *cd)
 {
 	auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
-	if (!source) return;
+	if (!source)
+		return;
 	const bool scene = obs_scene_from_source(source) != nullptr;
-	if (!scene && obs_source_get_type(source) != OBS_SOURCE_TYPE_TRANSITION) return;
+	if (!scene && obs_source_get_type(source) != OBS_SOURCE_TYPE_TRANSITION)
+		return;
 	const std::string before = calldata_string(cd, "prev_name"), after = calldata_string(cd, "new_name");
 	std::lock_guard lock(model);
 	Rules next;
@@ -327,16 +360,20 @@ void renamed(void *, calldata_t *cd)
 		Pair key = pair;
 		Rule value = rule;
 		if (scene && before != "Any") {
-			if (key.first == before) key.first = after;
-			if (key.second == before) key.second = after;
-		} else if (!scene && value.name == before) value.name = after;
+			if (key.first == before)
+				key.first = after;
+			if (key.second == before)
+				key.second = after;
+		} else if (!scene && value.name == before)
+			value.name = after;
 		next[key] = value;
 	}
 	rules.swap(next);
 }
 void event(obs_frontend_event which, void *)
 {
-	if (which == OBS_FRONTEND_EVENT_SCENE_CHANGED || which == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED || which == OBS_FRONTEND_EVENT_FINISHED_LOADING)
+	if (which == OBS_FRONTEND_EVENT_SCENE_CHANGED || which == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED ||
+	    which == OBS_FRONTEND_EVENT_FINISHED_LOADING)
 		apply_rules();
 	else if (which == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CLEANUP || which == OBS_FRONTEND_EVENT_EXIT) {
 		std::lock_guard lock(model);
@@ -346,7 +383,8 @@ void event(obs_frontend_event which, void *)
 bool toggle(void *value, obs_hotkey_pair_id, obs_hotkey_t *, bool pressed)
 {
 	bool wanted = value != nullptr;
-	if (!pressed || enabled.exchange(wanted) == wanted) return false;
+	if (!pressed || enabled.exchange(wanted) == wanted)
+		return false;
 	changed();
 	return true;
 }
@@ -361,33 +399,51 @@ void load()
 	obs_frontend_add_save_callback(persist, nullptr);
 	obs_frontend_add_event_callback(event, nullptr);
 	signal_handler_connect(obs_get_signal_handler(), "source_rename", renamed, nullptr);
-	proc_handler_add(obs_get_proc_handler(), "void stagekit_port_get_transition_table_transition(string from_scene, string to_scene, out string transition, out int duration)",
+	proc_handler_add(
+		obs_get_proc_handler(),
+		"void stagekit_port_get_transition_table_transition(string from_scene, string to_scene, out string transition, out int duration)",
 		[](void *, calldata_t *cd) {
 			const char *from = calldata_string(cd, "from_scene"), *to = calldata_string(cd, "to_scene");
 			const auto match = pick(snapshot(), {from ? from : "", to ? to : ""});
 			calldata_set_string(cd, "transition", match.name.c_str());
 			calldata_set_int(cd, "duration", match.ms);
-		}, nullptr);
+		},
+		nullptr);
 }
 void post()
 {
 	vendor = obs_websocket_register_vendor("stagekit-port-transition-table");
-	if (!vendor) return;
-	obs_websocket_vendor_register_request(vendor, "get_table", [](obs_data_t *, obs_data_t *out, void *) {
-		encode(out);
-		obs_data_set_bool(out, "success", true);
-	}, nullptr);
-	obs_websocket_vendor_register_request(vendor, "get_transition", [](obs_data_t *in, obs_data_t *out, void *) {
-		const auto match = pick(snapshot(), {obs_data_get_string(in, "from_scene"), obs_data_get_string(in, "to_scene")});
-		obs_data_set_string(out, "transition", match.name.c_str());
-		obs_data_set_int(out, "duration", match.ms);
-		obs_data_set_bool(out, "success", true);
-	}, nullptr);
-	obs_websocket_vendor_register_request(vendor, "set_transition", [](obs_data_t *in, obs_data_t *out, void *) {
-		bool ok = set_rule({obs_data_get_string(in, "from_scene"), obs_data_get_string(in, "to_scene")}, {obs_data_get_string(in, "transition"), obs_data_get_int(in, "duration")});
-		obs_data_set_bool(out, "success", ok);
-		if (ok) changed(); else obs_data_set_string(out, "error", "Invalid or missing transition rule");
-	}, nullptr);
+	if (!vendor)
+		return;
+	obs_websocket_vendor_register_request(
+		vendor, "get_table",
+		[](obs_data_t *, obs_data_t *out, void *) {
+			encode(out);
+			obs_data_set_bool(out, "success", true);
+		},
+		nullptr);
+	obs_websocket_vendor_register_request(
+		vendor, "get_transition",
+		[](obs_data_t *in, obs_data_t *out, void *) {
+			const auto match = pick(snapshot(), {obs_data_get_string(in, "from_scene"),
+							     obs_data_get_string(in, "to_scene")});
+			obs_data_set_string(out, "transition", match.name.c_str());
+			obs_data_set_int(out, "duration", match.ms);
+			obs_data_set_bool(out, "success", true);
+		},
+		nullptr);
+	obs_websocket_vendor_register_request(
+		vendor, "set_transition",
+		[](obs_data_t *in, obs_data_t *out, void *) {
+			bool ok = set_rule({obs_data_get_string(in, "from_scene"), obs_data_get_string(in, "to_scene")},
+					   {obs_data_get_string(in, "transition"), obs_data_get_int(in, "duration")});
+			obs_data_set_bool(out, "success", ok);
+			if (ok)
+				changed();
+			else
+				obs_data_set_string(out, "error", "Invalid or missing transition rule");
+		},
+		nullptr);
 }
 void unload()
 {

@@ -273,6 +273,7 @@
     "originalTool": "SceneCollectionManager"
   },
   "quick": {
+    "implementation": "stagekit",
     "tool": "Ports.Tool.quick",
     "originalTool": "Quick Access Utility"
   },
