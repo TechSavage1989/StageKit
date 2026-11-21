@@ -17,6 +17,8 @@ on:
       - 'src/transition/**'
       - 'src/view/cropped-view.*'
       - 'tests/show-in-scenes-camera.hpp'
+      - 'tests/studio-preview.hpp'
+      - 'src/look/**'
       - 'src/plugin-main.cpp'
       - 'src/third-party/ports/**'
       - 'streamdeck/**'

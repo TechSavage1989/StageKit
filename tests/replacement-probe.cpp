@@ -1,6 +1,7 @@
 #include "replacement-frame.hpp"
 #include "replacement-native.hpp"
 #include "show-in-scenes-camera.hpp"
+#include "studio-preview.hpp"
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 #include <QApplication>
@@ -357,6 +358,7 @@ static void exercise()
 	check_native_quick(issues);
 	check_plugin_manager(issues);
 	check_blur_output(issues);
+	studio_preview_test::check(issues);
 	finish_probe(issues);
 }
 
