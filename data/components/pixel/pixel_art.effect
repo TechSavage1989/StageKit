@@ -1,0 +1,162 @@
+uniform float4x4 ViewProj;
+uniform texture2d image;
+
+uniform float texelWidth;
+uniform float texelHeight;
+uniform float spread;
+
+uniform int redColorCount;
+uniform int greenColorCount;
+uniform int blueColorCount;
+
+sampler_state textureSampler {
+	Filter   	= Point;
+	AddressU 	= Clamp;
+	AddressV 	= Clamp;
+};
+
+struct VertData {
+	float4 pos : POSITION;
+	float2 uv  : TEXCOORD0;
+};
+
+VertData VSDefault(VertData v_in)
+{
+	VertData vert_out;
+	vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	vert_out.uv  = v_in.uv;
+	return vert_out;
+}
+
+int getBayer4(int val) {
+	
+	int4 bayer4[4];
+
+	bayer4[0] = int4(0, 8, 2, 10);
+	bayer4[1] = int4(12, 4, 14, 6);
+	bayer4[2] = int4(3, 11, 1, 9);
+	bayer4[3] = int4(15, 7, 13, 5);
+
+	int idx = int(val*0.25);
+	int idy = (idx * 4) - 1;
+
+	return bayer4[idx][val-idy];
+
+}
+
+int getBayer8(int val) {
+
+	int4 bayer8[16];
+
+	bayer8[0] = int4(0, 32, 8, 40);
+	bayer8[1] = int4(2, 34, 10, 42);
+	bayer8[2] = int4(48, 16, 56, 24);
+	bayer8[3] = int4(50, 18, 58, 26);
+	bayer8[4] = int4(12, 44,  4, 36);
+	bayer8[5] = int4(14, 46,  6, 38);
+	bayer8[6] = int4(60, 28, 52, 20);
+	bayer8[7] = int4(62, 30, 54, 22);
+	bayer8[8] = int4(3, 35, 11, 43);
+	bayer8[9] = int4(1, 33,  9, 41);
+	bayer8[10] = int4(51, 19, 59, 27);
+	bayer8[11] = int4(49, 17, 57, 25);
+	bayer8[12] = int4(15, 47,  7, 39);
+	bayer8[13] = int4(13, 45,  5, 37);
+	bayer8[14] = int4(63, 31, 55, 23);
+	bayer8[15] = int4(61, 29, 53, 21);
+
+	int idx = int(val*0.25);
+	int idy = (idx * 4) - 1;
+
+	return bayer8[idx][val-idy];
+
+}
+
+float4 PSDitherBayer2(VertData v_in) : TARGET 
+{
+	float4 col = image.Sample(textureSampler, v_in.uv);
+
+	int x = int(v_in.uv.x * texelWidth);
+	int y = int(v_in.uv.y * texelHeight);
+
+	int4 bayer2 = int4(0,2,3,1);
+
+	float bayerValue = 0.0f;
+	bayerValue = float(bayer2[(x % 2) + (y % 2) * 2]) * (1.0f / 4.0f) - 0.5f;
+
+	float4 result = col + spread * bayerValue;
+
+	result.x = floor((redColorCount - 1.0) * result.x + 0.5) / (redColorCount - 1.0);
+	result.y = floor((greenColorCount - 1.0) * result.y + 0.5) / (greenColorCount - 1.0);
+	result.z = floor((blueColorCount - 1.0) * result.z + 0.5) / (blueColorCount - 1.0);
+	result.w = col.w;
+
+	return result;
+}
+
+float4 PSDitherBayer4(VertData v_in) : TARGET 
+{
+	float4 col = image.Sample(textureSampler, v_in.uv);
+
+	int x = int(v_in.uv.x * texelWidth);
+	int y = int(v_in.uv.y * texelHeight);
+
+	float bayerValue = 0.0f;
+	bayerValue = float(getBayer4((x % 4) + (y % 4) * 4)) * (1.0f / 16.0f) - 0.5f;
+
+	float4 result = col + spread * bayerValue;
+
+	result.x = floor((redColorCount - 1.0) * result.x + 0.5) / (redColorCount - 1.0);
+	result.y = floor((greenColorCount - 1.0) * result.y + 0.5) / (greenColorCount - 1.0);
+	result.z = floor((blueColorCount - 1.0) * result.z + 0.5) / (blueColorCount - 1.0);
+	result.w = col.w;
+
+	return result;
+}
+
+float4 PSDitherBayer8(VertData v_in) : TARGET 
+{
+	float4 col = image.Sample(textureSampler, v_in.uv);
+
+	int x = int(v_in.uv.x * texelWidth);
+	int y = int(v_in.uv.y * texelHeight);
+
+	float bayerValue = 0.0f;
+	bayerValue = float(getBayer8((x % 8) + (y % 8) * 8)) * (1.0f / 64.0f) - 0.5f;
+	
+	float4 result = col + spread * bayerValue;
+
+	result.x = floor((redColorCount - 1.0) * result.x + 0.5) / (redColorCount - 1.0);
+	result.y = floor((greenColorCount - 1.0) * result.y + 0.5) / (greenColorCount - 1.0);
+	result.z = floor((blueColorCount - 1.0) * result.z + 0.5) / (blueColorCount - 1.0);
+	result.w = col.w;
+
+	return result;
+}
+
+technique Draw
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSDitherBayer2(v_in);
+	}
+}
+
+technique Draw4
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSDitherBayer4(v_in);
+	}
+}
+
+technique Draw8
+{
+	pass
+	{
+		vertex_shader = VSDefault(v_in);
+		pixel_shader  = PSDitherBayer8(v_in);
+	}
+}

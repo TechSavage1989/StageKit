@@ -1,0 +1,3 @@
+exeldro/obs-shaderfilter 2.5.1
+https://github.com/exeldro/obs-shaderfilter/tree/11a9d65b436b902eb2d6f6a0421894ee18a36196
+StageKit maintains the OBS names, saved identifiers and integration separately. The upstream authors retain their copyrights. See notices and the StageKit source archive.

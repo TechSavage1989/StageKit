@@ -1,0 +1,3 @@
+exeldro/obs-source-copy 0.3.0
+https://github.com/exeldro/obs-source-copy/tree/b7d5bac3572800011a3ec7f33955a35c06f748ca
+StageKit maintains the OBS names, saved identifiers and integration separately. The upstream authors retain their copyrights. See notices and the StageKit source archive.

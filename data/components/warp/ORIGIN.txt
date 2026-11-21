@@ -1,0 +1,3 @@
+exeldro/obs-time-warp-scan 0.1.7
+https://github.com/exeldro/obs-time-warp-scan/tree/12e224f3bda34c277487e434546a99ba5406e0fb
+StageKit maintains the OBS names, saved identifiers and integration separately. The upstream authors retain their copyrights. See notices and the StageKit source archive.

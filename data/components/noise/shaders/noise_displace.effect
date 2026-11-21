@@ -1,0 +1,32 @@
+#include "utilities.effect"
+
+uniform float4x4 ViewProj;
+uniform texture2d image;
+uniform texture2d displacement_map;
+uniform texture2d average_pixel;
+uniform float2 scale;
+uniform float2 uv_size;
+
+VertData mainTransform(VertData v_in)
+{
+	v_in.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+	return v_in;
+}
+
+float4 mainImage(VertData v_in) : TARGET
+{	
+	float2 d = displacement_map.Sample(textureSampler, v_in.uv).xy;
+	float2 avg = average_pixel.Sample(textureSampler, float2(0.5, 0.5)).xy;
+	d = (2.0 * (d - avg)) * scale;
+	return image.Sample(textureSampler, v_in.uv + (d) / uv_size);
+}
+
+technique Draw
+{
+	pass
+	{
+		vertex_shader = mainTransform(v_in);
+		pixel_shader = mainImage(v_in);
+	}
+}
+

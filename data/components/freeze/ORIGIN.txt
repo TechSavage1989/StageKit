@@ -1,0 +1,3 @@
+exeldro/obs-freeze-filter 0.3.5
+https://github.com/exeldro/obs-freeze-filter/tree/5de212bd067672f9349a85e0494a65c8b0156bd4
+StageKit maintains the OBS names, saved identifiers and integration separately. The upstream authors retain their copyrights. See notices and the StageKit source archive.

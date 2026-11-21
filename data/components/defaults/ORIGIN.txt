@@ -1,0 +1,3 @@
+CodeYan01/source-defaults 1.2.0
+https://github.com/CodeYan01/source-defaults/tree/3ce48509258379a7cb49351ad57d81abdf8963e9
+StageKit maintains the OBS names, saved identifiers and integration separately. The upstream authors retain their copyrights. See notices and the StageKit source archive.
