@@ -129,11 +129,13 @@ inline void check(QStringList &issues, bool restart)
 		if (!days || !preset)
 			return;
 		days->setValue(2);
-		expect(clock_pick(d, "clockHour", 11, 12, true) && d->findChild<QPushButton *>("clockHour")->text() == "23",
+		expect(clock_pick(d, "clockHour", 11, 12, true) &&
+			       d->findChild<QPushButton *>("clockHour")->text() == "23",
 		       "second hour ring did not select 23 hours");
 		preset->click();
 		expect(days->value() == 0 && d->findChild<QPushButton *>("clockMinute")->text() == "15" &&
-		       d->findChild<QPushButton *>("clockHour")->text() == "00", "duration preset");
+			       d->findChild<QPushButton *>("clockHour")->text() == "00",
+		       "duration preset");
 		expect(clock_pick(d, "clockMinute", 0, 60) && clock_pick(d, "clockSecond", 7, 60),
 		       "private timer clock did not accept exact seconds");
 	});
@@ -202,10 +204,12 @@ inline void check(QStringList &issues, bool restart)
 			return;
 		am->click();
 		expect(clock_pick(d, "clockHour", 0, 12) && d->findChild<QPushButton *>("clockHour")->text() == "12" &&
-		       d->findChild<QPushButton *>("clockMinute")->isChecked(), "midnight or hour-to-minute selection");
+			       d->findChild<QPushButton *>("clockMinute")->isChecked(),
+		       "midnight or hour-to-minute selection");
 		pm->click();
 		expect(clock_pick(d, "clockHour", 7, 12) && clock_pick(d, "clockMinute", 30, 60) &&
-		       clock_pick(d, "clockSecond", 0, 60), "setting the evening deadline on the face");
+			       clock_pick(d, "clockSecond", 0, 60),
+		       "setting the evening deadline on the face");
 		d->findChild<QPushButton *>("clockMinute")->click();
 		d->findChild<QLineEdit *>("timerMessage")->setText("Session complete");
 		auto *scene_list = d->findChild<QComboBox *>("timerEndScene");
@@ -227,7 +231,8 @@ inline void check(QStringList &issues, bool restart)
 	edit([&](QDialog *d) {
 		d->findChild<QComboBox *>("timerMode")->setCurrentIndex(2);
 		d->findChild<QCheckBox *>("timerLimit")->setChecked(true);
-		expect(clock_pick(d, "clockMinute", 0, 60) && clock_pick(d, "clockSecond", 2, 60), "count-up limit clock");
+		expect(clock_pick(d, "clockMinute", 0, 60) && clock_pick(d, "clockSecond", 2, 60),
+		       "count-up limit clock");
 		d->findChild<QCheckBox *>("timerAutomatic")->setChecked(false);
 		for (const char *name : {"unit_days", "unit_hours", "unit_minutes"})
 			d->findChild<QCheckBox *>(name)->setChecked(false);
@@ -256,7 +261,8 @@ inline void check(QStringList &issues, bool restart)
 	expect(still.Get() == scene.Get(), "a finished timer switched Program more than once");
 	edit([&](QDialog *d) {
 		d->findChild<QComboBox *>("timerMode")->setCurrentIndex(0);
-		expect(clock_pick(d, "clockMinute", 1, 60) && clock_pick(d, "clockSecond", 13, 60), "saved duration clock");
+		expect(clock_pick(d, "clockMinute", 1, 60) && clock_pick(d, "clockSecond", 13, 60),
+		       "saved duration clock");
 		d->findChild<QCheckBox *>("timerAutomatic")->setChecked(true);
 		d->findChild<QLineEdit *>("timerMessage")->clear();
 		d->findChild<QComboBox *>("timerEndScene")->setCurrentIndex(0);

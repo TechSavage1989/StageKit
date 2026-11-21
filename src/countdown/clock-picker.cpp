@@ -107,7 +107,8 @@ protected:
 				const int n = hours_ ? i + 12 * ring : i * 5;
 				const QPointF at = hand_point(i, 12, ring ? inner : outer);
 				p.setPen(n == value() ? pal.color(QPalette::HighlightedText) : ink);
-				const QString text = hours_ ? QString::number(!two_rings_ && n == 0 ? 12 : n) : digits(n);
+				const QString text = hours_ ? QString::number(!two_rings_ && n == 0 ? 12 : n)
+							    : digits(n);
 				p.drawText(QRectF(at.x() - 17, at.y() - 12, 34, 24), Qt::AlignCenter, text);
 			}
 		}
@@ -218,7 +219,8 @@ ClockPicker::ClockPicker(int64_t duration_ms, QTime target, QWidget *parent) : Q
 	duration_layout->setContentsMargins(0, 0, 0, 0);
 	auto *presets = new QHBoxLayout;
 	for (int mins : {1, 5, 15, 30, 60}) {
-		auto *b = new QPushButton(mins == 60 ? label("Countdown.OneHour") : label("Countdown.Mins").arg(mins), duration_row_);
+		auto *b = new QPushButton(mins == 60 ? label("Countdown.OneHour") : label("Countdown.Mins").arg(mins),
+					  duration_row_);
 		b->setObjectName(QStringLiteral("clockPreset%1").arg(mins));
 		b->setAutoDefault(false);
 		presets->addWidget(b);

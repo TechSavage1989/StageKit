@@ -14,14 +14,6 @@ jobs:
         with:
           failCondition: error
 
-      - name: Collect formatted clock controls
-        if: always()
-        run: |
-          for f in src/countdown/clock-picker.cpp src/countdown/clock-picker.hpp src/countdown/timer-options.cpp tests/countdown-dock-test.hpp; do
-            printf 'CLOCK_FORMAT %s ' "$f"
-            clang-format-19 "$f" | base64 -w0
-            echo
-          done
   gersemi:
     runs-on: ubuntu-24.04
     steps:

@@ -78,20 +78,23 @@ jobs:
               "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out" > "$out/$test.log" 2>&1 || { grep -F "  FAIL  " "$out/$test.log" || true; tail -90 "$out/$test.log"; exit 1; }
             tail -3 "$out/$test.log"
           done
+      - name: Check ambient lift and per-source shadow rendering
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          set -eu
+          out="$PWD/build-ports/camera-results"
+          mkdir -p "$out" "$out/../darkest"
+          python3 tests/make-test-image.py "$out"
+          for test in AMBIENT_DARKEST SHADOW_EACH; do
+            env "STAGEKIT_TEST_ONLY_$test=1" xvfb-run -a build-ports/tests/stagekit-ambient-test "$PWD/build-ports/stagekit.so" "$PWD/data" \
+              "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out" > "$out/$test.log" 2>&1 || { grep -F 'FAIL' "$out/$test.log" || true; tail -50 "$out/$test.log"; exit 1; }
+            tail -3 "$out/$test.log"
+          done
       - name: Open the replacement catalog in a fresh OBS frontend
         if: always() && hashFiles('build-ports/tests/stagekit-replacement-probe.so') != ''
         run: bash tests/check-replacement-frontend.sh build-ports
-      - name: Capture clock picker for the guide
-        if: always()
-        run: |
-          python3 - <<'PY'
-          import base64, pathlib
-          p=pathlib.Path('build-ports/filter-results/countdown-settings.png')
-          if p.exists():
-              data=base64.b64encode(p.read_bytes()).decode()
-              for i in range(0,len(data),12000):
-                  print("CLOCK_GUIDE",i,data[i:i+12000])
-          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -103,81 +106,27 @@ jobs:
             build-ports/filter-results/countdown-dock.png
             build-ports/filter-results/countdown-settings.png
             build-ports/filter-results/render.log
-      - name: Compare scene collection frame times
-        if: always() && hashFiles('build-ports/stagekit.so') != ''
-        env:
-          LIBGL_ALWAYS_SOFTWARE: '1'
-          QT_QPA_PLATFORM: offscreen
-          SCENES: Live
-          FRAMES: '450'
-          WARMUP: '5'
+  clock-guide:
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: stagekit-filter-render
+          run-id: 44937445880
+          github-token: ${{ github.token }}
+      - name: Read the tested clock picker image
         run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/after" "$RUNNER_TEMP/before"
-          cp build-ports/stagekit.so "$RUNNER_TEMP/after/stagekit.so"
-          git fetch --depth=1 origin 29505affb5a1b44681d0429b3fdea72726510eb6
-          for path in src/ambient/ambient-background.cpp src/dock/arrange.cpp src/placement/fit-engine.cpp src/look/scene-shadow.cpp; do
-            git show "FETCH_HEAD:$path" > "$path"
-          done
-          cmake --build build-ports --target stagekit --parallel 4
-          cp build-ports/stagekit.so "$RUNNER_TEMP/before/stagekit.so"
-          perf="$RUNNER_TEMP/measure"
-          mkdir -p "$perf"
-          python3 tests/make-perf-collection.py "$perf/scene.json" --scale 0.25 --scene-fit
-          python3 - "$perf/scene.json" <<'PY'
-          import json, sys
-          from pathlib import Path
-          p=Path(sys.argv[1]); scene=json.loads(p.read_text())
-          for source in scene["sources"]:
-              if source["id"] == "stagekit_ambient_background":
-                  source["settings"].update(base_type=3, pattern=7, pattern_speed=97.0, pattern_scale=400.0, blur=500.0, pixel_style=2, pixel_size=50.0, darkest_level=50.0, darkest_fill=0, bloom=0.0)
-              if source["id"] == "scene" and source["name"] == "Live":
-                  source.setdefault("filters", []).append({"id":"stagekit_scene_shadow", "versioned_id":"stagekit_scene_shadow", "name":"Outline fixture", "enabled":True, "settings":{"shadow_from":1,"shadow":False,"outline":True,"outline_design":16,"outline_speed":600.0}})
-          p.write_text(json.dumps(scene))
+          python3 - <<'PY'
+          import base64, pathlib
+          files=list(pathlib.Path('.').rglob('countdown-settings.png'))
+          assert len(files)==1,files
+          data=base64.b64encode(files[0].read_bytes()).decode()
+          for i in range(0,len(data),12000):
+              print("CLOCK_GUIDE",i,data[i:i+12000])
           PY
-          fixtures="$PWD/build-ports/camera-results"
-          for label in before after; do
-            box="$perf/$label"
-            mkdir -p "$box/out" "$box/darkest"
-            for test in SHADOW_EACH AMBIENT_DARKEST; do
-              env "STAGEKIT_TEST_ONLY_$test=1" xvfb-run -a build-ports/tests/stagekit-ambient-test "$RUNNER_TEMP/$label/stagekit.so" "$PWD/data" "$fixtures/test-art.png" "$fixtures/test-texture.png" "$fixtures/test-game.png" "$box/out" > "$box/$test.log" 2>&1 || { tail -40 "$box/$test.log"; exit 1; }
-            done
-          done
-          python3 - "$perf" <<'PY'
-          import pathlib, sys
-          root=pathlib.Path(sys.argv[1])
-          images=sorted((root/"before").rglob("*.rgba"))
-          assert len(images) >= 5, "reference captures missing"
-          for ref in images:
-              name=ref.relative_to(root/"before")
-              a=ref.read_bytes(); b=(root/"after"/name).read_bytes()
-              assert len(a)==len(b) and len(a)>0, name
-              difference=max(abs(x-y) for x,y in zip(a,b))
-              print("IMAGE_COMPARISON",name,"max channel difference",difference)
-              assert difference <= 1, name
-          PY
-          for label in before1 after1 after2 before2; do
-            plugin="$RUNNER_TEMP/${label%?}/stagekit.so"
-            OUT="$perf" PLUGIN="$plugin" bash tests/run-perf.sh build-ports "$label=$perf/scene.json" > "$perf/$label.txt"
-            test -s "$perf/$label.json"
-          done
-          python3 tests/perf-compare.py "before1=$perf/before1.json" "after1=$perf/after1.json" "after2=$perf/after2.json" "before2=$perf/before2.json"
-          python3 - "$perf" <<'PY'
-          import json,sys,pathlib
-          for name in ["before1","after1","after2","before2"]:
-              data=json.loads((pathlib.Path(sys.argv[1])/(name+".json")).read_text())
-              print("PERF_RESULT",name,json.dumps(data,separators=(",",":")))
-          PY
-
-          for label in before after; do
-            for test in FIT_TOOL DOCK_BOUNDS SHADOW_FLICKER; do
-              box="$perf/$label"
-              status=0
-              env "STAGEKIT_TEST_ONLY_$test=1" xvfb-run -a build-ports/tests/stagekit-ambient-test "$RUNNER_TEMP/$label/stagekit.so" "$PWD/data" "$fixtures/test-art.png" "$fixtures/test-texture.png" "$fixtures/test-game.png" "$box/out" > "$box/$test.log" 2>&1 || status=$?
-              echo "PLACEMENT_GATE $label $test status=$status"
-              grep -E '  FAIL  |ALL PASSED|Segmentation fault' "$box/$test.log" | tail -16 || true
-            done
-          done
   windows:
     name: Windows OBS 32.2.2 frontend
     runs-on: windows-2022
