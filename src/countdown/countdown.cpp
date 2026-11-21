@@ -141,7 +141,6 @@ struct Playback {
 	{
 		return state == OBS_MEDIA_STATE_ENDED && settings.use_message && !settings.message.isEmpty();
 	}
-
 };
 
 struct Display {
@@ -487,7 +486,8 @@ public:
 		const auto purpose = end_message ? TimerText::EndMessage : TimerText::Plain;
 		const auto value = clock_.settings.display_text(ms, layout_range_, purpose);
 		if (layout)
-			*layout = end_message ? value : clock_.settings.display_text(ms, layout_range_, TimerText::Layout);
+			*layout = end_message ? value
+					      : clock_.settings.display_text(ms, layout_range_, TimerText::Layout);
 		return value;
 	}
 	uint32_t width() const
@@ -542,10 +542,11 @@ public:
 			if (!texture_ || second != last_second_ || msg != last_message_ || dirty_ ||
 			    wanted != density_) {
 				const auto &options = clock_.settings;
-				const QString value = options.display_text(second * 1000, layout_range_,
-									   msg ? TimerText::EndMessage : TimerText::Layout);
-				const bool switch_view = rendered_canvas_ == canvas && texture_ && msg != last_message_ &&
-							 value != last_value_ && now - last_draw_ < 500000000ULL;
+				const QString value = options.display_text(
+					second * 1000, layout_range_, msg ? TimerText::EndMessage : TimerText::Layout);
+				const bool switch_view = rendered_canvas_ == canvas && texture_ &&
+							 msg != last_message_ && value != last_value_ &&
+							 now - last_draw_ < 500000000ULL;
 				const bool repaint = dirty_ || !texture_ || wanted != density_ ||
 						     value != last_value_ || msg != last_message_;
 				if (repaint && !update_texture(value, msg, wanted, switch_view, now))
@@ -771,7 +772,8 @@ void register_countdown()
 				bool end_message;
 				QString layout;
 				const bool wanted = calldata_bool(cd, "want_layout");
-				const auto value = static_cast<Countdown *>(d)->text(end_message, wanted ? &layout : nullptr);
+				const auto value =
+					static_cast<Countdown *>(d)->text(end_message, wanted ? &layout : nullptr);
 				if (wanted)
 					calldata_set_string(cd, "layout", layout.toUtf8().constData());
 				calldata_set_string(cd, "text", value.toUtf8().constData());

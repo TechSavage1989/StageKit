@@ -330,7 +330,8 @@ inline void steady_ticks(QStringList &issues, const QString &sheet_path)
 	expect(ten != nine && same(ten, nine, 0, 21) && same(ten, nine, 62, 100),
 	       "prefix, colon or seconds moved when the leading digit disappeared");
 	for (int n = 0; n < 10; ++n) {
-		const auto change = shot(61000 + n * 1000, QStringLiteral("IN 9:%1").arg(10 - n, 2, 10, QLatin1Char('0')));
+		const auto change =
+			shot(61000 + n * 1000, QStringLiteral("IN 9:%1").arg(10 - n, 2, 10, QLatin1Char('0')));
 		expect(same(nine, change, 0, 65), "changing seconds moved the prefix, minutes or colon");
 	}
 	const auto before = shot(11000, "IN 10:00");
@@ -369,7 +370,8 @@ inline void steady_ticks(QStringList &issues, const QString &sheet_path)
 			paint.drawText(QRect(280 * i, 98, 280, 28), Qt::AlignCenter, labels[i]);
 		}
 		paint.end();
-		expect(sheet.save(QFileInfo(sheet_path).dir().filePath("countdown-rollover.png")), "saving the rollover image");
+		expect(sheet.save(QFileInfo(sheet_path).dir().filePath("countdown-rollover.png")),
+		       "saving the rollover image");
 	}
 
 	obs_data_set_string(config, "output_format", "%minutes%m %seconds2%s");
@@ -393,7 +395,8 @@ inline void steady_ticks(QStringList &issues, const QString &sheet_path)
 	const auto days = shot(86411000, "1:00:00:11");
 	expect(same(minutes, hours, 84, 100) && same(hours, days, 84, 100),
 	       "adding hours or days to a count-up moved its seconds");
-	blog(LOG_INFO, "StageKit timer layout: checked fixed clock anchors across ten digits, minute, hour and day rollovers");
+	blog(LOG_INFO,
+	     "StageKit timer layout: checked fixed clock anchors across ten digits, minute, hour and day rollovers");
 }
 
 inline void fitted_states(QStringList &issues, const QString &sheet_path)
@@ -462,7 +465,8 @@ inline void fitted_states(QStringList &issues, const QString &sheet_path)
 		require(inside(first) && inside(middle) && inside(last),
 			"text crossed the transform, screen edge or neighboring source");
 		if (animate)
-			require(first != middle && middle != last && first != last, "end message did not fade through an intermediate frame");
+			require(first != middle && middle != last && first != last,
+				"end message did not fade through an intermediate frame");
 		else
 			require(first == middle && middle == last, "running text moved during a format change");
 		const auto img = last.copy(target);

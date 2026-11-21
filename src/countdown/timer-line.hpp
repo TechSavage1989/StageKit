@@ -53,7 +53,8 @@ public:
 				if (!painter)
 					bounds |= digit_.translated(x, 0);
 				else if (c != timer_digit_space)
-					painter->drawText(origin + QPointF(x + offsets_[c.digitValue()], 0), QString(c));
+					painter->drawText(origin + QPointF(x + offsets_[c.digitValue()], 0),
+							  QString(c));
 				x += advance_;
 				++i;
 			} else if (c == QLatin1Char(':') || c == timer_colon_space) {

@@ -295,7 +295,8 @@ inline void check(QStringList &issues, bool restart)
 	obs_data_set_bool(stable_settings, "leading_zero", false);
 	obs_data_set_bool(stable_settings, "format_output", true);
 	obs_data_set_string(stable_settings, "output_format", "IN %time%");
-	OBSSourceAutoRelease stable = obs_source_create("stagekit_countdown", "Dock rollover", stable_settings, nullptr);
+	OBSSourceAutoRelease stable =
+		obs_source_create("stagekit_countdown", "Dock rollover", stable_settings, nullptr);
 	if (stable && choose(QStringLiteral("Dock rollover"))) {
 		expect(until([&] { return readout->text() == "IN 10:11"; }), "first rollover reading");
 		const QRect rect = readout->geometry();
@@ -305,7 +306,8 @@ inline void check(QStringList &issues, bool restart)
 		const QImage b = readout->grab().toImage();
 		const QRect left(0, 0, a.width() / 3, a.height());
 		const QRect right(2 * a.width() / 3, 0, a.width() / 3, a.height());
-		expect(rect == readout->geometry() && a != b && a.copy(left) == b.copy(left) && a.copy(right) == b.copy(right),
+		expect(rect == readout->geometry() && a != b && a.copy(left) == b.copy(left) &&
+			       a.copy(right) == b.copy(right),
 		       "dock clock moved or resized when a digit disappeared");
 	} else {
 		expect(false, "dock rollover timer missing");

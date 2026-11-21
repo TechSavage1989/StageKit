@@ -281,7 +281,7 @@ QString TimerOptions::clock_text(int64_t milliseconds, int64_t range, bool layou
 	range = std::max(range, milliseconds);
 	const int mask = fields_for(units, range);
 	const int64_t capacity = layout ? layout_range(*this, range) : range;
-	const int slots = layout ? fields_for(units, capacity) : mask;
+	const int layout_units = layout ? fields_for(units, capacity) : mask;
 	int64_t quantum = 1;
 	for (size_t i = 0; i < bits.size(); ++i)
 		if (mask & bits[i])
@@ -294,7 +294,7 @@ QString TimerOptions::clock_text(int64_t milliseconds, int64_t range, bool layou
 	QString result;
 	bool first_visible = true;
 	for (size_t i = 0; i < sizes.size(); ++i) {
-		if (!(slots & bits[i]))
+		if (!(layout_units & bits[i]))
 			continue;
 		const bool visible = (mask & bits[i]) != 0;
 		const int digits = first_visible && !leading_zero ? 1 : 2;

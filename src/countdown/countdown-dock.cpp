@@ -121,7 +121,8 @@ private:
 				const QRect ink =
 					message_ ? metrics.boundingRect(QRect(0, 0, room.width(), 10000),
 									Qt::TextWordWrap, sample_)
-						 : QRect(0, 0, int(std::ceil(TimerLine(face_).layout(sample_).width())), metrics.height());
+						 : QRect(0, 0, int(std::ceil(TimerLine(face_).layout(sample_).width())),
+							 metrics.height());
 				if (ink.height() <= room.height() && ink.width() <= room.width())
 					low = mid;
 				else
