@@ -141,6 +141,11 @@ int main(int argc, char **argv)
 			return 1;
 	}
 	obs_post_load_modules();
+	const char *original_name = obs_get_module_name(obs_get_module("move-transition"));
+	const char *bundled_name = obs_get_module_name(obs_get_module("stagekit-port-move"));
+	check(original_name && strcmp(original_name, "Move Transition") == 0 && bundled_name &&
+		      strcmp(bundled_name, "StageKit - Move Transition") == 0,
+	      "standalone and bundled Move Transition report distinct plugin names");
 	auto move_callback = [](const char *proc, const char *filter) {
 		calldata_t data{};
 		calldata_set_string(&data, "filter_id", filter);

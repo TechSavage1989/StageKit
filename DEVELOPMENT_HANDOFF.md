@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | fix/obs-source-ownership. Release notes in docs/releases/0.1.0-beta233.md. |
+| Working branch | fix/plugin-manager-names. Release notes in docs/releases/0.1.0-beta234.md. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -22,6 +22,10 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
+
+## OBS Plugin Manager names (0.1.0-beta234)
+
+The main module exports the StageKit name. The 22 bundled modules export their StageKit-prefixed names from the main locale. The Windows frontend test seeds the previous labels, opens the actual OBS 32.2.2 Plugin Manager and checks its rows and saved module identities. The Linux test loads standalone Move Transition alongside the bundled version and checks both names.
 
 ## OBS source ownership (0.1.0-beta233)
 

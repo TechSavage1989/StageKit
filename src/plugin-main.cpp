@@ -124,6 +124,11 @@ void frontend_save_load(obs_data_t *save_data, bool saving, void *)
 
 } // namespace
 
+MODULE_EXPORT const char *obs_module_name(void)
+{
+	return obs_module_text("StageKit.Name");
+}
+
 MODULE_EXPORT const char *obs_module_description(void)
 {
 	return obs_module_text("StageKit.Description");

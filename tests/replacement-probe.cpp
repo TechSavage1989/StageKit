@@ -2,6 +2,7 @@
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 #include <QApplication>
+#include <QCheckBox>
 #include <QDialog>
 #include <QFile>
 #include <QLineEdit>
@@ -75,6 +76,37 @@ static void check_blur_output(QStringList &issues)
 	obs_source_release(source);
 }
 
+static void check_plugin_manager(QStringList &issues)
+{
+	const auto expected = qEnvironmentVariable("STAGEKIT_TEST_MODULE_NAMES").split('\n', Qt::SkipEmptyParts);
+	if (expected.isEmpty())
+		return;
+	auto *action = action_named("Plugin Manager");
+	if (!action) {
+		issues.append("Missing OBS Plugin Manager action");
+		return;
+	}
+
+	bool opened = false;
+	QObject timer_owner;
+	QTimer::singleShot(200, &timer_owner, [&] {
+		auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+		if (!dialog)
+			return;
+		opened = true;
+		QStringList labels;
+		for (auto *box : dialog->findChildren<QCheckBox *>())
+			labels.append(box->text());
+		for (const auto &name : expected)
+			if (labels.count(name) != 1)
+				issues.append("Expected one Plugin Manager row for " + name);
+		dialog->reject();
+	});
+	action->trigger();
+	if (!opened)
+		issues.append("Could not inspect the OBS Plugin Manager window");
+}
+
 static void exercise()
 {
 	QStringList issues;
@@ -144,6 +176,7 @@ static void exercise()
 		if (!opened || !matched)
 			issues.append("Catalog search did not return the labeled Directory Watch Media filter");
 	}
+	check_plugin_manager(issues);
 	check_blur_output(issues);
 	QFile report(qEnvironmentVariable("STAGEKIT_TEST_REPORT"));
 	if (report.open(QIODevice::WriteOnly))
