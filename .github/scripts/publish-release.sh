@@ -81,8 +81,17 @@ publish_stage() { # <stage>
   local stage="$1" variant name file other files=() left=()
   for variant in ${needs[${stage}]}; do
     name="$(artifact_for "${variant}")"
-    rm -rf "artifacts/${name}"
-    gh run download "${run}" --repo "${repo}" --name "${name}" --dir "artifacts/${name}"
+    # The artifact list can report a finished upload before its download URL is readable.
+    local attempt
+    for attempt in 1 2 3 4 5 6; do
+      rm -rf "artifacts/${name}"
+      if gh run download "${run}" --repo "${repo}" --name "${name}" --dir "artifacts/${name}"; then break; fi
+      if ((attempt == 6)); then
+        echo "::error::GitHub could not supply the build artifact ${name} after six attempts."
+        exit 1
+      fi
+      sleep "$((1 << attempt))"
+    done
     for file in "artifacts/${name}"/*.@(${types[${variant}]}); do
       mv "${file}" upload/
       files+=("upload/${file##*/}")
