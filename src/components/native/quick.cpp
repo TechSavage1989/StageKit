@@ -43,7 +43,10 @@ void redraw_manager();
 struct Section {
 	const char *label;
 	QList<Source> sources;
-	bool operator==(const Section &other) const { return qstrcmp(label, other.label) == 0 && sources == other.sources; }
+	bool operator==(const Section &other) const
+	{
+		return qstrcmp(label, other.label) == 0 && sources == other.sources;
+	}
 };
 
 class Board : public QWidget {
@@ -53,7 +56,9 @@ public:
 	QLineEdit *search = nullptr;
 
 	Board(Options settings, QString dockId, QWidget *parent = nullptr)
-		: QWidget(parent), options(settings), id(dockId)
+		: QWidget(parent),
+		  options(settings),
+		  id(dockId)
 	{
 		auto *layout = new QVBoxLayout(this);
 		layout->setContentsMargins(2, 2, 2, 2);
@@ -117,23 +122,26 @@ public:
 			auto *bar = new QHBoxLayout;
 			bar->setSpacing(1);
 			layout->addLayout(bar);
-			auto button = [&](const char *name, const char *label, const char *theme, QStyle::StandardPixmap fallback, auto fn) {
+			auto button = [&](const char *name, const char *label, const char *theme,
+					  QStyle::StandardPixmap fallback, auto fn) {
 				auto *b = tool_button(this, name, label, theme, style()->standardIcon(fallback));
 				bar->addWidget(b);
 				connect(b, &QToolButton::clicked, this, fn);
 				return b;
 			};
 			if (options.mode == "Manual") {
-				button("nativeQuickPin", "Quick.AddSources", "icon-plus", QStyle::SP_FileDialogNewFolder,
-				       [this] { choose_sources(); });
-				remove = button("nativeQuickUnpin", "Quick.RemoveSource", "icon-minus", QStyle::SP_TrashIcon,
-						[this] { unpin(); });
-				up = button("nativeQuickUp", "Quick.MoveUp", "icon-up", QStyle::SP_ArrowUp, [this] { move(-1); });
-				down = button("nativeQuickDown", "Quick.MoveDown", "icon-down", QStyle::SP_ArrowDown, [this] { move(1); });
+				button("nativeQuickPin", "Quick.AddSources", "icon-plus",
+				       QStyle::SP_FileDialogNewFolder, [this] { choose_sources(); });
+				remove = button("nativeQuickUnpin", "Quick.RemoveSource", "icon-minus",
+						QStyle::SP_TrashIcon, [this] { unpin(); });
+				up = button("nativeQuickUp", "Quick.MoveUp", "icon-up", QStyle::SP_ArrowUp,
+					    [this] { move(-1); });
+				down = button("nativeQuickDown", "Quick.MoveDown", "icon-down", QStyle::SP_ArrowDown,
+					      [this] { move(1); });
 			}
 			bar->addStretch();
-			button("nativeQuickSettings", "Quick.DockOptions", "icon-gear", QStyle::SP_FileDialogDetailedView,
-			       [this] { edit(); });
+			button("nativeQuickSettings", "Quick.DockOptions", "icon-gear",
+			       QStyle::SP_FileDialogDetailedView, [this] { edit(); });
 		}
 		auto *timer = new QTimer(this);
 		connect(timer, &QTimer::timeout, this, [this] {
@@ -218,7 +226,11 @@ public:
 			watch_scenes(containers);
 			empty = "Quick.EmptyDynamic";
 		} else {
-			sections = {{"Native.Source", {}}, {"Quick.SourceType", {}}, {"Quick.FilePath", {}}, {"Quick.Url", {}}, {"Native.Filters", {}}};
+			sections = {{"Native.Source", {}},
+				    {"Quick.SourceType", {}},
+				    {"Quick.FilePath", {}},
+				    {"Quick.Url", {}},
+				    {"Native.Filters", {}}};
 			const auto term = search->text().trimmed();
 			empty = term.isEmpty() ? "Native.FindSources" : "Quick.NoResults";
 			if (!term.isEmpty()) {
@@ -265,14 +277,17 @@ public:
 				auto *row = new QTreeWidgetItem(group, {entry.name});
 				row->setData(0, Qt::UserRole, entry.uuid);
 				row->setIcon(0, source_icon(source));
-				auto control = [&](int col, const char *name, const char *label, const char *theme, QStyle::StandardPixmap fallback) {
-					auto *button = tool_button(list, name, label, theme, style()->standardIcon(fallback));
+				auto control = [&](int col, const char *name, const char *label, const char *theme,
+						   QStyle::StandardPixmap fallback) {
+					auto *button =
+						tool_button(list, name, label, theme, style()->standardIcon(fallback));
 					button->setFixedSize(24, 23);
 					list->setItemWidget(row, col, button);
 					return button;
 				};
 				if (options.properties && can_open_properties(source)) {
-					auto *button = control(1, "nativeQuickProperties", "Native.Properties", "icon-gear", QStyle::SP_FileDialogDetailedView);
+					auto *button = control(1, "nativeQuickProperties", "Native.Properties",
+							       "icon-gear", QStyle::SP_FileDialogDetailedView);
 					connect(button, &QToolButton::clicked, this, [this, entry] {
 						auto source = resolve(entry);
 						if (source) {
@@ -282,7 +297,8 @@ public:
 					});
 				}
 				if (options.filters) {
-					auto *button = control(2, "nativeQuickFilters", "Native.Filters", "icon-filter", QStyle::SP_FileDialogContentsView);
+					auto *button = control(2, "nativeQuickFilters", "Native.Filters", "icon-filter",
+							       QStyle::SP_FileDialogContentsView);
 					connect(button, &QToolButton::clicked, this, [this, entry] {
 						auto source = resolve(entry);
 						if (source) {
@@ -292,12 +308,15 @@ public:
 					});
 				}
 				if (options.parents) {
-					auto *button = control(3, "nativeQuickScenes", "Quick.ParentScenes", "icon-scene", QStyle::SP_DirIcon);
+					auto *button = control(3, "nativeQuickScenes", "Quick.ParentScenes",
+							       "icon-scene", QStyle::SP_DirIcon);
 					connect(button, &QToolButton::clicked, this, [this, entry, button] {
-						open_parents(this, button->mapToGlobal(QPoint(0, button->height())), entry);
+						open_parents(this, button->mapToGlobal(QPoint(0, button->height())),
+							     entry);
 					});
 				}
-				if (entry.uuid == selected && (!restore || (row->parent() && row->parent()->text(0) == selectedGroup)))
+				if (entry.uuid == selected &&
+				    (!restore || (row->parent() && row->parent()->text(0) == selectedGroup)))
 					restore = row;
 			}
 			if (section.label)
@@ -311,12 +330,14 @@ public:
 		message->setVisible(!hasRows);
 		update_moves();
 	}
+
 protected:
 	void showEvent(QShowEvent *event) override
 	{
 		QWidget::showEvent(event);
 		refresh();
 	}
+
 private:
 	QTreeWidget *list;
 	QLabel *message;
@@ -342,10 +363,15 @@ private:
 				continue;
 			auto *handler = obs_source_get_signal_handler(source);
 			for (const char *signal : {"item_add", "item_remove", "reorder", "refresh"})
-				scene_connections.emplace_back(handler, signal, [](void *data, calldata_t *) {
-					auto *board = static_cast<Board *>(data);
-					QMetaObject::invokeMethod(board, [board] { board->graph_update->start(0); }, Qt::QueuedConnection);
-				}, this);
+				scene_connections.emplace_back(
+					handler, signal,
+					[](void *data, calldata_t *) {
+						auto *board = static_cast<Board *>(data);
+						QMetaObject::invokeMethod(
+							board, [board] { board->graph_update->start(0); },
+							Qt::QueuedConnection);
+					},
+					this);
 		}
 	}
 	static Source row_source(QTreeWidgetItem *row)
@@ -584,7 +610,10 @@ void manager()
 	auto *edit = button("nativeQuickEdit", "Quick.DockOptions", [dialog, selected] {
 		if (auto *board = selected()) {
 			QPointer<Board> live = board;
-			dock_options(dialog, board->options, false, [live](Options value) { if (live) live->apply(value); });
+			dock_options(dialog, board->options, false, [live](Options value) {
+				if (live)
+					live->apply(value);
+			});
 		}
 	});
 	auto *show = button("nativeQuickShow", "Native.ShowDock", [selected] {
@@ -651,8 +680,12 @@ void persist(obs_data_t *root, bool saving, void *)
 		OBSDataArrayAutoRelease entries = obs_data_get_array(data, "docks");
 		for (size_t i = 0; i < obs_data_array_count(entries); ++i) {
 			OBSDataAutoRelease d = obs_data_array_item(entries, i);
-			Options opts{field(d, "dock_name"), field(d, "dock_type"), obs_data_get_bool(d, "show_properties"),
-				     obs_data_get_bool(d, "show_filters"), obs_data_get_bool(d, "show_scenes"), obs_data_get_bool(d, "clickable_scenes")};
+			Options opts{field(d, "dock_name"),
+				     field(d, "dock_type"),
+				     obs_data_get_bool(d, "show_properties"),
+				     obs_data_get_bool(d, "show_filters"),
+				     obs_data_get_bool(d, "show_scenes"),
+				     obs_data_get_bool(d, "clickable_scenes")};
 			if (opts.mode != "Manual" && opts.mode != "Dynamic" && opts.mode != "Source Search")
 				continue;
 			add_board(opts, field(d, "dock_id"), d);
@@ -664,11 +697,14 @@ void event(obs_frontend_event which, void *)
 	if (which == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CLEANUP || which == OBS_FRONTEND_EVENT_EXIT)
 		clear_boards();
 	else if (which == OBS_FRONTEND_EVENT_SCENE_CHANGED && owner)
-		QMetaObject::invokeMethod(owner, [] {
-			for (const auto &board : boards)
-				if (board && board->options.mode == "Dynamic")
-					board->refresh();
-		}, Qt::QueuedConnection);
+		QMetaObject::invokeMethod(
+			owner,
+			[] {
+				for (const auto &board : boards)
+					if (board && board->options.mode == "Dynamic")
+						board->refresh();
+			},
+			Qt::QueuedConnection);
 }
 void load()
 {
@@ -679,10 +715,12 @@ void load()
 	if (menu)
 		QObject::connect(menu, &QAction::triggered, owner, manager);
 	key = obs_hotkey_register_frontend(
-		"Quick Search", text("Quick.OpenSearch"), [](void *, obs_hotkey_id, obs_hotkey_t *, bool down) {
+		"Quick Search", text("Quick.OpenSearch"),
+		[](void *, obs_hotkey_id, obs_hotkey_t *, bool down) {
 			if (down && owner)
 				QMetaObject::invokeMethod(owner, search_window, Qt::QueuedConnection);
-		}, nullptr);
+		},
+		nullptr);
 	obs_frontend_add_save_callback(persist, nullptr);
 	obs_frontend_add_event_callback(event, nullptr);
 }

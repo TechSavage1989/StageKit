@@ -25,7 +25,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 
 ## Quick Access docks
 
-The native Quick Access Utility uses the original Manual, Dynamic and Source Search dock types. Manual pins retain their UUIDs and order. Dynamic follows Program; a clickable scene selects Preview in Studio Mode. Parent-scene controls resolve the specific OBS scene item before changing visibility or opening Edit Transform. The collection save callback retains the StageKit dock IDs, geometry, options and Quick Search hotkey.
+The native Quick Access Utility uses the original Manual, Dynamic and Source Search dock types. Manual pins retain their UUIDs and order. Dynamic follows Program. A clickable scene selects Preview in Studio Mode. Parent-scene controls resolve the specific OBS scene item before changing visibility or opening Edit Transform. The collection save callback retains the StageKit dock IDs, geometry, options and Quick Search hotkey.
 
 The replacement frontend probe drives the dock manager, multi-source picker, row actions, nested scenes and groups, search categories and Quick Search hotkey. The second portable Windows OBS launch checks the saved dock options and order.
 

@@ -31,7 +31,7 @@ OBSSourceAutoRelease resolve(const Source &source)
 	if (source.uuid.isEmpty() && source.name.isEmpty())
 		return {};
 	OBSSourceAutoRelease found = source.uuid.isEmpty() ? obs_get_source_by_name(source.name.toUtf8().constData())
-							 : obs_get_source_by_uuid(source.uuid.toUtf8().constData());
+							   : obs_get_source_by_uuid(source.uuid.toUtf8().constData());
 	if (found && !obs_source_removed(found))
 		return found;
 	return {};
@@ -47,9 +47,8 @@ QList<Source> available_sources()
 	};
 	obs_enum_sources(collect, &sources);
 	obs_enum_scenes(collect, &sources);
-	std::sort(sources.begin(), sources.end(), [](const Source &a, const Source &b) {
-		return QString::localeAwareCompare(a.name, b.name) < 0;
-	});
+	std::sort(sources.begin(), sources.end(),
+		  [](const Source &a, const Source &b) { return QString::localeAwareCompare(a.name, b.name) < 0; });
 	return sources;
 }
 
@@ -63,22 +62,25 @@ struct SceneWalk {
 		if (!scene)
 			return;
 		containers.append(describe(obs_scene_get_source(scene)));
-		obs_scene_enum_items(scene, [](obs_scene_t *, obs_sceneitem_t *item, void *data) {
-			auto &walk = *static_cast<SceneWalk *>(data);
-			auto *child = obs_sceneitem_get_source(item);
-			if (!child || obs_source_removed(child) || obs_obj_is_private(child))
+		obs_scene_enum_items(
+			scene,
+			[](obs_scene_t *, obs_sceneitem_t *item, void *data) {
+				auto &walk = *static_cast<SceneWalk *>(data);
+				auto *child = obs_sceneitem_get_source(item);
+				if (!child || obs_source_removed(child) || obs_obj_is_private(child))
+					return true;
+				auto entry = describe(child);
+				if (!walk.seen.contains(entry.uuid)) {
+					walk.seen.insert(entry.uuid);
+					walk.sources.append(entry);
+					walk.visit(obs_group_or_scene_from_source(child));
+				}
 				return true;
-			auto entry = describe(child);
-			if (!walk.seen.contains(entry.uuid)) {
-				walk.seen.insert(entry.uuid);
-				walk.sources.append(entry);
-				walk.visit(obs_group_or_scene_from_source(child));
-			}
-			return true;
-		}, this);
+			},
+			this);
 	}
 };
-}
+} // namespace
 
 QList<Source> program_sources(QList<Source> &containers)
 {
@@ -92,7 +94,9 @@ unsigned search_matches(obs_source_t *source, const QString &query)
 {
 	if (!source || query.isEmpty())
 		return 0;
-	auto contains = [&](const char *value) { return QString::fromUtf8(value).contains(query, Qt::CaseInsensitive); };
+	auto contains = [&](const char *value) {
+		return QString::fromUtf8(value).contains(query, Qt::CaseInsensitive);
+	};
 	unsigned result = 0;
 	if (contains(obs_source_get_name(source)) || contains(obs_source_get_uuid(source)))
 		result |= Name;
@@ -103,13 +107,16 @@ unsigned search_matches(obs_source_t *source, const QString &query)
 		const QString &query;
 		bool found = false;
 	} filters{query};
-	obs_source_enum_filters(source, [](obs_source_t *, obs_source_t *filter, void *data) {
-		auto &q = *static_cast<FilterQuery *>(data);
-		const char *id = obs_source_get_id(filter);
-		for (const char *field : {obs_source_get_name(filter), id, obs_source_get_display_name(id)})
-			if (QString::fromUtf8(field).contains(q.query, Qt::CaseInsensitive))
-				q.found = true;
-	}, &filters);
+	obs_source_enum_filters(
+		source,
+		[](obs_source_t *, obs_source_t *filter, void *data) {
+			auto &q = *static_cast<FilterQuery *>(data);
+			const char *id = obs_source_get_id(filter);
+			for (const char *field : {obs_source_get_name(filter), id, obs_source_get_display_name(id)})
+				if (QString::fromUtf8(field).contains(q.query, Qt::CaseInsensitive))
+					q.found = true;
+		},
+		&filters);
 	if (filters.found)
 		result |= Filter;
 	OBSDataAutoRelease settings = obs_source_get_settings(source);
@@ -142,20 +149,47 @@ QIcon source_icon(obs_source_t *source)
 		property = "sceneIcon";
 	else {
 		switch (obs_source_get_icon_type(obs_source_get_id(source))) {
-		case OBS_ICON_TYPE_IMAGE: property = "imageIcon"; break;
-		case OBS_ICON_TYPE_COLOR: property = "colorIcon"; break;
-		case OBS_ICON_TYPE_SLIDESHOW: property = "slideshowIcon"; break;
-		case OBS_ICON_TYPE_AUDIO_INPUT: property = "audioInputIcon"; break;
-		case OBS_ICON_TYPE_AUDIO_OUTPUT: property = "audioOutputIcon"; break;
-		case OBS_ICON_TYPE_DESKTOP_CAPTURE: property = "desktopCapIcon"; break;
-		case OBS_ICON_TYPE_WINDOW_CAPTURE: property = "windowCapIcon"; break;
-		case OBS_ICON_TYPE_GAME_CAPTURE: property = "gameCapIcon"; break;
-		case OBS_ICON_TYPE_CAMERA: property = "cameraIcon"; break;
-		case OBS_ICON_TYPE_TEXT: property = "textIcon"; break;
-		case OBS_ICON_TYPE_MEDIA: property = "mediaIcon"; break;
-		case OBS_ICON_TYPE_BROWSER: property = "browserIcon"; break;
-		case OBS_ICON_TYPE_PROCESS_AUDIO_OUTPUT: property = "audioProcessOutputIcon"; break;
-		default: break;
+		case OBS_ICON_TYPE_IMAGE:
+			property = "imageIcon";
+			break;
+		case OBS_ICON_TYPE_COLOR:
+			property = "colorIcon";
+			break;
+		case OBS_ICON_TYPE_SLIDESHOW:
+			property = "slideshowIcon";
+			break;
+		case OBS_ICON_TYPE_AUDIO_INPUT:
+			property = "audioInputIcon";
+			break;
+		case OBS_ICON_TYPE_AUDIO_OUTPUT:
+			property = "audioOutputIcon";
+			break;
+		case OBS_ICON_TYPE_DESKTOP_CAPTURE:
+			property = "desktopCapIcon";
+			break;
+		case OBS_ICON_TYPE_WINDOW_CAPTURE:
+			property = "windowCapIcon";
+			break;
+		case OBS_ICON_TYPE_GAME_CAPTURE:
+			property = "gameCapIcon";
+			break;
+		case OBS_ICON_TYPE_CAMERA:
+			property = "cameraIcon";
+			break;
+		case OBS_ICON_TYPE_TEXT:
+			property = "textIcon";
+			break;
+		case OBS_ICON_TYPE_MEDIA:
+			property = "mediaIcon";
+			break;
+		case OBS_ICON_TYPE_BROWSER:
+			property = "browserIcon";
+			break;
+		case OBS_ICON_TYPE_PROCESS_AUDIO_OUTPUT:
+			property = "audioProcessOutputIcon";
+			break;
+		default:
+			break;
 		}
 	}
 	return main ? main->property(property).value<QIcon>() : QIcon();
@@ -204,15 +238,19 @@ struct ParentSearch {
 	{
 		if (!scene)
 			return;
-		obs_scene_enum_items(scene, [](obs_scene_t *owner, obs_sceneitem_t *item, void *data) {
-			auto &search = *static_cast<ParentSearch *>(data);
-			auto *child = obs_sceneitem_get_source(item);
-			if (QString::fromUtf8(obs_source_get_uuid(child)) == search.target)
-				search.items.append({search.root, describe(obs_scene_get_source(owner)), obs_sceneitem_get_id(item)});
-			if (obs_sceneitem_is_group(item))
-				search.visit(obs_sceneitem_group_get_scene(item));
-			return true;
-		}, this);
+		obs_scene_enum_items(
+			scene,
+			[](obs_scene_t *owner, obs_sceneitem_t *item, void *data) {
+				auto &search = *static_cast<ParentSearch *>(data);
+				auto *child = obs_sceneitem_get_source(item);
+				if (QString::fromUtf8(obs_source_get_uuid(child)) == search.target)
+					search.items.append({search.root, describe(obs_scene_get_source(owner)),
+							     obs_sceneitem_get_id(item)});
+				if (obs_sceneitem_is_group(item))
+					search.visit(obs_sceneitem_group_get_scene(item));
+				return true;
+			},
+			this);
 	}
 };
 
@@ -247,8 +285,9 @@ const char *clone_type()
 
 bool add_to_scene(QWidget *parent, const Source &entry, bool clone)
 {
-	OBSSourceAutoRelease current = obs_frontend_preview_program_mode_active() ? obs_frontend_get_current_preview_scene()
-										 : obs_frontend_get_current_scene();
+	OBSSourceAutoRelease current = obs_frontend_preview_program_mode_active()
+					       ? obs_frontend_get_current_preview_scene()
+					       : obs_frontend_get_current_scene();
 	auto source = resolve(entry);
 	auto *scene = obs_scene_from_source(current);
 	if (!scene || !source || source.Get() == current.Get())
@@ -259,8 +298,9 @@ bool add_to_scene(QWidget *parent, const Source &entry, bool clone)
 	if (!id)
 		return false;
 	bool ok = false;
-	auto name = QInputDialog::getText(parent, text("Quick.AddClone"), text("Quick.CloneName"),
-					  QLineEdit::Normal, entry.name + " CLONE", &ok).trimmed();
+	auto name = QInputDialog::getText(parent, text("Quick.AddClone"), text("Quick.CloneName"), QLineEdit::Normal,
+					  entry.name + " CLONE", &ok)
+			    .trimmed();
 	if (!ok || name.isEmpty() || obs_source_removed(source) || obs_source_removed(current))
 		return false;
 	OBSDataAutoRelease settings = obs_data_create();
@@ -268,19 +308,21 @@ bool add_to_scene(QWidget *parent, const Source &entry, bool clone)
 	OBSSourceAutoRelease copy = obs_source_create(id, name.toUtf8().constData(), settings, nullptr);
 	return copy && obs_scene_add(scene, copy);
 }
-}
+} // namespace
 
 void open_parents(QWidget *parent, const QPoint &position, const Source &source)
 {
 	ParentSearch search{source.uuid, {}, {}};
-	obs_enum_scenes([](void *data, obs_source_t *scene) {
-		auto &parents = *static_cast<ParentSearch *>(data);
-		if (!obs_obj_is_private(scene) && !obs_source_removed(scene)) {
-			parents.root = describe(scene);
-			parents.visit(obs_scene_from_source(scene));
-		}
-		return true;
-	}, &search);
+	obs_enum_scenes(
+		[](void *data, obs_source_t *scene) {
+			auto &parents = *static_cast<ParentSearch *>(data);
+			if (!obs_obj_is_private(scene) && !obs_source_removed(scene)) {
+				parents.root = describe(scene);
+				parents.visit(obs_scene_from_source(scene));
+			}
+			return true;
+		},
+		&search);
 	std::stable_sort(search.items.begin(), search.items.end(), [](const ParentItem &a, const ParentItem &b) {
 		return QString::localeAwareCompare(a.label(), b.label()) < 0;
 	});
@@ -372,7 +414,8 @@ void open_source_menu(QWidget *parent, const QPoint &position, const Source &ent
 		auto *main = static_cast<QWidget *>(obs_frontend_get_main_window());
 		bool ok = false;
 		const QString name = QInputDialog::getText(main, text("Native.Rename"), text("Quick.NewName"),
-							QLineEdit::Normal, obs_source_get_name(target), &ok).trimmed();
+							   QLineEdit::Normal, obs_source_get_name(target), &ok)
+					     .trimmed();
 		if (ok && !name.isEmpty() && !obs_source_removed(target))
 			obs_source_set_name(target, name.toUtf8().constData());
 	});
@@ -388,13 +431,14 @@ void open_source_menu(QWidget *parent, const QPoint &position, const Source &ent
 		});
 	if (id == "dshow_input") {
 		OBSDataAutoRelease settings = obs_source_get_settings(source);
-		action(obs_data_get_bool(settings, "active") ? "Quick.Deactivate" : "Quick.Activate", [](obs_source_t *target) {
-			OBSDataAutoRelease live = obs_source_get_settings(target);
-			calldata_t data{};
-			calldata_set_bool(&data, "active", !obs_data_get_bool(live, "active"));
-			proc_handler_call(obs_source_get_proc_handler(target), "activate", &data);
-			calldata_free(&data);
-		});
+		action(obs_data_get_bool(settings, "active") ? "Quick.Deactivate" : "Quick.Activate",
+		       [](obs_source_t *target) {
+			       OBSDataAutoRelease live = obs_source_get_settings(target);
+			       calldata_t data{};
+			       calldata_set_bool(&data, "active", !obs_data_get_bool(live, "active"));
+			       proc_handler_call(obs_source_get_proc_handler(target), "activate", &data);
+			       calldata_free(&data);
+		       });
 	}
 	menu->addSeparator();
 	auto project = [entry](int monitor) {
@@ -407,7 +451,8 @@ void open_source_menu(QWidget *parent, const QPoint &position, const Source &ent
 	auto *screens = menu->addMenu(text("Quick.FullProjector"));
 	int index = 0;
 	for (auto *screen : QApplication::screens()) {
-		screens->addAction(QString("%1. %2").arg(index + 1).arg(screen->name()), parent, [project, index] { project(index); });
+		screens->addAction(QString("%1. %2").arg(index + 1).arg(screen->name()), parent,
+				   [project, index] { project(index); });
 		++index;
 	}
 	menu->popup(position);

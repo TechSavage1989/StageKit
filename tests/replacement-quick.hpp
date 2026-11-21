@@ -81,8 +81,8 @@ inline QDockWidget *create(QDialog *manager, const QString &name, const QString 
 	auto *types = form->findChild<QComboBox *>("nativeQuickType");
 	auto *clickable = form->findChild<QCheckBox *>("quickClickable");
 	auto *buttons = form->findChild<QDialogButtonBox *>();
-	if (!title || !types || !clickable || !buttons || clickable->isChecked() ||
-	    types->count() != 3 || types->currentData().toString() != "Manual" || types->findData(mode) < 0) {
+	if (!title || !types || !clickable || !buttons || clickable->isChecked() || types->count() != 3 ||
+	    types->currentData().toString() != "Manual" || types->findData(mode) < 0) {
 		form->reject();
 		return nullptr;
 	}
@@ -97,7 +97,8 @@ inline QDockWidget *create(QDialog *manager, const QString &name, const QString 
 inline QTreeWidgetItem *result(QTreeWidget *list, const QString &name, const QString &section = {})
 {
 	for (auto *row : list->findItems(name, Qt::MatchExactly | Qt::MatchRecursive, 0))
-		if (!row->data(0, Qt::UserRole).toString().isEmpty() && (!row->parent() || row->parent()->isExpanded()) &&
+		if (!row->data(0, Qt::UserRole).toString().isEmpty() &&
+		    (!row->parent() || row->parent()->isExpanded()) &&
 		    (section.isEmpty() || (row->parent() && row->parent()->text(0) == section)))
 			return row;
 	return nullptr;
@@ -166,7 +167,8 @@ inline bool check_manual(QDockWidget *board, obs_sceneitem_t *nested, obs_scenei
 		commands << command->text();
 	context->close();
 	return commands.contains("Add to Current Scene") && commands.contains("Add Clone to Current Scene") &&
-	       commands.contains("Rename") && commands.contains("Filters") && commands.contains("Open Windowed Projector");
+	       commands.contains("Rename") && commands.contains("Filters") &&
+	       commands.contains("Open Windowed Projector");
 }
 
 inline bool edit_manual(QDockWidget *board)
@@ -221,7 +223,8 @@ inline bool check_dynamic(QDockWidget *board, obs_scene_t *nested, obs_sceneitem
 	obs_frontend_set_preview_program_mode(false);
 	wait_for([] { return !obs_frontend_preview_program_mode_active(); });
 	obs_frontend_set_current_scene(obs_scene_get_source(nested));
-	bool changed = wait_for([&] { return result(list, alpha) && !result(list, zulu) && !result(list, nested_name); });
+	bool changed =
+		wait_for([&] { return result(list, alpha) && !result(list, zulu) && !result(list, nested_name); });
 	obs_frontend_set_current_scene(before);
 	bool restored = wait_for([&] { return result(list, zulu) && result(list, nested_name); });
 	if (wasStudio)
@@ -251,12 +254,14 @@ inline bool check_search(QWidget *board, obs_source_t *source)
 inline bool check_popup(obs_source_t *source)
 {
 	obs_hotkey_id hotkey = OBS_INVALID_HOTKEY_ID;
-	obs_enum_hotkeys([](void *data, obs_hotkey_id id, obs_hotkey_t *key) {
-		if (qstrcmp(obs_hotkey_get_name(key), "Quick Search") != 0)
-			return true;
-		*static_cast<obs_hotkey_id *>(data) = id;
-		return false;
-	}, &hotkey);
+	obs_enum_hotkeys(
+		[](void *data, obs_hotkey_id id, obs_hotkey_t *key) {
+			if (qstrcmp(obs_hotkey_get_name(key), "Quick Search") != 0)
+				return true;
+			*static_cast<obs_hotkey_id *>(data) = id;
+			return false;
+		},
+		&hotkey);
 	if (hotkey == OBS_INVALID_HOTKEY_ID)
 		return false;
 	obs_hotkey_trigger_routed_callback(hotkey, true);
@@ -287,8 +292,9 @@ inline bool check_popup(obs_source_t *source)
 	auto *menu = visible<QMenu>("nativeQuickSourceMenu");
 	if (!menu)
 		return false;
-	OBSSourceAutoRelease destination = obs_frontend_preview_program_mode_active() ? obs_frontend_get_current_preview_scene()
-										     : obs_frontend_get_current_scene();
+	OBSSourceAutoRelease destination = obs_frontend_preview_program_mode_active()
+						   ? obs_frontend_get_current_preview_scene()
+						   : obs_frontend_get_current_scene();
 	for (auto *action : menu->actions())
 		if (action->text() == "Add to Current Scene") {
 			action->trigger();
@@ -303,7 +309,8 @@ inline void check_restart(QStringList &issues)
 	auto *manual = dock(renamed_title);
 	auto *list = manual ? manual->findChild<QTreeWidget *>("nativeQuickSources") : nullptr;
 	if (!list || list->topLevelItemCount() != 2 || list->topLevelItem(0)->text(0) != zulu ||
-	    list->topLevelItem(1)->text(0) != alpha || !list->isColumnHidden(2) || !dock(dynamic_title) || !dock(search_title))
+	    list->topLevelItem(1)->text(0) != alpha || !list->isColumnHidden(2) || !dock(dynamic_title) ||
+	    !dock(search_title))
 		issues.append("Quick Access lost a dock, its options or the manual source order after restarting OBS");
 	else
 		blog(LOG_INFO, "[Quick Access test] Restored all three docks, row options and manual order on restart");
@@ -360,13 +367,17 @@ inline void check(QStringList &issues, QAction *toolsAction)
 	if (!manual || !check_manual(manual, nestedItem, direct) || !edit_manual(manual))
 		issues.append("Quick Access manual picker, order, row actions, parent controls or dock editing failed");
 	else
-		blog(LOG_INFO, "[Quick Access test] Manual multi-select, ordering, row menus, parent visibility and dock editing passed");
+		blog(LOG_INFO,
+		     "[Quick Access test] Manual multi-select, ordering, row menus, parent visibility and dock editing passed");
 	if (!dynamic || !check_dynamic(dynamic, nested, group, third))
-		issues.append("Quick Access dynamic dock missed a nested source, group edit or scene or changed Program on a Preview click");
+		issues.append(
+			"Quick Access dynamic dock missed a nested source, group edit or scene or changed Program on a Preview click");
 	else
-		blog(LOG_INFO, "[Quick Access test] Dynamic followed Program, nested scenes and group edits; clickable scenes selected Preview");
+		blog(LOG_INFO,
+		     "[Quick Access test] Dynamic followed Program and nested edits. Scene clicks selected Preview in Studio Mode");
 	if (!search || !check_search(search, first))
-		issues.append("Quick Access dock did not group source, UUID, type, file and filter matches or clear empty results");
+		issues.append(
+			"Quick Access dock did not group source, UUID, type, file and filter matches or clear empty results");
 	else
 		blog(LOG_INFO, "[Quick Access test] Source Search matched name, UUID, type, file, URL and filter");
 	if (!check_popup(first))
