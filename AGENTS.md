@@ -9,6 +9,11 @@ every TechSavage1989 app repository. Change that file only to change the standar
 
 ## OBS filter and tool replacements
 
+Register all native StageKit types before calling `load_components()` at the end of `obs_module_load`.
+OBS 32 clears its current plugin when a nested plugin finishes loading. A native type registered
+afterward can render while its source name appears red in OBS. The portable Windows frontend test
+checks the owning plugins recorded in `plugin_manager/modules.json`.
+
 Read [the replacement catalog](docs/obs-filter-replacements.md) before changing the compatibility modules. Preserve the pinned supplier files and licenses in src/third-party/ports. Integrations, OBS IDs and labels belong in scripts/prepare-obs-ports.py and data/ports.json. Source and scene filter labels identify the host in the OBS menu. A collection conversion must write a new file, preserve unsupported IDs, and retain the source and filter names used by chained Move actions.
 
 ## Saved scene settings and source renames

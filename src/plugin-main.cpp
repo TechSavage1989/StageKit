@@ -132,7 +132,6 @@ MODULE_EXPORT const char *obs_module_description(void)
 bool obs_module_load(void)
 {
 	stagekit::register_classic_filters();
-	stagekit::load_components();
 	stagekit::register_ramp_blur();
 	stagekit::register_start_image();
 	stagekit::register_ambient_background();
@@ -202,6 +201,9 @@ bool obs_module_load(void)
 	stagekit::register_arrange_hotkeys();
 	stagekit::track_selection_order();
 	obs_frontend_add_save_callback(frontend_save_load, nullptr);
+	// OBS 32 clears its current module after initializing a nested module. Load the
+	// bundled plugins last so OBS records every native source type under StageKit.
+	stagekit::load_components();
 	obs_log(LOG_INFO, "plugin loaded successfully (version %s)", PLUGIN_VERSION);
 	return true;
 }

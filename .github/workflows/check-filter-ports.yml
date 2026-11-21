@@ -11,6 +11,7 @@ on:
       - 'data/ports.json'
       - 'scripts/*obs-ports.py'
       - 'src/components/**'
+      - 'src/plugin-main.cpp'
       - 'src/third-party/ports/**'
       - 'streamdeck/**'
       - 'tests/CMakeLists.txt'
