@@ -177,9 +177,11 @@ inline void check(QStringList &issues, bool restart)
 	if (mark && set_start) {
 		mark->setCurrentIndex(mark->findData(45));
 		set_start->click();
-		expect(until([&] { return status->text() == "Running"; }), "dock clock shortcut did not start the private timer");
+		expect(until([&] { return status->text() == "Running"; }),
+		       "dock clock shortcut did not start the private timer");
 		OBSDataAutoRelease stopped = press("private", "toggle", 45);
-		expect(obs_data_get_bool(stopped, "success") && !obs_data_get_bool(stopped, "running"), "Stream Deck toggle did not stop the private timer");
+		expect(obs_data_get_bool(stopped, "success") && !obs_data_get_bool(stopped, "running"),
+		       "Stream Deck toggle did not stop the private timer");
 	} else {
 		expect(false, "dock clock shortcuts missing");
 	}
@@ -222,14 +224,27 @@ inline void check(QStringList &issues, bool restart)
 	expect(choose(QStringLiteral("Operator timer")) && until([&] { return readout->text() == "01:13"; }),
 	       "the scene timer was not available in the dock");
 	const char *id = obs_source_get_uuid(source);
+	for (const int minute : {15, 30, 45, 0, 15}) {
+		OBSDataAutoRelease cycled = press(id, "cycle", -2);
+		expect(obs_data_get_bool(cycled, "success") && !obs_data_get_bool(cycled, "running") && obs_data_get_int(cycled, "mark") == minute, "Stream Deck cycle order or idle state");
+	}
+	OBSDataAutoRelease held_start = press(id, "cycleToggle", -2);
+	expect(obs_data_get_bool(held_start, "running") && obs_data_get_int(held_start, "mark") == 15, "hold did not start the displayed mark");
+	OBSDataAutoRelease live_cycle = press(id, "cycle", -2);
+	expect(obs_data_get_bool(live_cycle, "running") && obs_data_get_int(live_cycle, "mark") == 30, "cycling a running timer stopped it");
+	OBSDataAutoRelease held_stop = press(id, "cycleToggle", -2);
+	expect(obs_data_get_bool(held_stop, "success") && !obs_data_get_bool(held_stop, "running") && obs_data_get_int(held_stop, "mark") == 30, "hold did not stop without advancing");
 	OBSDataAutoRelease set = press(id, "set", 30);
 	OBSDataAutoRelease saved = obs_source_get_settings(source);
 	const auto deadline = QDateTime::fromMSecsSinceEpoch(obs_data_get_int(saved, "deadline_ms"));
-	expect(obs_data_get_bool(set, "success") && !obs_data_get_bool(set, "running") && deadline.time().minute() == 30 && deadline.time().second() == 0, "Stream Deck set-only deadline");
+	expect(obs_data_get_bool(set, "success") && !obs_data_get_bool(set, "running") &&
+		       deadline.time().minute() == 30 && deadline.time().second() == 0,
+	       "Stream Deck set-only deadline");
 	OBSDataAutoRelease started = press(id, "setStart", 15);
 	expect(obs_data_get_bool(started, "running"), "Stream Deck set-and-start");
 	OBSDataAutoRelease stopped = press(id, "stop", -2);
-	expect(obs_data_get_bool(stopped, "success") && !obs_data_get_bool(stopped, "running"), "dedicated Stream Deck stop");
+	expect(obs_data_get_bool(stopped, "success") && !obs_data_get_bool(stopped, "running"),
+	       "dedicated Stream Deck stop");
 	obs_data_set_int(data, "timer_mode", 0);
 	obs_source_update(source, data);
 	expect(until([&] { return readout->text() == "01:13"; }), "return to saved duration after a clock shortcut");
@@ -280,7 +295,9 @@ inline void check(QStringList &issues, bool restart)
 		expect(quarter && quarter->isVisible(), "next-quarter shortcut in the date picker");
 		if (quarter) {
 			quarter->click();
-			expect(d->findChild<QPushButton *>("clockMinute")->text().toInt() % 15 == 0 && d->findChild<QPushButton *>("clockSecond")->text() == "00", "clock shortcut did not select a quarter hour");
+			expect(d->findChild<QPushButton *>("clockMinute")->text().toInt() % 15 == 0 &&
+				       d->findChild<QPushButton *>("clockSecond")->text() == "00",
+			       "clock shortcut did not select a quarter hour");
 		}
 
 		auto *calendar = d->findChild<QDateEdit *>("timerDate");

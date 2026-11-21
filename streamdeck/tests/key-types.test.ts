@@ -9,6 +9,7 @@ import features from "../src/features.json" with { type: "json" };
 import { adoptOld, keptPicture, keysWithLists, layoutList, modePictureLists, OWN_LISTS, SCENE_TYPES, sceneTypePicture, SOURCE_TYPES, sourceTypePicture, typeForKept, typeLists } from "../src/key-types.ts";
 import {
 	ordinaryControlPicture,
+	timerPicture,
 	blurAllPicture,
 	chooseFor,
 	COLOURS,
@@ -41,6 +42,7 @@ function shown(key: string, setting: string, value: string): string | undefined 
 	const types = { [setting]: value };
 	if (["obsfilter", "obssource", "obsmute", "obsstudio", "obscamera", "movesourceport", "moveswapport"].includes(key))
 		return ordinaryControlPicture(key, "", types.sourceType, types.sceneType).id;
+	if (key === "timer") return timerPicture(types.sourceType).id;
 	if (key === "scene") return scenePicture(undefined, "", value).id;
 	if (key === "mode") return modePicture(undefined, value).id;
 	// (The keys that draw what they do as a badge: the type's picture is the one under it.)

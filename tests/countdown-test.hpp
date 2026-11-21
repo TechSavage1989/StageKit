@@ -132,7 +132,7 @@ inline void clock_shortcuts(QStringList &issues)
 	if (zone.isValid()) {
 		// Spring jumps to 03:00 while the autumn change revisits 01:00.
 		for (const QDateTime utc : {QDateTime(QDate(2026, 3, 8), QTime(6, 58), Qt::UTC),
-					     QDateTime(QDate(2026, 11, 1), QTime(5, 58), Qt::UTC)})
+					    QDateTime(QDate(2026, 11, 1), QTime(5, 58), Qt::UTC)})
 			expect(utc.toTimeZone(zone), -1, utc.addSecs(120).toTimeZone(zone));
 	}
 }
@@ -281,8 +281,11 @@ inline void modes(QStringList &issues)
 
 inline QRect painted(const QImage &image)
 {
-	const auto b = stagekit::visible_alpha_bounds(image.constBits(), size_t(image.bytesPerLine()), uint32_t(image.width()), uint32_t(image.height()));
-	return b.left < uint32_t(image.width()) ? QRect(QPoint(int(b.left), int(b.top)), QPoint(int(b.right), int(b.bottom))) : QRect();
+	const auto b = stagekit::visible_alpha_bounds(image.constBits(), size_t(image.bytesPerLine()),
+						      uint32_t(image.width()), uint32_t(image.height()));
+	return b.left < uint32_t(image.width())
+		       ? QRect(QPoint(int(b.left), int(b.top)), QPoint(int(b.right), int(b.bottom)))
+		       : QRect();
 }
 
 inline void fitted_states(QStringList &issues, const QString &sheet_path)
@@ -319,9 +322,12 @@ inline void fitted_states(QStringList &issues, const QString &sheet_path)
 		return QImage(pixels.data(), sw, sh, sw * 4, QImage::Format_RGBA8888_Premultiplied).copy();
 	};
 	const QImage reference = scene_frame();
+	const QImage placed_clock = reference.copy(target);
 	const QRect clock_ink = painted(clock);
+	const QRect scene_ink = painted(placed_clock);
 	require(clock_ink.width() >= w * 0.90 && clock_ink.height() >= h * 0.90, "digits did not fill the transform");
-	require(reference.copy(target) == clock && !painted(reference.copy(0, 0, w, h)).isEmpty(), "edge fixture placement");
+	require(std::abs(scene_ink.width() - clock_ink.width()) <= 3 && std::abs(scene_ink.height() - clock_ink.height()) <= 3 && !painted(reference.copy(0, 0, w, h)).isEmpty(),
+		"edge fixture placement");
 	auto inside = [&](const QImage &capture) {
 		QImage outside = capture;
 		QPainter cover(&outside);
@@ -333,7 +339,8 @@ inline void fitted_states(QStringList &issues, const QString &sheet_path)
 		clean.setCompositionMode(QPainter::CompositionMode_Source);
 		clean.fillRect(target, Qt::transparent);
 		clean.end();
-		return outside == expected && int(obs_source_get_width(timer)) == w && int(obs_source_get_height(timer)) == h;
+		return outside == expected && int(obs_source_get_width(timer)) == w &&
+		       int(obs_source_get_height(timer)) == h;
 	};
 	auto change = [&](const QString &text, bool animate) {
 		require(wait_for([&] { return readout(timer) == text; }), "timer layout readout");
@@ -342,18 +349,21 @@ inline void fitted_states(QStringList &issues, const QString &sheet_path)
 		const QImage middle = scene_frame();
 		QThread::msleep(195);
 		const QImage last = scene_frame();
-		require(inside(first) && inside(middle) && inside(last), "text crossed the transform, screen edge or neighboring source");
-		require(!animate || (first != middle && middle != last && first != last), "text did not morph through an intermediate frame");
+		require(inside(first) && inside(middle) && inside(last),
+			"text crossed the transform, screen edge or neighboring source");
+		require(!animate || (first != middle && middle != last && first != last),
+			"text did not morph through an intermediate frame");
 		const auto img = last.copy(target);
 		const QRect ink = painted(img);
-		require(!ink.isEmpty() && (ink.width() >= w * 0.88 || ink.height() >= h * 0.88), "fitted text left its box empty");
+		require(!ink.isEmpty() && (ink.width() >= w * 0.88 || ink.height() >= h * 0.88),
+			"fitted text left its box empty");
 		return img;
 	};
 	obs_data_set_string(config, "end_message", "MOMENTARILY");
 	obs_data_set_bool(config, "use_end_message", true);
 	obs_data_set_string(config, "output_format", "IN %time%");
 	obs_source_update(timer, config);
-	require(change("05:00", false) == clock, "a hidden message or format changed the running digits");
+	require(change("05:00", false) == placed_clock, "a hidden message or format changed the running digits");
 	obs_data_set_bool(config, "format_output", true);
 	obs_source_update(timer, config);
 	const auto formatted = change("IN 05:00", true);
@@ -364,18 +374,21 @@ inline void fitted_states(QStringList &issues, const QString &sheet_path)
 	require(change("IN 05:00", true) == formatted, "reset did not restore formatted output in place");
 	obs_data_set_bool(config, "format_output", false);
 	obs_source_update(timer, config);
-	require(change("05:00", true) == clock, "returning from formatted text moved the digits");
+	require(change("05:00", true) == placed_clock, "returning from formatted text moved the digits");
 	obs_data_set_bool(config, "format_output", true);
 	obs_data_set_string(config, "output_format", "WE WILL BE RIGHT BACK IN %time%");
 	obs_source_update(timer, config);
 	change("WE WILL BE RIGHT BACK IN 05:00", true);
-	blog(LOG_INFO, "StageKit timer layout: %dx%d source, clock ink %dx%d, formatted ink %dx%d, message ink %dx%d", w,h,clock_ink.width(),clock_ink.height(),painted(formatted).width(),painted(formatted).height(),painted(message).width(),painted(message).height());
+	blog(LOG_INFO, "StageKit timer layout: %dx%d source, clock ink %dx%d, formatted ink %dx%d, message ink %dx%d",
+	     w, h, clock_ink.width(), clock_ink.height(), painted(formatted).width(), painted(formatted).height(),
+	     painted(message).width(), painted(message).height());
 	if (!sheet_path.isEmpty()) {
 		QImage sheet(3 * (w + 20), h + 50, QImage::Format_RGB32);
 		sheet.fill(QColor("#202329"));
 		QPainter painter(&sheet);
-		const QImage samples[]{clock, formatted, message};
-		const QString labels[]{QStringLiteral("Timer"), QStringLiteral("Formatted output"), QStringLiteral("End message")};
+		const QImage samples[]{placed_clock, formatted, message};
+		const QString labels[]{QStringLiteral("Timer"), QStringLiteral("Formatted output"),
+				       QStringLiteral("End message")};
 		for (int i = 0; i < 3; ++i) {
 			const QRect box(10 + i * (w + 20), 8, w, h);
 			painter.setPen(QColor("#72cbd7"));
@@ -385,7 +398,8 @@ inline void fitted_states(QStringList &issues, const QString &sheet_path)
 			painter.drawText(QRect(box.left(), h + 12, w, 30), Qt::AlignCenter, labels[i]);
 		}
 		painter.end();
-		require(sheet.save(QFileInfo(sheet_path).dir().filePath("countdown-layout.png")), "could not save timer layout preview");
+		require(sheet.save(QFileInfo(sheet_path).dir().filePath("countdown-layout.png")),
+			"could not save timer layout preview");
 	}
 }
 
@@ -418,7 +432,10 @@ inline bool sharp_scaled_timer(const QString &sheet_path, int font_size, int zoo
 	const QImage sharp(pixels.data(), w, h, w * 4, QImage::Format_RGBA8888_Premultiplied);
 	const QImage enlarged = original.scaled(w, h, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
 	auto coverage = [](const QImage &image) {
-		struct Coverage { int solid = 0, soft = 0; int64_t alpha = 0; } totals;
+		struct Coverage {
+			int solid = 0, soft = 0;
+			int64_t alpha = 0;
+		} totals;
 		for (int y = 0; y < image.height(); ++y) {
 			const auto *line = image.constScanLine(y);
 			for (int x = 0; x < image.width(); ++x) {

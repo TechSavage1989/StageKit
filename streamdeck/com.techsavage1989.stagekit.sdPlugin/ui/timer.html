@@ -1,0 +1,108 @@
+<!doctype html>
+<html>
+	<head lang="en">
+		<title>StageKit Countdown Timer</title>
+		<meta charset="utf-8" />
+		<script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+		<style>
+			body, summary, p {
+				font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+				font-size: 9pt;
+			}
+			details { margin-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 8px; }
+			summary { color: #969696; cursor: pointer; padding: 2px 0 8px 2px; outline: none; }
+			summary:hover { color: #d8d8d8; }
+			details p { color: #8a8a8a; line-height: 1.45; margin: 8px 4px 4px 4px; }
+			#worksWith { line-height: 1.4; padding: 6px 0 4px 0; cursor: default; }
+			.works-kind { color: #d8d8d8; }
+			.works-chosen { color: #8a8a8a; }
+			.works-chosen:empty { display: none; }
+		</style>
+	</head>
+
+	<body>
+		<sdpi-item class="works" label="Works with" title="Set and start a StageKit timer at the next clock mark, or start, pause or stop it.">
+			<div id="worksWith" data-follow="">
+				<div class="works-kind">Countdown Timer (StageKit) or the private StageKit Timer dock</div>
+				<div class="works-chosen"></div>
+			</div>
+		</sdpi-item>
+		<sdpi-item label="Timer" title="The private timer or a named Countdown Timer source in this OBS collection.">
+			<sdpi-select setting="target" datasource="getTimers" placeholder="Choose a timer" show-refresh></sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="On press" title="Use one key to set, start and stop, or give each action its own key.">
+			<sdpi-select setting="timerPress" default="toggle">
+				<option value="toggle">Set and start / Stop</option>
+				<option value="setStart">Set and start</option>
+				<option value="set">Set only</option>
+				<option value="start">Start or resume</option>
+				<option value="pause">Pause</option>
+				<option value="stop">Stop and reset</option>
+			</sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Clock shortcut" title="Set the timer to the next occurrence on the OBS computer&#x27;s clock.">
+			<sdpi-select setting="timerMark" default="next">
+				<option value="next">Next quarter hour</option>
+				<option value="15">Next :15</option>
+				<option value="30">Next :30</option>
+				<option value="45">Next :45</option>
+				<option value="hour">Next full hour (:00)</option>
+				<option value="saved">Saved timer settings</option>
+			</sdpi-select>
+		</sdpi-item>
+		<details open>
+			<summary>Image</summary>
+		<sdpi-item label="Palette" title="The colors used to draw this key. Applies to its on and off states.">
+			<sdpi-select setting="palette" default="mono">
+				<option value="mono">Mono</option>
+				<option value="violet">Violet</option>
+				<option value="ocean">Ocean</option>
+				<option value="forest">Forest</option>
+				<option value="ember">Ember</option>
+				<option value="neon">Neon</option>
+			</sdpi-select>
+		</sdpi-item>
+		</details>
+		<details>
+			<summary>OBS connection</summary>
+			<sdpi-item label="Address" title="Computer running OBS. Use 127.0.0.1 when Stream Deck and OBS run on the same computer.">
+				<sdpi-textfield setting="host" global placeholder="127.0.0.1"></sdpi-textfield>
+			</sdpi-item>
+			<sdpi-item label="Port" title="The port shown in OBS under Tools, WebSocket Server Settings.">
+				<sdpi-textfield setting="port" global placeholder="4455"></sdpi-textfield>
+			</sdpi-item>
+			<sdpi-item label="Password" title="The password shown in OBS under WebSocket Server Settings, Show Connect Info. All StageKit keys share it.">
+				<sdpi-password setting="password" global></sdpi-password>
+			</sdpi-item>
+			<p>
+				In OBS: Tools &rarr; WebSocket Server Settings. Tick &ldquo;Enable WebSocket server&rdquo;, then
+				&ldquo;Show Connect Info&rdquo; for the port and password. One connection serves every StageKit key.
+			</p>
+		</details>
+
+		<script>
+			// Works with: what this key works in OBS, and what it is set to.
+			(() => {
+				const row = document.getElementById("worksWith");
+				const client = window.SDPIComponents && window.SDPIComponents.streamDeckClient;
+				if (!row || !client || !client.sendToPropertyInspector || typeof client.send !== "function") return;
+				const kind = row.querySelector(".works-kind");
+				const chosen = row.querySelector(".works-chosen");
+				client.sendToPropertyInspector.subscribe((ev) => {
+					const answer = ev && ev.payload;
+					if (!answer || answer.event !== "getWorksWith") return;
+					if (typeof answer.kind === "string" && answer.kind !== "") kind.textContent = answer.kind;
+					if (typeof answer.chosen === "string") chosen.textContent = answer.chosen;
+				});
+				const ask = () => Promise.resolve().then(() => client.send("sendToPlugin", { event: "getWorksWith" })).catch(() => {});
+				const later = () => setTimeout(ask, 200);
+				for (const setting of (row.dataset.follow || "").split(" ").filter(Boolean))
+					for (const list of document.querySelectorAll(`[setting="${setting}"]`)) {
+						list.addEventListener("valuechange", later);
+						list.addEventListener("change", later);
+					}
+				ask();
+			})();
+		</script>
+	</body>
+</html>

@@ -8,6 +8,7 @@ export const MARKS = [
 ];
 export const OPERATIONS = [
 	["toggle", "Set and start / Stop"],
+	["cycle", "Cycle :15 / :30 / :45 / :00"],
 	["setStart", "Set and start"],
 	["set", "Set only"],
 	["start", "Start or resume"],
@@ -15,10 +16,12 @@ export const OPERATIONS = [
 	["stop", "Stop and reset"],
 ];
 
-export function timerPress(settings: { target?: string; timerMark?: string; timerPress?: string }) {
+export function timerPress(settings: { target?: string; timerMark?: string; timerPress?: string }, held = false) {
 	const preset = MARKS.find((m) => m.value === (settings.timerMark ?? "next"));
 	const operation = settings.timerPress ?? "toggle";
-	if (!settings.target || !preset || !OPERATIONS.some(([key]) => key === operation)) return undefined;
+	if (!settings.target || !OPERATIONS.some(([key]) => key === operation)) return undefined;
+	if (operation === "cycle") return { timer: settings.target, operation: held ? "cycleToggle" : "cycle", mark: -2 };
+	if (!preset) return undefined;
 	const set = ["toggle", "setStart", "set"].includes(operation);
 	return { timer: settings.target, operation, mark: set ? preset.minute : -2 };
 }

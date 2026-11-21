@@ -652,9 +652,25 @@ def main():
     key_pictures("timer", "options/type-countdown-on", "options/type-countdown-off")
     page("timer", "StageKit Countdown Timer",
          one_list("Timer", "getTimers", "target", "Choose a timer", "The private timer or a named Countdown Timer source in this OBS collection.")
-         + options("On press", "timerPress", "toggle", operations, "Use one key to set, start and stop, or give each action its own key.")
+         + options("On press", "timerPress", "toggle", operations, "Cycle advances the selected mark when tapped. Hold for 0.8 seconds to start or stop.")
          + options("Clock shortcut", "timerMark", "next", marks, "Set the timer to the next occurrence on the OBS computer's clock.")
-         , lists=False)
+         + '<sdpi-item id="cycleHelp" label="Cycle"><span>Tap to select :15, :30, :45 or :00. Hold for 0.8 seconds to start or stop.</span></sdpi-item>\n',
+         script="""<script>
+            (() => {
+                const select = document.querySelector('[setting="timerPress"]');
+                const shortcut = document.querySelector('[setting="timerMark"]').closest('sdpi-item');
+                const help = document.getElementById('cycleHelp');
+                const update = () => {
+                    const op = select.value || 'toggle';
+                    shortcut.style.display = ['set', 'toggle', 'setStart'].includes(op) ? '' : 'none';
+                    help.style.display = op === 'cycle' ? '' : 'none';
+                };
+                for (const e of ['change', 'valuechange']) select.addEventListener(e, update);
+                window.SDPIComponents?.streamDeckClient?.didReceiveSettings?.subscribe(() => requestAnimationFrame(update));
+                customElements.whenDefined('sdpi-select').then(() => requestAnimationFrame(update));
+                update();
+            })();
+         </script>""")
     add("timer", timer["name"], timer["tip"], "timer", "imgs/actions/timer/icon", two("timer"))
 
     # Stream and Record: obs-websocket's own requests. Their pictures are

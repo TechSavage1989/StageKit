@@ -46,12 +46,12 @@ namespace {
 
 std::atomic<obs_websocket_vendor> g_vendor{nullptr};
 
-const char *const kRequests[] = {"GetVersion",       "ListBlurFilters", "BlurOn",       "BlurOff",
-				 "BlurToggle",       "SetBlur",         "BlurAll",      "HookFront",
-				 "SetPictureShape",  "GetOptions",      "SetOption",    "Slide",
-				 "GetSwitcherState", "ListSceneModes",  "GetSceneMode", "SetSceneMode",
-				 "ListSceneBlurs",   "SceneBlur",       "StandbyCover", "GetStandbyCover",
-				 "ShowInScenesPress", "ListTimers", "TimerControl"};
+const char *const kRequests[] = {"GetVersion",        "ListBlurFilters", "BlurOn",       "BlurOff",
+				 "BlurToggle",        "SetBlur",         "BlurAll",      "HookFront",
+				 "SetPictureShape",   "GetOptions",      "SetOption",    "Slide",
+				 "GetSwitcherState",  "ListSceneModes",  "GetSceneMode", "SetSceneMode",
+				 "ListSceneBlurs",    "SceneBlur",       "StandbyCover", "GetStandbyCover",
+				 "ShowInScenesPress", "ListTimers",      "TimerControl"};
 
 void fail(obs_data_t *response, const char *message)
 {
@@ -811,8 +811,8 @@ void vendor_api_add_test_calls()
 				{"StandbyCover", req_standby_cover},
 				{"GetStandbyCover", req_get_standby_cover},
 				{"ShowInScenesPress", req_show_in_scenes_press},
-		{"ListTimers", timer_vendor_list},
-		{"TimerControl", timer_vendor_control},
+				{"ListTimers", timer_vendor_list},
+				{"TimerControl", timer_vendor_control},
 			};
 			obs_data_t *request = json && *json ? obs_data_create_from_json(json) : obs_data_create();
 			if (!request)

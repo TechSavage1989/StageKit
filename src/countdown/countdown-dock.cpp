@@ -387,13 +387,19 @@ void timer_vendor_list(obs_data_t *, obs_data_t *response, void *)
 		OBSSourceAutoRelease hidden = dock ? dock->private_timer() : nullptr;
 		if (hidden)
 			append(entries, "private", obs_module_text("Countdown.Private"));
-		struct Context { obs_data_array_t *items; decltype(append) &add; } ctx{entries, append};
-		obs_enum_sources([](void *p, obs_source_t *s) {
-			auto &c = *static_cast<Context *>(p);
-			if (!obs_obj_is_private(s) && !obs_source_removed(s) && std::strcmp(obs_source_get_id(s), kCountdownId) == 0)
-				c.add(c.items, obs_source_get_uuid(s), obs_source_get_name(s));
-			return true;
-		}, &ctx);
+		struct Context {
+			obs_data_array_t *items;
+			decltype(append) &add;
+		} ctx{entries, append};
+		obs_enum_sources(
+			[](void *p, obs_source_t *s) {
+				auto &c = *static_cast<Context *>(p);
+				if (!obs_obj_is_private(s) && !obs_source_removed(s) &&
+				    std::strcmp(obs_source_get_id(s), kCountdownId) == 0)
+					c.add(c.items, obs_source_get_uuid(s), obs_source_get_name(s));
+				return true;
+			},
+			&ctx);
 		obs_data_set_array(response, "timers", entries);
 		obs_data_set_bool(response, "success", true);
 	};
@@ -408,21 +414,28 @@ void timer_vendor_control(obs_data_t *request, obs_data_t *response, void *)
 	auto apply = [&] {
 		const char *id = obs_data_get_string(request, "timer");
 		const char *op = obs_data_get_string(request, "operation");
-		OBSSourceAutoRelease timer = std::strcmp(id, "private") == 0 ? (dock ? dock->private_timer() : nullptr)
-									   : (*id ? obs_get_source_by_uuid(id) : nullptr);
-		bool ok = timer && !obs_source_removed(timer) && std::strcmp(obs_source_get_id(timer), kCountdownId) == 0;
+		OBSSourceAutoRelease timer = std::strcmp(id, "private") == 0
+						     ? (dock ? dock->private_timer() : nullptr)
+						     : (*id ? obs_get_source_by_uuid(id) : nullptr);
+		bool ok = timer && !obs_source_removed(timer) &&
+			  std::strcmp(obs_source_get_id(timer), kCountdownId) == 0;
 		if (ok && std::strcmp(op, "state") != 0) {
-			const auto mark = obs_data_has_user_value(request, "mark") ? obs_data_get_int(request, "mark") : kSavedTimer;
+			const auto mark = obs_data_has_user_value(request, "mark") ? obs_data_get_int(request, "mark")
+										   : kSavedTimer;
 			ok = mark >= kSavedTimer && mark <= 45 && timer_command(timer, op, int(mark));
-			if (ok && mark != kSavedTimer && obs_frontend_get_main_window())
+			if (ok && (mark != kSavedTimer || std::strcmp(op, "cycle") == 0 || std::strcmp(op, "cycleToggle") == 0) && obs_frontend_get_main_window())
 				obs_frontend_save();
 		}
 		obs_data_set_bool(response, "success", ok);
 		if (ok) {
-			obs_data_set_bool(response, "running", obs_source_media_get_state(timer) == OBS_MEDIA_STATE_PLAYING);
+			OBSDataAutoRelease settings = obs_source_get_settings(timer);
+			obs_data_set_int(response, "mark", saved_timer_mark(settings));
+			obs_data_set_bool(response, "running",
+					  obs_source_media_get_state(timer) == OBS_MEDIA_STATE_PLAYING);
 			obs_data_set_string(response, "text", timer_readout(timer).toUtf8().constData());
 		} else {
-			obs_data_set_string(response, "error", "Choose an available StageKit timer and clock shortcut.");
+			obs_data_set_string(response, "error",
+					    "Choose an available StageKit timer and clock shortcut.");
 		}
 	};
 	if (qApp && QThread::currentThread() != qApp->thread())

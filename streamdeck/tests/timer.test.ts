@@ -11,6 +11,7 @@ test("timer keys target a named UUID or the private clock and send one set-and-s
 			}
 		}
 	}
+	assert.deepEqual(timerPress({ target: "private", timerPress: "cycle" }, true), { timer: "private", operation: "cycleToggle", mark: -2 });
 	assert.equal(timerPress({}), undefined);
 	assert.equal(timerPress({ target: "private", timerMark: "typo" }), undefined);
 	assert.deepEqual(timerPress({ target: "private" }), { timer: "private", operation: "toggle", mark: -1 });

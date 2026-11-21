@@ -220,7 +220,10 @@ ClockPicker::ClockPicker(int64_t duration_ms, QTime target, QWidget *parent) : Q
 	marks_layout->setContentsMargins(0, 0, 0, 0);
 	for (size_t i = 0; i < std::size(timer_marks); ++i) {
 		const int mark = timer_marks[i];
-		auto *b = new QPushButton(mark == kNextQuarter ? label("Countdown.NextQuarterShort") : QStringLiteral(":%1").arg(mark, 2, 10, QLatin1Char('0')), marks_row);
+		auto *b = new QPushButton(mark == kNextQuarter
+						  ? label("Countdown.NextQuarterShort")
+						  : QStringLiteral(":%1").arg(mark, 2, 10, QLatin1Char('0')),
+					  marks_row);
 		b->setObjectName(QStringLiteral("clockMark%1").arg(mark));
 		b->setToolTip(label(timer_mark_labels[i]));
 		b->setAccessibleName(b->toolTip());

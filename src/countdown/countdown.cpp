@@ -239,7 +239,8 @@ struct Display {
 			QString line;
 			qreal used = 0;
 			for (qsizetype i = 0; i < words.size(); ++i) {
-				if (!line.isEmpty() && used + gap + advances[i] > full / count && lines.size() + 1 < count) {
+				if (!line.isEmpty() && used + gap + advances[i] > full / count &&
+				    lines.size() + 1 < count) {
 					lines.append(line);
 					line.clear();
 					used = 0;
@@ -334,7 +335,8 @@ public:
 			clock_.position = clock_.elapsed();
 			clock_.started = monotonic_ms();
 		}
-		const bool format_changed = next.units != clock_.settings.units || next.leading_zero != clock_.settings.leading_zero;
+		const bool format_changed = next.units != clock_.settings.units ||
+					    next.leading_zero != clock_.settings.leading_zero;
 		clock_.settings = next;
 		if (reset)
 			clock_.reset();
@@ -385,8 +387,11 @@ public:
 
 	bool command(const char *op, int mark)
 	{
-		const bool toggle = std::strcmp(op, "toggle") == 0;
-		if (std::strcmp(op, "stop") == 0 || (toggle && state() == OBS_MEDIA_STATE_PLAYING)) {
+		const bool cycle = std::strcmp(op, "cycle") == 0;
+		const bool hold = std::strcmp(op, "cycleToggle") == 0;
+		const bool toggle = hold || std::strcmp(op, "toggle") == 0;
+		const auto before = state();
+		if (std::strcmp(op, "stop") == 0 || (toggle && before == OBS_MEDIA_STATE_PLAYING)) {
 			reset();
 			return true;
 		}
@@ -398,14 +403,22 @@ public:
 			start(false);
 			return true;
 		}
-		const bool set_only = std::strcmp(op, "set") == 0;
-		if (!set_only && !toggle && std::strcmp(op, "setStart") != 0)
+		const bool set_only = std::strcmp(op, "set") == 0 || (cycle && before != OBS_MEDIA_STATE_PLAYING);
+		if (!set_only && !toggle && !cycle && std::strcmp(op, "setStart") != 0)
 			return false;
+		OBSDataAutoRelease settings = obs_source_get_settings(source_);
+		if (cycle || hold) {
+			const int current = saved_timer_mark(settings);
+			if (hold)
+				mark = current == 0 || current == 30 || current == 45 ? current : 15;
+			else
+				mark = current == 15 ? 30 : current == 30 ? 45 : current == 45 ? 0 : 15;
+		}
 		if (mark != kSavedTimer) {
 			const auto next = next_timer_mark(QDateTime::currentDateTime(), mark);
 			if (!next.isValid())
 				return false;
-			OBSDataAutoRelease settings = obs_source_get_settings(source_);
+			obs_data_set_int(settings, "clock_shortcut", mark);
 			obs_data_set_int(settings, "timer_mode", int(TimerMode::Deadline));
 			obs_data_set_int(settings, "deadline_ms", next.toMSecsSinceEpoch());
 			obs_data_set_bool(settings, "count_up_to_date", false);
@@ -413,7 +426,14 @@ public:
 			// Apply the same settings before starting, including for a hidden or private timer.
 			update(settings);
 		}
-		if (set_only)
+		if (cycle && before == OBS_MEDIA_STATE_PAUSED) {
+			{
+				std::lock_guard lock(mutex_);
+				clock_.reset();
+				clock_.state = OBS_MEDIA_STATE_PAUSED;
+			}
+			vendor_emit_timer_changed(source_);
+		} else if (set_only)
 			reset();
 		else
 			start(true);
@@ -520,12 +540,17 @@ public:
 	{
 		matrix4 transform;
 		gs_matrix_get(&transform);
-		const float scale = std::max(std::hypot(transform.x.x, transform.x.y), std::hypot(transform.y.x, transform.y.y));
+		const float scale =
+			std::max(std::hypot(transform.x.x, transform.x.y), std::hypot(transform.y.x, transform.y.y));
 		const uint64_t now = os_gettime_ns();
 		QSize canvas;
 		{
 			std::lock_guard lock(mutex_);
 			canvas = display_.canvas;
+			if (outgoing_ && rendered_canvas_ != canvas) {
+				gs_texture_destroy(outgoing_);
+				outgoing_ = nullptr;
+			}
 			const bool down = !clock_.settings.counts_up();
 			const int64_t second = (clock_.value() + (down ? 999 : 0)) / 1000;
 			const bool msg = clock_.message_visible();
@@ -535,12 +560,16 @@ public:
 				last_large_draw_ = now;
 			else if (now - last_large_draw_ < 1000000000ULL)
 				wanted = std::min(density_, max_density_);
-			if (!texture_ || second != last_second_ || msg != last_message_ || dirty_ || wanted != density_) {
+			if (!texture_ || second != last_second_ || msg != last_message_ || dirty_ ||
+			    wanted != density_) {
 				const auto &options = clock_.settings;
 				const QString value = options.display_text(second * 1000, clock_.span, msg);
-				const QString style = msg ? options.message : (options.format_output ? options.output_format : QString());
-				const bool switch_view = rendered_canvas_ == canvas && texture_ && value != last_value_ &&
-						(msg != last_message_ || style != last_style_) && now - last_draw_ < 500000000ULL;
+				const QString style = msg ? options.message
+							  : (options.format_output ? options.output_format : QString());
+				const bool switch_view = rendered_canvas_ == canvas && texture_ &&
+							 value != last_value_ &&
+							 (msg != last_message_ || style != last_style_) &&
+							 now - last_draw_ < 500000000ULL;
 				if (!update_texture(value, msg || options.format_output, wanted, switch_view, now))
 					return;
 				last_value_ = value;
@@ -576,7 +605,8 @@ private:
 		const auto w = static_cast<uint32_t>(frame.width());
 		const auto h = static_cast<uint32_t>(frame.height());
 		const uint8_t *pixels = frame.constBits();
-		if (!switch_view && texture_ && gs_texture_get_width(texture_) == w && gs_texture_get_height(texture_) == h) {
+		if (!switch_view && texture_ && gs_texture_get_width(texture_) == w &&
+		    gs_texture_get_height(texture_) == h) {
 			gs_texture_set_image(texture_, pixels, static_cast<uint32_t>(frame.bytesPerLine()), false);
 		} else {
 			auto *next = gs_texture_create(w, h, GS_RGBA, 1, &pixels, GS_DYNAMIC);
@@ -589,7 +619,8 @@ private:
 					morph_ = path ? gs_effect_create_from_file(path, nullptr) : nullptr;
 					bfree(path);
 				}
-				const bool reversing = outgoing_ && value == outgoing_value_ && now - morph_start_ < morph_ns;
+				const bool reversing = outgoing_ && value == outgoing_value_ &&
+						       now - morph_start_ < morph_ns;
 				const uint64_t elapsed = reversing ? morph_ns - (now - morph_start_) : 0;
 				gs_texture_destroy(outgoing_);
 				outgoing_ = texture_;
@@ -630,11 +661,13 @@ private:
 			gs_effect_set_float(gs_effect_get_param_by_name(effect, "amount"), mix);
 			gs_effect_set_float(gs_effect_get_param_by_name(effect, "opacity"), 1.0f);
 			gs_matrix_push();
-			gs_matrix_translate3f(canvas.width() * (1.0f - scale) / 2, canvas.height() * (1.0f - scale) / 2, 0);
+			gs_matrix_translate3f(canvas.width() * (1.0f - scale) / 2, canvas.height() * (1.0f - scale) / 2,
+					      0);
 			gs_matrix_scale3f(scale, scale, 1.0f);
 		}
 		while (gs_effect_loop(effect, blending ? "Mix" : "Draw"))
-			gs_draw_sprite(blending ? outgoing_ : texture_, 0, uint32_t(canvas.width()), uint32_t(canvas.height()));
+			gs_draw_sprite(blending ? outgoing_ : texture_, 0, uint32_t(canvas.width()),
+				       uint32_t(canvas.height()));
 		if (blending)
 			gs_matrix_pop();
 		gs_enable_framebuffer_srgb(previous);
@@ -725,7 +758,8 @@ void defaults(obs_data_t *s)
 
 bool timer_command(obs_source_t *source, const char *operation, int mark)
 {
-	if (!source || !operation || obs_source_removed(source) || std::strcmp(obs_source_get_id(source), kCountdownId) != 0)
+	if (!source || !operation || obs_source_removed(source) ||
+	    std::strcmp(obs_source_get_id(source), kCountdownId) != 0)
 		return false;
 	calldata_t call{};
 	calldata_set_string(&call, "operation", operation);
@@ -769,11 +803,16 @@ void register_countdown()
 				calldata_set_bool(cd, "end_message", end_message);
 			},
 			timer);
-		proc_handler_add(obs_source_get_proc_handler(source), "void timer_command(in string operation, in int mark, out bool success)",
-				 [](void *data, calldata_t *params) {
-					 const char *op = calldata_string(params, "operation");
-					 calldata_set_bool(params, "success", op && static_cast<Countdown *>(data)->command(op, int(calldata_int(params, "mark"))));
-				 }, timer);
+		proc_handler_add(
+			obs_source_get_proc_handler(source),
+			"void timer_command(in string operation, in int mark, out bool success)",
+			[](void *data, calldata_t *params) {
+				const char *op = calldata_string(params, "operation");
+				calldata_set_bool(params, "success",
+						  op && static_cast<Countdown *>(data)->command(
+								op, int(calldata_int(params, "mark"))));
+			},
+			timer);
 		return timer;
 	};
 	info.destroy = [](void *d) {

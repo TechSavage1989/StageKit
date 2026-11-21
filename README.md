@@ -1328,7 +1328,7 @@ Open **Timer settings** in the dock or in the source properties.
 
 From the dock, choose **Next quarter hour**, **Next :15**, **Next :30**, **Next :45**, or **Next full hour**, then press **Set and start**. These use the next matching local time, including across midnight. For example, at 2:38 the next quarter hour is 2:45, the next full hour is 3:00, and **Next :15** is 3:15. The date and time picker offers the same shortcuts. For a fixed duration, choose a minute preset such as **45 min** instead.
 
-In Stream Deck, add **StageKit > Countdown Timer**, select the private timer or a named scene timer, and choose a **Clock shortcut**. **Set and start / Stop** uses one key for both actions. For separate keys select **Set only**, **Set and start**, **Start or resume**, **Pause**, or **Stop and reset**. The key lights while its timer runs.
+In Stream Deck, add **StageKit > Countdown Timer**, select the private timer or a named scene timer, and choose a **Clock shortcut**. **Set and start / Stop** uses one key for both actions. For separate keys select **Set only**, **Set and start**, **Start or resume**, **Pause**, or **Stop and reset**. For one key that selects all four marks, choose **Cycle :15 / :30 / :45 / :00**. Tap to advance and hold for 0.8 seconds to start or stop the displayed mark. Tapping while the timer runs changes its deadline and keeps it running. The key lights while its timer runs.
 
 Use **Start or resume**, **Pause** and **Reset** in the dock or source properties. **Reset** leaves the timer ready. For a scene source, **Restart when the scene goes live** starts it when the scene enters Program.
 

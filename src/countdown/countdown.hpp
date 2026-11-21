@@ -47,7 +47,8 @@ struct TimerOptions {
 
 inline constexpr int kSavedTimer = -2, kNextQuarter = -1;
 inline constexpr int timer_marks[]{kNextQuarter, 15, 30, 45, 0};
-inline constexpr const char *timer_mark_labels[]{"Countdown.NextQuarter", "Countdown.Next15", "Countdown.Next30", "Countdown.Next45", "Countdown.NextHour"};
+inline constexpr const char *timer_mark_labels[]{"Countdown.NextQuarter", "Countdown.Next15", "Countdown.Next30",
+						 "Countdown.Next45", "Countdown.NextHour"};
 
 inline QDateTime next_timer_mark(const QDateTime &now, int mark)
 {
@@ -55,9 +56,13 @@ inline QDateTime next_timer_mark(const QDateTime &now, int mark)
 		return {};
 	// Advance real minutes so midnight and both sides of a daylight-saving change use the OBS computer's clock.
 	auto next = now.addMSecs(60000 - now.time().second() * 1000 - now.time().msec());
-	while (mark == kNextQuarter ? next.time().minute() % 15 != 0 : next.time().minute() != mark)
+	while (next.isValid() && (mark == kNextQuarter ? next.time().minute() % 15 != 0 : next.time().minute() != mark))
 		next = next.addSecs(60);
 	return next;
+}
+inline int saved_timer_mark(obs_data_t *settings)
+{
+	return obs_data_has_user_value(settings, "clock_shortcut") ? int(obs_data_get_int(settings, "clock_shortcut")) : kSavedTimer;
 }
 bool timer_command(obs_source_t *source, const char *operation, int mark = kSavedTimer);
 void timer_vendor_list(obs_data_t *request, obs_data_t *response, void *);

@@ -1,10 +1,11 @@
 import streamDeck, {
 	type DidReceiveSettingsEvent, type KeyAction, type KeyDownEvent, type SendToPluginEvent,
-	SingletonAction, type WillAppearEvent,
+	SingletonAction, type WillAppearEvent, type WillDisappearEvent, type KeyUpEvent,
 } from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 import { obs } from "../obs.ts";
-import { pictureById } from "../pictures.ts";
+import { HoldPress } from "../hold.ts";
+import { timerPicture } from "../pictures.ts";
 import { MARKS, timerPress } from "../timer.ts";
 import { answerLists, type KeySettings, showOnOff } from "./shared.ts";
 
@@ -12,6 +13,7 @@ type Settings = KeySettings & { timerPress?: string; timerMark?: string };
 
 export class TimerKey extends SingletonAction<Settings> {
 	override readonly manifestId = "com.techsavage1989.stagekit.timer";
+	private readonly presses = new HoldPress();
 
 	constructor() {
 		super();
@@ -29,13 +31,38 @@ export class TimerKey extends SingletonAction<Settings> {
 	}
 
 	override async onKeyDown(ev: KeyDownEvent<Settings>): Promise<void> {
-		const command = timerPress(ev.payload.settings);
+		if (!ev.action.isKey()) return;
+		const key = ev.action;
+		const settings = ev.payload.settings;
+		await this.presses.down(key.id, {
+			holdMs: 800,
+			long: settings.timerPress === "cycle",
+			short: () => this.send(key, settings, false),
+			longPress: () => this.send(key, settings, true),
+		});
+	}
+
+	override onKeyUp(ev: KeyUpEvent<Settings>): void {
+		this.presses.up(ev.action.id);
+	}
+
+	override onWillDisappear(ev: WillDisappearEvent<Settings>): void {
+		this.presses.cancel(ev.action.id);
+	}
+
+	private async send(key: KeyAction<Settings>, settings: Settings, held: boolean): Promise<void> {
+		const command = timerPress(settings, held);
 		const state = command && await obs.stageKit("TimerControl", command);
 		if (!state) {
-			await ev.action.showAlert();
+			await key.showAlert();
 			return;
 		}
-		await ev.action.setState(state.running === true ? 1 : 0);
+		await key.setState(state.running === true ? 1 : 0);
+		if (settings.timerPress === "cycle") await key.setTitle(this.cycleTitle(state.mark));
+	}
+
+	private cycleTitle(minute: unknown): string {
+		return typeof minute === "number" && [15, 30, 45, 0].includes(minute) ? ":" + String(minute).padStart(2, "0") : "Cycle";
 	}
 
 	override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, Settings>): Promise<void> {
@@ -54,13 +81,13 @@ export class TimerKey extends SingletonAction<Settings> {
 
 	private async show(key: KeyAction<Settings>, settings: Settings): Promise<void> {
 		const state = settings.target && await obs.stageKit("TimerControl", { timer: settings.target, operation: "state" });
-		const picture = pictureById("options/type-countdown");
+		const picture = timerPicture(settings.sourceType);
 		const running = !!state && state.running === true;
 		if (picture) await showOnOff(key, picture, running, settings);
 		else await key.setState(running ? 1 : 0);
 		const operation = settings.timerPress ?? "toggle";
 		const preset = MARKS.find((m) => m.value === (settings.timerMark ?? "next"));
-		const title = operation === "stop" ? "Stop" : operation === "pause" ? "Pause" : operation === "start" ? "Start" : preset?.title ?? "Timer";
+		const title = operation === "cycle" ? this.cycleTitle(state && state.mark) : operation === "stop" ? "Stop" : operation === "pause" ? "Pause" : operation === "start" ? "Start" : preset?.title ?? "Timer";
 		await key.setTitle(title);
 	}
 
