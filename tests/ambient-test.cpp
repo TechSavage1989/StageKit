@@ -9608,6 +9608,14 @@ static void item_morph_holds_test(uint32_t w, uint32_t h)
 	}
 	obs_source_t *before_out = obs_get_output_source(0);
 	obs_scene_t *elsewhere = obs_scene_create("MH Elsewhere");
+	auto release_scene = [](obs_scene_t *scene) {
+#if LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(31, 1, 0)
+		// Release the main canvas's reference without marking the source removed.
+		// The weak-reference assertions can then detect anything StageKit still holds.
+		obs_canvas_scene_remove(scene);
+#endif
+		obs_scene_release(scene);
+	};
 	auto block = [](const char *name, long long abgr, int bw, int bh) {
 		obs_data_t *d = obs_data_create();
 		obs_data_set_int(d, "color", abgr);
@@ -9743,7 +9751,7 @@ static void item_morph_holds_test(uint32_t w, uint32_t h)
 		}
 		}
 		obs_set_output_source(0, obs_scene_get_source(elsewhere));
-		obs_scene_release(scene);
+		release_scene(scene);
 		for (obs_source_t *src : {cam, grab, badge})
 			obs_source_release(src);
 		const std::string left = item_morph_left_over(weak.data(), weak.size());
@@ -9755,7 +9763,7 @@ static void item_morph_holds_test(uint32_t w, uint32_t h)
 	}
 	obs_set_output_source(0, before_out);
 	obs_source_release(before_out);
-	obs_scene_release(elsewhere);
+	release_scene(elsewhere);
 }
 
 // ------------------------------ the item Morph's layer, on OBS's own thread
@@ -22093,6 +22101,10 @@ int main(int argc, char **argv)
 	}
 
 	if (getenv("STAGEKIT_TEST_ONLY_MORPH_HOLDS")) { // to try that section alone
+		obs_audio_info sound = {};
+		sound.samples_per_sec = 48000;
+		sound.speakers = SPEAKERS_STEREO;
+		obs_reset_audio(&sound);
 		item_morph_holds_test(w, h);
 		obs_shutdown();
 		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,

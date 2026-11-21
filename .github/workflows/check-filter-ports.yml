@@ -63,7 +63,7 @@ jobs:
           python3 tests/make-test-image.py "$out"
           for test in REVIEW_CONTROLS RESTORE_HIDDEN SWITCH_COMMAND MAKE_ROOM MORPH_HOLDS; do
             env "STAGEKIT_TEST_ONLY_$test=1" xvfb-run -a build-ports/tests/stagekit-ambient-test "$PWD/build-ports/stagekit.so" "$PWD/data" \
-              "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out" > "$out/$test.log" 2>&1 || { tail -90 "$out/$test.log"; exit 1; }
+              "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out" > "$out/$test.log" 2>&1 || { grep -F "  FAIL  " "$out/$test.log" || true; tail -90 "$out/$test.log"; exit 1; }
             tail -3 "$out/$test.log"
           done
       - name: Open the replacement catalog in a fresh OBS frontend
