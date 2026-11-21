@@ -15,7 +15,9 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <QApplication>
 #include <QColor>
 #include <QDateTime>
-#include <QFontMetrics>
+#include <QFontMetricsF>
+#include <QStringList>
+#include <array>
 #include <QImage>
 #include <QPainter>
 #include <algorithm>
@@ -144,38 +146,120 @@ struct Playback {
 struct Display {
 	QFont font;
 	QColor color;
-	int digit = 1, colon = 1, padding = 4, height = 1;
+	QSize canvas{1, 1};
+	QRectF digit_ink, colon_ink;
+	qreal digit_step = 1, colon_step = 1;
+	std::array<qreal, 10> offsets{};
 
-	void measure()
+	// Include font decorations and negative bearings in the same coordinates used to paint.
+	QRectF ink(const QFontMetricsF &m, const QString &s) const
 	{
-		const QFontMetrics m(font);
-		digit = 1;
+		QRectF bounds = m.tightBoundingRect(s);
+		const qreal advance = m.horizontalAdvance(s);
+		if (font.underline())
+			bounds |= QRectF(0, m.underlinePos() - m.lineWidth(), advance, 2 * m.lineWidth());
+		if (font.strikeOut())
+			bounds |= QRectF(0, -m.strikeOutPos() - m.lineWidth(), advance, 2 * m.lineWidth());
+		return bounds;
+	}
+
+	QRectF number_bounds(const QString &number) const
+	{
+		QRectF result;
+		qreal x = 0;
+		for (const QChar c : number) {
+			const bool separator = c == QLatin1Char(':');
+			result |= (separator ? colon_ink : digit_ink).translated(x, 0);
+			x += separator ? colon_step : digit_step;
+		}
+		return result;
+	}
+
+	void measure(const QString &reference)
+	{
+		const QFontMetricsF m(font);
+		digit_step = 1;
 		for (int i = 0; i < 10; ++i)
-			digit = std::max(digit, m.horizontalAdvance(QChar('0' + i)));
-		colon = std::max(1, m.horizontalAdvance(QLatin1Char(':')));
-		padding = std::max(3, font.pixelSize() / 6);
-		height = m.height() + 2 * padding;
+			digit_step = std::max(digit_step, m.horizontalAdvance(QChar('0' + i)));
+		digit_ink = {};
+		for (int i = 0; i < 10; ++i) {
+			const QChar c('0' + i);
+			offsets[i] = (digit_step - m.horizontalAdvance(c)) / 2;
+			digit_ink |= ink(m, QString(c)).translated(offsets[i], 0);
+		}
+		colon_step = m.horizontalAdvance(QLatin1Char(':'));
+		colon_ink = ink(m, QStringLiteral(":"));
+		const QRectF bounds = number_bounds(reference);
+		canvas = QSize(std::clamp(int(std::ceil(bounds.width())) + 2, 3, 4096),
+			       std::clamp(int(std::ceil(bounds.height())) + 2, 3, 2048));
 	}
 
-	int time_width(const QString &s) const
+	qreal fit(const QRectF &ink_bounds) const
 	{
-		const int separators = int(s.count(QLatin1Char(':')));
-		return digit * (int(s.size()) - separators) + colon * separators;
+		return std::min((canvas.width() - 2) / std::max<qreal>(1, ink_bounds.width()),
+				(canvas.height() - 2) / std::max<qreal>(1, ink_bounds.height()));
 	}
 
-	int line_width(const QString &line) const
+	struct Lines {
+		QStringList text;
+		QVector<QRectF> bounds;
+		QRectF block;
+	};
+
+	Lines measure_lines(const QFontMetricsF &m, const QStringList &lines) const
 	{
-		const QFontMetrics metrics(font);
-		int reserve = std::max(metrics.horizontalAdvance(line), metrics.boundingRect(line).width());
-		for (const auto c : line)
-			if (c >= QLatin1Char('0') && c <= QLatin1Char('9'))
-				reserve += digit - metrics.horizontalAdvance(c);
-		return reserve;
+		Lines result;
+		result.text = lines;
+		for (const auto &line : lines) {
+			const auto box = ink(m, line);
+			const qreal baseline = result.bounds.size() * m.lineSpacing();
+			result.bounds.append(box);
+			result.block |= box.translated(-box.center().x(), baseline);
+		}
+		return result;
 	}
 
-	QImage paint(const QString &text, bool free_text, int width, int density) const
+	// Keep a short label on one line. Wrap phrases only when doing so makes the letters larger.
+	Lines fit_lines(const QString &text) const
 	{
-		QImage frame(width * density, height * density, QImage::Format_RGBA8888_Premultiplied);
+		const QFontMetricsF m(font);
+		Lines best = measure_lines(m, {text});
+		const auto words = text.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+		if (words.size() < 2)
+			return best;
+		const qreal full = m.horizontalAdvance(text);
+		const qreal gap = m.horizontalAdvance(QLatin1Char(' '));
+		QVector<qreal> advances;
+		for (const QString &word : words)
+			advances.append(m.horizontalAdvance(word));
+		for (int count = 2; count <= std::min<qsizetype>(4, words.size()); ++count) {
+			QStringList lines;
+			QString line;
+			qreal used = 0;
+			for (qsizetype i = 0; i < words.size(); ++i) {
+				if (!line.isEmpty() && used + gap + advances[i] > full / count && lines.size() + 1 < count) {
+					lines.append(line);
+					line.clear();
+					used = 0;
+				}
+				if (!line.isEmpty()) {
+					line += QLatin1Char(' ');
+					used += gap;
+				}
+				line += words[i];
+				used += advances[i];
+			}
+			lines.append(line);
+			auto candidate = measure_lines(m, lines);
+			if (fit(candidate.block) > fit(best.block) * 1.05)
+				best = std::move(candidate);
+		}
+		return best;
+	}
+
+	QImage paint(const QString &text, bool free_text, int density) const
+	{
+		QImage frame(canvas * density, QImage::Format_RGBA8888_Premultiplied);
 		if (frame.isNull())
 			return frame;
 		frame.setDevicePixelRatio(density);
@@ -184,20 +268,24 @@ struct Display {
 		p.setRenderHint(QPainter::TextAntialiasing);
 		p.setFont(font);
 		p.setPen(color);
+		const Lines lines = free_text ? fit_lines(text) : Lines{};
+		const QRectF bounds = free_text ? lines.block : number_bounds(text);
+		if (bounds.isEmpty())
+			return frame;
+		p.translate(canvas.width() / 2.0, canvas.height() / 2.0);
+		const qreal factor = fit(bounds);
+		p.scale(factor, factor);
+		p.translate(-bounds.center());
 		if (free_text) {
-			const int advance = std::max(1, QFontMetrics(font).horizontalAdvance(text));
-			const qreal scale = std::min<qreal>(1, qreal(width - 2 * padding) / advance);
-			p.translate(width / 2.0, height / 2.0);
-			p.scale(scale, scale);
-			p.drawText(QRectF(-advance / 2.0 - padding, -height / 2.0, advance + 2 * padding, height),
-				   Qt::AlignCenter | Qt::TextSingleLine, text);
+			const qreal step = QFontMetricsF(font).lineSpacing();
+			for (qsizetype i = 0; i < lines.text.size(); ++i)
+				p.drawText(QPointF(-lines.bounds[i].center().x(), i * step), lines.text[i]);
 		} else {
-			int left = (width - time_width(text)) / 2;
-			for (const auto c : text) {
-				const int step = c == QLatin1Char(':') ? colon : digit;
-				p.drawText(QRect(left - padding, 0, step + 2 * padding, height),
-					   Qt::AlignCenter | Qt::TextSingleLine, QString(c));
-				left += step;
+			qreal x = 0;
+			for (const QChar c : text) {
+				const bool separator = c == QLatin1Char(':');
+				p.drawText(QPointF(x + (separator ? 0 : offsets[c.digitValue()]), 0), QString(c));
+				x += separator ? colon_step : digit_step;
 			}
 		}
 		p.end();
@@ -215,6 +303,8 @@ public:
 		++*generation_;
 		obs_enter_graphics();
 		gs_texture_destroy(texture_);
+		gs_texture_destroy(outgoing_);
+		gs_effect_destroy(morph_);
 		obs_leave_graphics();
 	}
 
@@ -223,6 +313,7 @@ public:
 		OBSDataAutoRelease data = obs_data_get_obj(s, "font");
 		QFont font(QString::fromUtf8(obs_data_get_string(data, "face")));
 		const auto flags = obs_data_get_int(data, "flags");
+		font.setHintingPreference(QFont::PreferNoHinting);
 		font.setPixelSize(int(std::clamp<long long>(obs_data_get_int(data, "size"), 8, 512)));
 		font.setBold((flags & OBS_FONT_BOLD) != 0);
 		font.setItalic((flags & OBS_FONT_ITALIC) != 0);
@@ -241,15 +332,17 @@ public:
 			clock_.position = clock_.elapsed();
 			clock_.started = monotonic_ms();
 		}
+		const bool format_changed = next.units != clock_.settings.units || next.leading_zero != clock_.settings.leading_zero;
 		clock_.settings = next;
 		if (reset)
 			clock_.reset();
+		const bool font_changed = display_.font != font;
 		display_.font = font;
 		display_.color = color;
-		display_.measure();
 		initialized_ = true;
 		dirty_ = true;
-		update_width_locked();
+		if (reset || font_changed || format_changed)
+			measure_locked();
 	}
 
 	void start(bool restart)
@@ -259,7 +352,6 @@ public:
 			if (!clock_.start(restart))
 				return;
 			++*generation_;
-			update_width_locked();
 		}
 		obs_source_media_started(source_);
 	}
@@ -280,7 +372,6 @@ public:
 		std::lock_guard lock(mutex_);
 		++*generation_;
 		clock_.reset();
-		update_width_locked();
 	}
 
 	void activate()
@@ -356,12 +447,12 @@ public:
 	uint32_t width() const
 	{
 		std::lock_guard lock(mutex_);
-		return width_;
+		return static_cast<uint32_t>(display_.canvas.width());
 	}
 	uint32_t height() const
 	{
 		std::lock_guard lock(mutex_);
-		return static_cast<uint32_t>(display_.height);
+		return static_cast<uint32_t>(display_.canvas.height());
 	}
 
 	void seek(int64_t ms)
@@ -376,99 +467,144 @@ public:
 			++*generation_;
 			clock_.state = OBS_MEDIA_STATE_PAUSED;
 		}
-		update_width_locked();
 	}
 
 	void render()
 	{
 		matrix4 transform;
 		gs_matrix_get(&transform);
-		const float scale =
-			std::max(std::hypot(transform.x.x, transform.x.y), std::hypot(transform.y.x, transform.y.y));
-		uint32_t logical_width, logical_height;
+		const float scale = std::max(std::hypot(transform.x.x, transform.x.y), std::hypot(transform.y.x, transform.y.y));
+		const uint64_t now = os_gettime_ns();
+		QSize canvas;
 		{
 			std::lock_guard lock(mutex_);
+			canvas = display_.canvas;
 			const bool down = !clock_.settings.counts_up();
 			const int64_t second = (clock_.value() + (down ? 999 : 0)) / 1000;
 			const bool msg = clock_.message_visible();
-			const bool changed = !texture_ || second != last_second_ || msg != last_message_ || dirty_;
-			if (changed)
-				update_width_locked();
-			logical_width = width_;
-			logical_height = static_cast<uint32_t>(display_.height);
 			const float zoom = std::isfinite(scale) ? std::clamp(scale, 1.0f, float(max_density_)) : 1.0f;
 			int wanted = int(std::ceil(zoom));
-			const uint64_t now = obs_get_video_frame_time();
 			if (wanted >= density_)
 				last_large_draw_ = now;
-			else if (now >= last_large_draw_ && now - last_large_draw_ < 1000000000ULL)
+			else if (now - last_large_draw_ < 1000000000ULL)
 				wanted = std::min(density_, max_density_);
-			if (changed || wanted != density_) {
+			if (!texture_ || second != last_second_ || msg != last_message_ || dirty_ || wanted != density_) {
 				const auto &options = clock_.settings;
 				const QString value = options.display_text(second * 1000, clock_.span, msg);
-				const QImage frame =
-					display_.paint(value, msg || options.format_output, int(logical_width), wanted);
-				if (frame.isNull())
+				const QString style = msg ? options.message : (options.format_output ? options.output_format : QString());
+				const bool switch_view = rendered_canvas_ == canvas && texture_ && value != last_value_ &&
+						(msg != last_message_ || style != last_style_) && now - last_draw_ < 500000000ULL;
+				if (!update_texture(value, msg || options.format_output, wanted, switch_view, now))
 					return;
-				const auto w = static_cast<uint32_t>(frame.width());
-				const auto h = static_cast<uint32_t>(frame.height());
-				const uint8_t *pixels = frame.constBits();
-				if (texture_ && gs_texture_get_width(texture_) == w &&
-				    gs_texture_get_height(texture_) == h)
-					gs_texture_set_image(texture_, pixels,
-							     static_cast<uint32_t>(frame.bytesPerLine()), false);
-				else {
-					auto *next = gs_texture_create(w, h, GS_RGBA, 1, &pixels, GS_DYNAMIC);
-					if (!next)
-						return;
-					gs_texture_destroy(texture_);
-					texture_ = next;
-				}
+				last_value_ = value;
+				last_style_ = style;
+				rendered_canvas_ = canvas;
 				density_ = wanted;
 				last_second_ = second;
 				last_message_ = msg;
 				dirty_ = false;
 			}
+			last_draw_ = now;
 		}
-		if (!texture_)
-			return;
-		auto *effect = obs_get_base_effect(OBS_EFFECT_DEFAULT);
-		auto *image = gs_effect_get_param_by_name(effect, "image");
-		const bool linear = gs_get_linear_srgb();
-		const bool previous = gs_framebuffer_srgb_enabled();
-		gs_enable_framebuffer_srgb(linear);
-		if (linear)
-			gs_effect_set_texture_srgb(image, texture_);
-		else
-			gs_effect_set_texture(image, texture_);
-		while (gs_effect_loop(effect, "Draw"))
-			gs_draw_sprite(texture_, 0, logical_width, logical_height);
-		gs_enable_framebuffer_srgb(previous);
+		draw(canvas, now);
 	}
 
 private:
-	void update_width_locked()
+	void measure_locked()
 	{
-		const int64_t range = std::max(clock_.span, clock_.value());
 		const auto &options = clock_.settings;
-		const QString maximum = options.display_text(range, range, false, true);
-		int width = options.format_output ? display_.line_width(maximum) : display_.time_width(maximum);
-		if (options.use_message && !options.message.isEmpty()) {
-			const QString end = options.display_text(options.counts_up() ? range : 0, range, true, true);
-			width = std::max(width, display_.line_width(end));
-		}
-		width_ = static_cast<uint32_t>(std::min(4096, width + 2 * display_.padding));
-		// Keep a glyph atlas within 16 MiB even when a small font is enlarged many times.
-		const int side_limit = 8192 / std::max(int(width_), display_.height);
-		const int area_limit = int(std::sqrt((4.0 * 1024 * 1024) / (width_ * display_.height)));
+		// Only the bare clock establishes the transform. An unlimited timer keeps its initial box as it grows.
+		display_.measure(options.clock_text(clock_.span, clock_.span));
+		const int width = display_.canvas.width(), height = display_.canvas.height();
+		const int side_limit = 8192 / std::max(width, height);
+		const int area_limit = int(std::sqrt((4.0 * 1024 * 1024) / (width * height)));
 		max_density_ = std::max(1, std::min(side_limit, area_limit));
 	}
+
+	bool update_texture(const QString &value, bool free_text, int density, bool switch_view, uint64_t now)
+	{
+		const QImage frame = display_.paint(value, free_text, density);
+		if (frame.isNull())
+			return false;
+		const auto w = static_cast<uint32_t>(frame.width());
+		const auto h = static_cast<uint32_t>(frame.height());
+		const uint8_t *pixels = frame.constBits();
+		if (!switch_view && texture_ && gs_texture_get_width(texture_) == w && gs_texture_get_height(texture_) == h) {
+			gs_texture_set_image(texture_, pixels, static_cast<uint32_t>(frame.bytesPerLine()), false);
+		} else {
+			auto *next = gs_texture_create(w, h, GS_RGBA, 1, &pixels, GS_DYNAMIC);
+			if (!next)
+				return false;
+			if (switch_view) {
+				if (!tried_morph_) {
+					tried_morph_ = true;
+					char *path = obs_module_file("effects/stagekit-morph.effect");
+					morph_ = path ? gs_effect_create_from_file(path, nullptr) : nullptr;
+					bfree(path);
+				}
+				const bool reversing = outgoing_ && value == outgoing_value_ && now - morph_start_ < morph_ns;
+				const uint64_t elapsed = reversing ? morph_ns - (now - morph_start_) : 0;
+				gs_texture_destroy(outgoing_);
+				outgoing_ = texture_;
+				outgoing_value_ = last_value_;
+				texture_ = nullptr;
+				morph_start_ = now - elapsed;
+			}
+			gs_texture_destroy(texture_);
+			texture_ = next;
+		}
+		return true;
+	}
+
+	void draw(const QSize &canvas, uint64_t now)
+	{
+		const bool blending = morph_ && outgoing_ && now - morph_start_ < morph_ns;
+		if (!blending && outgoing_) {
+			gs_texture_destroy(outgoing_);
+			outgoing_ = nullptr;
+		}
+		auto *effect = blending ? morph_ : obs_get_base_effect(OBS_EFFECT_DEFAULT);
+		const bool linear = gs_get_linear_srgb();
+		const bool previous = gs_framebuffer_srgb_enabled();
+		gs_enable_framebuffer_srgb(linear);
+		auto bind = [&](const char *name, gs_texture_t *texture) {
+			auto *param = gs_effect_get_param_by_name(effect, name);
+			if (linear)
+				gs_effect_set_texture_srgb(param, texture);
+			else
+				gs_effect_set_texture(param, texture);
+		};
+		bind("image", blending ? outgoing_ : texture_);
+		if (blending) {
+			const float t = float(now - morph_start_) / float(morph_ns);
+			const float mix = t * t * (3.0f - 2.0f * t);
+			const float scale = 1.0f - 0.32f * mix * (1.0f - mix);
+			bind("image2", texture_);
+			gs_effect_set_float(gs_effect_get_param_by_name(effect, "amount"), mix);
+			gs_effect_set_float(gs_effect_get_param_by_name(effect, "opacity"), 1.0f);
+			gs_matrix_push();
+			gs_matrix_translate3f(canvas.width() * (1.0f - scale) / 2, canvas.height() * (1.0f - scale) / 2, 0);
+			gs_matrix_scale3f(scale, scale, 1.0f);
+		}
+		while (gs_effect_loop(effect, blending ? "Mix" : "Draw"))
+			gs_draw_sprite(blending ? outgoing_ : texture_, 0, uint32_t(canvas.width()), uint32_t(canvas.height()));
+		if (blending)
+			gs_matrix_pop();
+		gs_enable_framebuffer_srgb(previous);
+	}
+
 	obs_source_t *source_;
 	mutable std::mutex mutex_;
 	Playback clock_;
 	Display display_;
 	gs_texture_t *texture_ = nullptr;
-	uint32_t width_ = 1;
+	static constexpr uint64_t morph_ns = 240000000ULL;
+	gs_texture_t *outgoing_ = nullptr;
+	gs_effect_t *morph_ = nullptr;
+	uint64_t morph_start_ = 0, last_draw_ = 0;
+	QString last_value_, last_style_, outgoing_value_;
+	QSize rendered_canvas_;
+	bool tried_morph_ = false;
 	int64_t last_second_ = -1;
 	int density_ = 1, max_density_ = 1;
 	uint64_t last_large_draw_ = 0;

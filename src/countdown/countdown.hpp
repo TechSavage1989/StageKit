@@ -39,7 +39,8 @@ struct TimerOptions {
 	void write(obs_data_t *settings) const;
 	bool same_timing(const TimerOptions &other) const;
 	bool counts_up() const { return mode == TimerMode::CountUp || (mode == TimerMode::Deadline && date_up); }
-	QString display_text(int64_t ms, int64_t range, bool at_end = false, bool reserve_space = false) const;
+	QString clock_text(int64_t ms, int64_t range) const;
+	QString display_text(int64_t ms, int64_t range, bool at_end = false) const;
 	bool unlimited() const { return mode == TimerMode::CountUp && !limit; }
 };
 

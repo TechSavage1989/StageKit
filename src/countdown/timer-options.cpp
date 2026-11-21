@@ -258,7 +258,7 @@ private:
 
 } // namespace
 
-QString TimerOptions::display_text(int64_t milliseconds, int64_t range, bool at_end, bool reserve_space) const
+QString TimerOptions::clock_text(int64_t milliseconds, int64_t range) const
 {
 	const int mask = fields_for(units, std::max(range, milliseconds));
 	milliseconds = std::max<int64_t>(0, milliseconds);
@@ -273,23 +273,28 @@ QString TimerOptions::display_text(int64_t milliseconds, int64_t range, bool at_
 	for (size_t i = 0; i < sizes.size(); ++i) {
 		if (!(mask & bits[i]))
 			continue;
-		const int digits = fields.isEmpty() && !leading_zero && !reserve_space ? 1 : 2;
+		const int digits = fields.isEmpty() && !leading_zero ? 1 : 2;
 		fields << QString::number(remaining / sizes[i]).rightJustified(digits, QLatin1Char('0'));
 		remaining %= sizes[i];
 	}
-	const QString time = fields.join(QLatin1Char(':'));
+	return fields.join(QLatin1Char(':'));
+}
+
+QString TimerOptions::display_text(int64_t milliseconds, int64_t range, bool at_end) const
+{
+	const QString time = clock_text(milliseconds, range);
 	if (!at_end && !format_output)
 		return time;
 	QString pattern = at_end ? message : output_format;
 	pattern.replace(QStringLiteral("%time%"), time);
 	if (!pattern.contains(QLatin1Char('%')))
 		return pattern;
-	int64_t parts = (milliseconds + (round_up ? 999 : 0)) / 1000;
+	int64_t parts = (std::max<int64_t>(0, milliseconds) + (counts_up() ? 0 : 999)) / 1000;
 	for (size_t i = 0; i < keys.size(); ++i) {
 		const auto key = QString::fromLatin1(keys[i]);
 		const auto value = QString::number(parts / sizes[i]);
 		const auto padded = value.rightJustified(2, QLatin1Char('0'));
-		pattern.replace(QLatin1Char('%') + key + QLatin1Char('%'), reserve_space ? padded : value);
+		pattern.replace(QLatin1Char('%') + key + QLatin1Char('%'), value);
 		pattern.replace(QLatin1Char('%') + key + QStringLiteral("2%"), padded);
 		parts %= sizes[i];
 	}

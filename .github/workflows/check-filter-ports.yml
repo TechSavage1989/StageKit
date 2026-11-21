@@ -101,7 +101,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import base64
-          for name in ("countdown-dock.png", "countdown-settings.png", "countdown-scaled.png"):
+          for name in ("countdown-dock.png", "countdown-settings.png", "countdown-scaled.png", "countdown-layout.png", "countdown-timer.png"):
               path = Path("build-ports/filter-results") / name
               if path.exists():
                   data = base64.b64encode(path.read_bytes()).decode()
@@ -119,6 +119,7 @@ jobs:
             build-ports/filter-results/countdown-dock.png
             build-ports/filter-results/countdown-settings.png
             build-ports/filter-results/countdown-scaled.png
+            build-ports/filter-results/countdown-layout.png
             build-ports/filter-results/render.log
   windows:
     name: Windows OBS 32.2.2 frontend
