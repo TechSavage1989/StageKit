@@ -17,7 +17,11 @@ add_executable(stagekit-replacement-test replacement-test.cpp)
 target_link_libraries(stagekit-replacement-test PRIVATE OBS::libobs Qt6::Widgets ${CMAKE_DL_LIBS})
 set_target_properties(stagekit-replacement-test PROPERTIES CXX_STANDARD 17)
 
-add_executable(stagekit-replacement-collection-test replacement-collection-test.cpp ../src/components/collection-convert.cpp)
+add_executable(
+  stagekit-replacement-collection-test
+  replacement-collection-test.cpp
+  ../src/components/collection-convert.cpp
+)
 target_include_directories(stagekit-replacement-collection-test SYSTEM PRIVATE ../src/third-party/ports/json)
 set_target_properties(stagekit-replacement-collection-test PROPERTIES CXX_STANDARD 17)
 

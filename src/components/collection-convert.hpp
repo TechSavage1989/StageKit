@@ -14,4 +14,4 @@ struct CollectionReport {
 
 CollectionReport convert_collection(nlohmann::json &collection, const nlohmann::json &catalog,
 				    const std::filesystem::path &resource_dir);
-}
+} // namespace stagekit

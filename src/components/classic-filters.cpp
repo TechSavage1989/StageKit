@@ -82,7 +82,8 @@ struct Filter {
 			error.clear();
 			char *message = nullptr;
 			obs_enter_graphics();
-			gs_effect_t *loaded = next.empty() ? nullptr : gs_effect_create_from_file(next.c_str(), &message);
+			gs_effect_t *loaded = next.empty() ? nullptr
+							   : gs_effect_create_from_file(next.c_str(), &message);
 			if (loaded && !gs_effect_get_technique(loaded, "Draw")) {
 				gs_effect_destroy(loaded);
 				loaded = nullptr;
@@ -225,7 +226,8 @@ struct Filter {
 		} else if (kind == Kind::Shadow) {
 			const uint32_t out_w = w + (uint32_t)std::abs(x), out_h = h + (uint32_t)std::abs(y);
 			vector("uv_scale", (float)out_w / (float)w, (float)out_h / (float)h);
-			vector("image_origin", (float)std::max(-x, 0) / (float)out_w, (float)std::max(-y, 0) / (float)out_h);
+			vector("image_origin", (float)std::max(-x, 0) / (float)out_w,
+			       (float)std::max(-y, 0) / (float)out_h);
 			vector("shadow_offset", (float)x / (float)w, (float)y / (float)h);
 			gs_effect_set_vec4(param("ink"), &colour);
 			gs_effect_set_bool(param("hide_image"), hide_image);
@@ -265,15 +267,18 @@ template<Kind K> obs_properties_t *properties(void *data)
 {
 	auto *p = obs_properties_create();
 	if constexpr (K == Kind::Custom) {
-		obs_properties_add_path(p, "effect_path", obs_module_text("Classic.File"), OBS_PATH_FILE, "*.effect", nullptr);
-		obs_properties_add_button2(p, "reload", obs_module_text("Classic.Reload"),
+		obs_properties_add_path(p, "effect_path", obs_module_text("Classic.File"), OBS_PATH_FILE, "*.effect",
+					nullptr);
+		obs_properties_add_button2(
+			p, "reload", obs_module_text("Classic.Reload"),
 			[](obs_properties_t *, obs_property_t *, void *ptr) {
 				if (auto *f = static_cast<Filter *>(ptr)) {
 					f->reload = true;
 					obs_source_update(f->source, nullptr);
 				}
 				return true;
-			}, data);
+			},
+			data);
 		if (auto *f = static_cast<Filter *>(data); f && !f->error.empty())
 			obs_properties_add_text(p, "error", f->error.c_str(), OBS_TEXT_INFO);
 	} else if constexpr (K == Kind::Shadow) {
@@ -303,7 +308,8 @@ template<Kind K> obs_properties_t *properties(void *data)
 			return true;
 		});
 	}
-	const char *help[] = {"Classic.Custom.Help", "Classic.Shadow.Help", "Classic.Edges.Help", "Classic.Gaussian.Help", "Classic.Toon.Help", "Classic.Alpha.Help"};
+	const char *help[] = {"Classic.Custom.Help",   "Classic.Shadow.Help", "Classic.Edges.Help",
+			      "Classic.Gaussian.Help", "Classic.Toon.Help",   "Classic.Alpha.Help"};
 	add_help_line(p, obs_module_text(help[(size_t)K]));
 	return p;
 }
@@ -316,20 +322,34 @@ template<Kind K> void register_one()
 	i.type = OBS_SOURCE_TYPE_FILTER;
 	i.output_flags = OBS_SOURCE_VIDEO;
 	i.type_data = const_cast<Definition *>(&d);
-	i.get_name = [](void *data) { return obs_module_text(static_cast<Definition *>(data)->label); };
-	i.create = [](obs_data_t *s, obs_source_t *src) -> void * { auto *f = new Filter(src, K); f->update(s); return f; };
-	i.destroy = [](void *ptr) { delete static_cast<Filter *>(ptr); };
+	i.get_name = [](void *data) {
+		return obs_module_text(static_cast<Definition *>(data)->label);
+	};
+	i.create = [](obs_data_t *s, obs_source_t *src) -> void * {
+		auto *f = new Filter(src, K);
+		f->update(s);
+		return f;
+	};
+	i.destroy = [](void *ptr) {
+		delete static_cast<Filter *>(ptr);
+	};
 	i.get_defaults = defaults<K>;
 	i.get_properties = properties<K>;
-	i.update = [](void *ptr, obs_data_t *s) { static_cast<Filter *>(ptr)->update(s); };
-	i.video_render = [](void *ptr, gs_effect_t *) { static_cast<Filter *>(ptr)->render(); };
+	i.update = [](void *ptr, obs_data_t *s) {
+		static_cast<Filter *>(ptr)->update(s);
+	};
+	i.video_render = [](void *ptr, gs_effect_t *) {
+		static_cast<Filter *>(ptr)->render();
+	};
 	if constexpr (K == Kind::Shadow) {
 		i.get_width = [](void *ptr) {
-			auto &f = *static_cast<Filter *>(ptr); auto *t = obs_filter_get_target(f.source);
+			auto &f = *static_cast<Filter *>(ptr);
+			auto *t = obs_filter_get_target(f.source);
 			return t ? obs_source_get_base_width(t) + (uint32_t)std::abs(f.x) : 0U;
 		};
 		i.get_height = [](void *ptr) {
-			auto &f = *static_cast<Filter *>(ptr); auto *t = obs_filter_get_target(f.source);
+			auto &f = *static_cast<Filter *>(ptr);
+			auto *t = obs_filter_get_target(f.source);
 			return t ? obs_source_get_base_height(t) + (uint32_t)std::abs(f.y) : 0U;
 		};
 	}

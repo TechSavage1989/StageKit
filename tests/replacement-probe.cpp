@@ -25,8 +25,9 @@ static QAction *action_named(const QString &name)
 static void exercise()
 {
 	QStringList issues;
-	const QStringList tools = {"Source Copy (StageKit)", "Source Dock (StageKit)", "Transition Table (StageKit)",
-		"Scene Collection Manager (StageKit)", "Quick Access Utility (StageKit)", "Dock Layout Manager (StageKit)"};
+	const QStringList tools = {"Source Copy (StageKit)",          "Source Dock (StageKit)",
+				   "Transition Table (StageKit)",     "Scene Collection Manager (StageKit)",
+				   "Quick Access Utility (StageKit)", "Dock Layout Manager (StageKit)"};
 	for (const QString &name : tools)
 		if (!action_named(name))
 			issues.append(name);
@@ -49,7 +50,8 @@ static void exercise()
 				for (int i = 0; i < table->rowCount(); ++i)
 					if (!table->isRowHidden(i)) {
 						++visible;
-						matched = table->item(i,1)->text() == "Source Filter: Directory Watch Media (StageKit)";
+						matched = table->item(i, 1)->text() ==
+							  "Source Filter: Directory Watch Media (StageKit)";
 					}
 				matched = matched && visible == 1;
 			}
@@ -69,9 +71,11 @@ bool obs_module_load()
 {
 	if (!qEnvironmentVariableIsSet("STAGEKIT_TEST_REPORT"))
 		return false;
-	obs_frontend_add_event_callback([](obs_frontend_event event, void *) {
-		if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING)
-			QTimer::singleShot(1500, qApp, &exercise);
-	}, nullptr);
+	obs_frontend_add_event_callback(
+		[](obs_frontend_event event, void *) {
+			if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING)
+				QTimer::singleShot(1500, qApp, &exercise);
+		},
+		nullptr);
 	return true;
 }

@@ -36,7 +36,8 @@ int main(int argc, char **argv)
 				const auto report = stagekit::convert_collection(collection, catalog, resources);
 				const auto converted = collection;
 				const auto repeat = stagekit::convert_collection(collection, catalog, resources);
-				require(converted == collection && repeat.converted == 0, "Second conversion changed the collection");
+				require(converted == collection && repeat.converted == 0,
+					"Second conversion changed the collection");
 				std::cout << Path(argv[i]).filename().string() << " | converted " << report.converted
 					  << " | shaders " << report.relocated << '\n';
 				for (const auto &[id, count] : report.review)
@@ -65,35 +66,61 @@ int main(int argc, char **argv)
 		auto result = stagekit::convert_collection(collection, catalog, resources);
 		const auto &filters = collection["sources"][0]["filters"];
 		require(result.converted == 7 && result.relocated == 1, "Unexpected conversion count");
-		require(result.review.count("filter-blur") && result.review.count("freeze_filter / different_kind"), "Unsupported IDs must be reported");
+		require(result.review.count("filter-blur") && result.review.count("freeze_filter / different_kind"),
+			"Unsupported IDs must be reported");
 		require(collection["unknown"].get<uint64_t>() == 9007199254740993ULL, "64-bit value changed");
-		require(collection["sources"][1]["uuid"] == "same-id" && collection["sources"][1]["id"] == "stagekit_port_source-clone", "Clone identity changed");
+		require(collection["sources"][1]["uuid"] == "same-id" &&
+				collection["sources"][1]["id"] == "stagekit_port_source-clone",
+			"Clone identity changed");
 		require(filters.at(0).at("name") == "Camera movement" && filters.at(0).at("enabled") == false &&
-			filters.at(0).at("settings") == original["sources"][0]["filters"][0]["settings"], "Move filter settings changed");
-		require(filters.at(1).at("settings").at("shader_file_name").get<std::string>().find("/components/shader/examples/drop_shadow.shader") != std::string::npos, "Shader path was not repaired");
-		require(filters.at(3) == original["sources"][0]["filters"][3] && filters.at(4) == original["sources"][0]["filters"][4], "Unmapped filter changed");
-		require(collection["groups"][0]["filters"][0]["versioned_id"] == "stagekit_port_obs_composite_blur_v2", "Version suffix was lost");
-		require(collection["modules"]["stagekit.quick_access"]["entries"][0] == 1 && collection["modules"].contains("source-dock") &&
-			collection["modules"]["stagekit.dock"]["new"] == 2, "Existing utility settings overwritten");
-		require(collection["modules"]["advanced-scene-switcher"] == original["modules"]["advanced-scene-switcher"] &&
-			result.review.at("Advanced Scene Switcher macros") == 1, "Macros must be preserved and reported");
+				filters.at(0).at("settings") == original["sources"][0]["filters"][0]["settings"],
+			"Move filter settings changed");
+		require(filters.at(1).at("settings")
+					.at("shader_file_name")
+					.get<std::string>()
+					.find("/components/shader/examples/drop_shadow.shader") != std::string::npos,
+			"Shader path was not repaired");
+		require(filters.at(3) == original["sources"][0]["filters"][3] &&
+				filters.at(4) == original["sources"][0]["filters"][4],
+			"Unmapped filter changed");
+		require(collection["groups"][0]["filters"][0]["versioned_id"] == "stagekit_port_obs_composite_blur_v2",
+			"Version suffix was lost");
+		require(collection["modules"]["stagekit.quick_access"]["entries"][0] == 1 &&
+				collection["modules"].contains("source-dock") &&
+				collection["modules"]["stagekit.dock"]["new"] == 2,
+			"Existing utility settings overwritten");
+		require(collection["modules"]["advanced-scene-switcher"] ==
+					original["modules"]["advanced-scene-switcher"] &&
+				result.review.at("Advanced Scene Switcher macros") == 1,
+			"Macros must be preserved and reported");
 		const auto after = collection;
-		require(stagekit::convert_collection(collection, catalog, resources).converted == 0 && collection == after, "Conversion must be idempotent");
-		auto temp = std::filesystem::temp_directory_path() / ("stagekit-filter-test-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+		require(stagekit::convert_collection(collection, catalog, resources).converted == 0 &&
+				collection == after,
+			"Conversion must be idempotent");
+		auto temp = std::filesystem::temp_directory_path() /
+			    ("stagekit-filter-test-" +
+			     std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
 		std::filesystem::create_directories(temp / "obs-shaderfilter/examples");
 		auto path = temp / "obs-shaderfilter/examples/drop_shadow.shader";
 		std::ofstream(path) << "user shader";
 		collection = original;
 		collection["sources"][0]["filters"][1]["settings"]["shader_file_name"] = path.generic_string();
 		result = stagekit::convert_collection(collection, catalog, resources);
-		require(result.relocated == 0 && collection["sources"][0]["filters"][1]["settings"]["shader_file_name"] == path.generic_string(), "Custom shader was overwritten");
+		require(result.relocated == 0 &&
+				collection["sources"][0]["filters"][1]["settings"]["shader_file_name"] ==
+					path.generic_string(),
+			"Custom shader was overwritten");
 		std::filesystem::remove(path);
 		std::filesystem::remove(temp / "obs-shaderfilter/examples");
 		std::filesystem::remove(temp / "obs-shaderfilter");
 		std::filesystem::remove(temp);
 		bool invalid = false;
-		try { auto input = Json::array(); stagekit::convert_collection(input, catalog, resources); }
-		catch (const std::invalid_argument &) { invalid = true; }
+		try {
+			auto input = Json::array();
+			stagekit::convert_collection(input, catalog, resources);
+		} catch (const std::invalid_argument &) {
+			invalid = true;
+		}
 		require(invalid, "Invalid collection accepted");
 		std::cout << "Collection conversion tests passed\n";
 		return 0;

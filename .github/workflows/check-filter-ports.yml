@@ -65,3 +65,37 @@ jobs:
             test "$actual" = "$expected"
             echo "formatted file $actual $changed"
           done
+  deck-assets:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Generate companion key pages and images
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd streamdeck
+          npm ci --quiet
+          python3 -m venv "$RUNNER_TEMP/icons"
+          "$RUNNER_TEMP/icons/bin/pip" install --quiet pillow
+          "$RUNNER_TEMP/icons/bin/python" tools/make-action-icons.py
+          "$RUNNER_TEMP/icons/bin/python" tools/make-plugin-files.py
+          cd ..
+          plugin=streamdeck/com.techsavage1989.stagekit.sdPlugin
+          files=("$plugin/manifest.json")
+          for key in obsfilter obssource obsmute obsstudio obscamera movesourceport moveswapport; do
+            files+=("$plugin/ui/$key.html" "$plugin/imgs/actions/$key/"*.png)
+          done
+          for path in "${files[@]}"; do
+            actual=$(python3 -c 'import base64,json,sys;print(json.dumps(dict(encoding="base64",content=base64.b64encode(open(sys.argv[1],"rb").read()).decode())))' "$path" | gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input - --jq .sha)
+            test "$actual" = "$(git hash-object "$path")"
+            echo "generated file $actual $path"
+          done
+          cd streamdeck
+          npm test
+          npm run build
+          npm run validate

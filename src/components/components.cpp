@@ -21,11 +21,12 @@ void load_components()
 		bool needs_window;
 	};
 	static const Port ports[] = {
-		{"3d", false}, {"masks", false}, {"composite", false}, {"retro", false},
-		{"noise", false}, {"pixel", false}, {"delay", false}, {"freeze", false},
-		{"recursion", false}, {"warp", false}, {"directory", false}, {"move", false},
-		{"clone", false}, {"shader", false}, {"defaults", false}, {"copy", true}, {"dock", true},
-		{"table", true}, {"collections", true}, {"quick", true}, {"layouts", true}, {"ndi", true},
+		{"3d", false},        {"masks", false},  {"composite", false},  {"retro", false},
+		{"noise", false},     {"pixel", false},  {"delay", false},      {"freeze", false},
+		{"recursion", false}, {"warp", false},   {"directory", false},  {"move", false},
+		{"clone", false},     {"shader", false}, {"defaults", false},   {"copy", true},
+		{"dock", true},       {"table", true},   {"collections", true}, {"quick", true},
+		{"layouts", true},    {"ndi", true},
 	};
 	for (const Port &port : ports) {
 		if (port.needs_window && !frontend)
@@ -41,7 +42,8 @@ void load_components()
 			std::string binary = obs_get_module_binary_path(obs_current_module());
 			const auto slash = binary.find_last_of("/\\");
 			if (slash != std::string::npos)
-				path = binary.substr(0, slash) + "/stagekit-ports/" SK_PORT_CONFIG "/stagekit-port-" + port.key + SK_PORT_EXTENSION;
+				path = binary.substr(0, slash) + "/stagekit-ports/" SK_PORT_CONFIG "/stagekit-port-" +
+				       port.key + SK_PORT_EXTENSION;
 		}
 		std::replace(path.begin(), path.end(), '\\', '/');
 		obs_module_t *module = nullptr;

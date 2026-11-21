@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.35.0.0"
+VERSION = "0.36.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -694,6 +694,35 @@ def main():
     page("slide", "StageKit slide", options("Slide", "direction", "left", ways, "Direction the selected item moves to reach the next edge."))
     add("slide", "Slide to Edge", "Slides the item selected in OBS to the next edge that way; the next press passes it.", "slide", "imgs/actions/move/icon", one("slide"))
 
+    # OBS's regular controls and the Start hotkey published by the Move scene filters.
+    key_pictures("obsfilter", "options/plain-switch-on", "options/plain-switch-off")
+    page("obsfilter", "StageKit OBS Filter", one_list("Source or scene and filter") + PRESS, lists=False)
+    add("obsfilter", "OBS Filter", "Switches any OBS source or scene filter on and off.", "obsfilter", "imgs/actions/obsfilter/icon", two("obsfilter"))
+
+    key_pictures("obssource", "options/source-switcher-on", "options/source-switcher-off")
+    page("obssource", "StageKit Source Visibility", one_list("Scene or group and source", "getOrdinaryTargets") + PRESS, lists=False)
+    add("obssource", "Source Visibility", "Shows or hides one scene item, including an item inside a group.", "obssource", "imgs/actions/obssource/icon", two("obssource"))
+
+    key_pictures("obsmute", "options/plain-switch-on", "options/plain-switch-off")
+    page("obsmute", "StageKit Audio Mixer Mute", one_list("Audio input", "getOrdinaryTargets") + options("On press", "press", "toggle", [("toggle", "Toggle mute"), ("on", "Mute"), ("off", "Unmute")], "How this key sets the mixer mute button."), lists=False)
+    add("obsmute", "Audio Mixer Mute", "Mutes or unmutes an OBS audio input.", "obsmute", "imgs/actions/obsmute/icon", two("obsmute"))
+
+    key_pictures("obsstudio", "options/scene-fit-on", "options/scene-fit-off")
+    page("obsstudio", "StageKit Studio Mode", PRESS, lists=False)
+    add("obsstudio", "Studio Mode", "Switches OBS Studio Mode on or off.", "obsstudio", "imgs/actions/obsstudio/icon", two("obsstudio"))
+
+    key_pictures("obscamera", "options/plain-switch-on", "options/plain-switch-off")
+    page("obscamera", "StageKit Virtual Camera", PRESS, lists=False)
+    add("obscamera", "Virtual Camera", "Starts or stops the OBS virtual camera.", "obscamera", "imgs/actions/obscamera/icon", two("obscamera"))
+
+    key_pictures("movesourceport", "options/camera-centre", None)
+    page("movesourceport", "StageKit Move Source in Scene", target_list("movesourceport"), lists=False)
+    add("movesourceport", "Move Source in Scene", "Starts a StageKit Move Source scene filter.", "movesourceport", "imgs/actions/movesourceport/icon", one("movesourceport"))
+
+    key_pictures("moveswapport", "options/layout", None)
+    page("moveswapport", "StageKit Swap Sources in Scene", target_list("moveswapport"), lists=False)
+    add("moveswapport", "Swap Sources in Scene", "Starts a StageKit Move Source Swap scene filter.", "moveswapport", "imgs/actions/moveswapport/icon", one("moveswapport"))
+
     # The first two keys, kept for the keys already made with them.
     legacy_target = one_list("Source or scene and filter", tip="Select the source or scene and the StageKit filter to control.")
     key_pictures("anyswitch", "options/plain-switch-on", "options/plain-switch-off")
@@ -708,7 +737,8 @@ def main():
         ("hook", "autocapture", "appcapture", "activeapp", "appswitch", "autoframe", "shape", "standby", "scenestandby", "programtrigger"),
         ("sendto", "placeitem", "matchitem", "layout", "fititem", "scenefit", "fitoverlap", "slide", "tool", "option"),
         ("blur", "sceneblur", "blurall", "shadow", "sceneshadow", "corners", "scenecorners", "zoom"),
-        ("stream", "record"), ("switch", "move"),
+        ("stream", "record"),
+        ("obsfilter", "obssource", "obsmute", "obsstudio", "obscamera", "movesourceport", "moveswapport"), ("switch", "move"),
     ]
     rank = {key: index for index, key in enumerate(key for group in groups for key in group)}
     actions.sort(key=lambda item: rank[item["UUID"].rsplit(".", 1)[1]])

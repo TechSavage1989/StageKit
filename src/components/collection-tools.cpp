@@ -22,7 +22,10 @@
 namespace stagekit {
 namespace {
 using Json = nlohmann::json;
-QString tr(const char *key) { return QString::fromUtf8(obs_module_text(key)); }
+QString tr(const char *key)
+{
+	return QString::fromUtf8(obs_module_text(key));
+}
 
 struct Catalog {
 	std::filesystem::path resources;
@@ -45,8 +48,9 @@ void convert_copy(QWidget *parent, const Catalog &catalog)
 	if (input.isEmpty())
 		return;
 	const QFileInfo info(input);
-	const QString output = QFileDialog::getSaveFileName(parent, tr("Ports.SaveCopy"),
-		info.dir().filePath(info.completeBaseName() + "-StageKit.json"), "OBS (*.json)");
+	const QString output = QFileDialog::getSaveFileName(
+		parent, tr("Ports.SaveCopy"), info.dir().filePath(info.completeBaseName() + "-StageKit.json"),
+		"OBS (*.json)");
 	if (output.isEmpty())
 		return;
 	if (QFile::exists(output)) {
@@ -63,21 +67,25 @@ void convert_copy(QWidget *parent, const Catalog &catalog)
 		collection["name"] = QFileInfo(output).completeBaseName().toUtf8().toStdString();
 		const std::string result = collection.dump(2) + "\n";
 		QTemporaryFile tmp(QFileInfo(output).dir().filePath(".stagekit-copy-XXXXXX"));
-		if (!tmp.open() || tmp.write(result.data(), (qint64)result.size()) != (qint64)result.size() || !tmp.flush())
+		if (!tmp.open() || tmp.write(result.data(), (qint64)result.size()) != (qint64)result.size() ||
+		    !tmp.flush())
 			throw std::runtime_error(tmp.errorString().toStdString());
 		tmp.close();
 		// QFile refuses an existing destination, including a file created after the chooser closed.
 		if (!QFile::rename(tmp.fileName(), output))
 			throw std::runtime_error(tr("Ports.NewFile").toStdString());
-		QString summary = tr("Ports.Converted").arg((qulonglong)report.converted).arg((qulonglong)report.relocated);
+		QString summary =
+			tr("Ports.Converted").arg((qulonglong)report.converted).arg((qulonglong)report.relocated);
 		if (!report.review.empty()) {
 			summary += "\n\n" + tr("Ports.Review");
 			for (const auto &[id, count] : report.review)
-				summary += "\n" + QString::fromStdString(id) + " (" + QString::number((qulonglong)count) + ")";
+				summary += "\n" + QString::fromStdString(id) + " (" +
+					   QString::number((qulonglong)count) + ")";
 		}
 		QMessageBox::information(parent, tr("Ports.Manager"), summary + "\n\n" + tr("Ports.Import"));
 	} catch (const std::exception &e) {
-		QMessageBox::warning(parent, tr("Ports.Manager"), tr("Ports.CopyError") + "\n" + QString::fromUtf8(e.what()));
+		QMessageBox::warning(parent, tr("Ports.Manager"),
+				     tr("Ports.CopyError") + "\n" + QString::fromUtf8(e.what()));
 	}
 }
 } // namespace
@@ -105,15 +113,17 @@ void collection_tools_menu(QMenu *menu)
 				if (spec.contains("types"))
 					for (const auto &type : spec.at("types")) {
 						if (type.size() >= 4)
-							rows.emplace(QString::fromStdString(type.at(3).get<std::string>()),
-								     tr(type.at(2).get<std::string>().c_str()));
+							rows.emplace(
+								QString::fromStdString(type.at(3).get<std::string>()),
+								tr(type.at(2).get<std::string>().c_str()));
 					}
 				if (spec.contains("tool") && spec.contains("originalTool"))
 					rows.emplace(QString::fromStdString(spec.at("originalTool").get<std::string>()),
 						     tr(spec.at("tool").get<std::string>().c_str()));
 				if (spec.contains("controls"))
 					for (const auto &item : spec.at("controls"))
-						rows.emplace(QString::fromStdString(item.at(0).get<std::string>()), tr(item.at(1).get<std::string>().c_str()));
+						rows.emplace(QString::fromStdString(item.at(0).get<std::string>()),
+							     tr(item.at(1).get<std::string>().c_str()));
 			}
 			for (const auto &[old, next] : rows) {
 				const int row = table->rowCount();
@@ -123,12 +133,14 @@ void collection_tools_menu(QMenu *menu)
 			}
 			QObject::connect(search, &QLineEdit::textChanged, table, [table](const QString &s) {
 				for (int r = 0; r < table->rowCount(); ++r)
-					table->setRowHidden(r, !table->item(r, 0)->text().contains(s, Qt::CaseInsensitive) &&
-						!table->item(r, 1)->text().contains(s, Qt::CaseInsensitive));
+					table->setRowHidden(
+						r, !table->item(r, 0)->text().contains(s, Qt::CaseInsensitive) &&
+							   !table->item(r, 1)->text().contains(s, Qt::CaseInsensitive));
 			});
 			auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
 			auto *convert = buttons->addButton(tr("Ports.ConvertCopy"), QDialogButtonBox::ActionRole);
-			QObject::connect(convert, &QPushButton::clicked, &dialog, [&] { convert_copy(&dialog, catalog); });
+			QObject::connect(convert, &QPushButton::clicked, &dialog,
+					 [&] { convert_copy(&dialog, catalog); });
 			QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 			layout->addWidget(buttons);
 			dialog.resize(760, 530);

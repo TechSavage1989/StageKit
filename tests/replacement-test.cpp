@@ -97,7 +97,6 @@ static double mean_abs_diff(const std::vector<uint8_t> &a, const std::vector<uin
 	return sum / double(a.size() / 4 * 3);
 }
 
-
 int main(int argc, char **argv)
 {
 	if (argc < 5) {
@@ -161,19 +160,34 @@ int main(int argc, char **argv)
 	obs_post_load_modules();
 	const auto has_label = [](const char *id, const char *prefix) {
 		const char *name = obs_source_get_display_name(id);
-		return name && std::string(name).find(prefix) == 0 && std::string(name).find("(StageKit)") != std::string::npos;
+		return name && std::string(name).find(prefix) == 0 &&
+		       std::string(name).find("(StageKit)") != std::string::npos;
 	};
-	const char *source_types[] = {"3d_effect_filter", "advanced_masks_filter", "obs_composite_blur", "obs_retro_effects_filter",
-		"obs_noise_displace_filter", "pixel_art_plugin", "freeze_filter", "dynamic_delay_filter", "recursion_effect_filter",
-		"time_warp_scan_filter", "dir_watch_media", "source_defaults_video", "source_defaults_audio", "move_action_filter",
-		"move_value_filter", "move_transition_override_filter", "shader_filter"};
+	const char *source_types[] = {"3d_effect_filter",
+				      "advanced_masks_filter",
+				      "obs_composite_blur",
+				      "obs_retro_effects_filter",
+				      "obs_noise_displace_filter",
+				      "pixel_art_plugin",
+				      "freeze_filter",
+				      "dynamic_delay_filter",
+				      "recursion_effect_filter",
+				      "time_warp_scan_filter",
+				      "dir_watch_media",
+				      "source_defaults_video",
+				      "source_defaults_audio",
+				      "move_action_filter",
+				      "move_value_filter",
+				      "move_transition_override_filter",
+				      "shader_filter"};
 	for (const auto *id : source_types) {
 		const std::string type = "stagekit_port_" + std::string(id);
 		check(has_label(type.c_str(), "Source Filter:"), type);
 	}
 	for (const auto *id : {"stagekit_port_move_source_filter", "stagekit_port_move_source_swap_filter"})
 		check(has_label(id, "Scene Filter:"), id);
-	for (const auto *id : {"stagekit_effect_file", "stagekit_drop_shadow", "stagekit_edge_detection", "stagekit_gaussian_blur", "stagekit_toon", "stagekit_fix_alpha"})
+	for (const auto *id : {"stagekit_effect_file", "stagekit_drop_shadow", "stagekit_edge_detection",
+			       "stagekit_gaussian_blur", "stagekit_toon", "stagekit_fix_alpha"})
 		check(has_label(id, "Source Filter:"), id);
 	check(has_label("stagekit_port_source-clone", "Source Clone"), "clone input registered");
 	check(has_label("stagekit_port_move_transition", "Move"), "Move transition registered");
@@ -191,10 +205,17 @@ int main(int argc, char **argv)
 		return 1;
 	const auto base_pixels = render(image_source, w, h);
 	write_frame(out + "/original.rgba", base_pixels, w, h);
-	struct Example { const char *id; const char *name; };
-	const Example examples[] = {{"stagekit_effect_file", "custom"}, {"stagekit_drop_shadow", "shadow"},
-		{"stagekit_edge_detection", "edges"}, {"stagekit_gaussian_blur", "gaussian"}, {"stagekit_toon", "toon"},
-		{"stagekit_port_obs_composite_blur", "composite"}, {"stagekit_port_shader_filter", "saved-shader"}};
+	struct Example {
+		const char *id;
+		const char *name;
+	};
+	const Example examples[] = {{"stagekit_effect_file", "custom"},
+				    {"stagekit_drop_shadow", "shadow"},
+				    {"stagekit_edge_detection", "edges"},
+				    {"stagekit_gaussian_blur", "gaussian"},
+				    {"stagekit_toon", "toon"},
+				    {"stagekit_port_obs_composite_blur", "composite"},
+				    {"stagekit_port_shader_filter", "saved-shader"}};
 	for (const auto &example : examples) {
 		const std::string name(example.name);
 		auto *settings = obs_data_create();
@@ -213,7 +234,8 @@ int main(int argc, char **argv)
 			obs_data_set_double(settings, "radius", 12.0);
 		if (name == "saved-shader") {
 			obs_data_set_bool(settings, "from_file", true);
-			const std::string file = std::string(plugin_data) + "/components/shader/examples/drop_shadow.shader";
+			const std::string file =
+				std::string(plugin_data) + "/components/shader/examples/drop_shadow.shader";
 			obs_data_set_string(settings, "shader_file_name", file.c_str());
 			obs_data_set_int(settings, "shadow_offset_x", 9);
 			obs_data_set_int(settings, "shadow_offset_y", 12);
@@ -221,7 +243,10 @@ int main(int argc, char **argv)
 		}
 		auto *filter = obs_source_create(example.id, example.name, settings, nullptr);
 		obs_data_release(settings);
-		if (!filter) { check(false, name + " could not be created"); continue; }
+		if (!filter) {
+			check(false, name + " could not be created");
+			continue;
+		}
 		obs_source_filter_add(image_source, filter);
 		sleep_ms(130);
 		auto fw = obs_source_get_width(image_source), fh = obs_source_get_height(image_source);
@@ -235,7 +260,10 @@ int main(int argc, char **argv)
 				check(fw == w + 9 && fh == h + 12, "shadow extends the frame in both directions");
 				bool colour = false;
 				for (size_t i = 0; i < frame.size(); i += 4)
-					if (frame[i+3] > 16 && frame[i+2] > frame[i]+60) { colour = true; break; }
+					if (frame[i + 3] > 16 && frame[i + 2] > frame[i] + 60) {
+						colour = true;
+						break;
+					}
 				check(colour, "shadow paint is visible");
 			} else if (fw == w && fh == h) {
 				const double diff = mean_abs_diff(frame, base_pixels);
@@ -252,7 +280,8 @@ int main(int argc, char **argv)
 					obs_source_update(filter, mask);
 					sleep_ms(100);
 					const auto inverted = render(image_source, fw, fh);
-					check(mean_abs_diff(masked, inverted) > 0.12, "inverting the Gaussian mask moves the blur to the other half");
+					check(mean_abs_diff(masked, inverted) > 0.12,
+					      "inverting the Gaussian mask moves the blur to the other half");
 					obs_data_release(mask);
 				} else if (name == "custom") {
 					auto *bad = obs_data_create();
@@ -260,7 +289,8 @@ int main(int argc, char **argv)
 					obs_source_update(filter, bad);
 					obs_data_release(bad);
 					sleep_ms(100);
-					check(mean_abs_diff(frame, render(image_source, fw, fh)) < 0.01, "failed reload retains the working custom effect");
+					check(mean_abs_diff(frame, render(image_source, fw, fh)) < 0.01,
+					      "failed reload retains the working custom effect");
 				}
 			} else {
 				check(false, name + " unexpectedly changed the source size");
