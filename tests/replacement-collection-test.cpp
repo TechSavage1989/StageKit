@@ -93,6 +93,16 @@ int main(int argc, char **argv)
 					original["modules"]["advanced-scene-switcher"] &&
 				result.review.at("Advanced Scene Switcher macros") == 1,
 			"Macros must be preserved and reported");
+		auto with_registry = original;
+		const std::set<std::string> installed = {"stagekit_port_move_source_filter", "stagekit_port_obs_composite_blur"};
+		result = stagekit::convert_collection(with_registry, catalog, resources, &installed);
+		require(result.converted == 1 &&
+				with_registry["sources"][0]["filters"][0]["id"] == "stagekit_port_move_source_filter",
+			"Installed filter was not converted");
+		require(with_registry["groups"] == original["groups"] &&
+				with_registry["sources"][0]["filters"][1] == original["sources"][0]["filters"][1] &&
+				result.review.count("obs_composite_blur / obs_composite_blur_v2") && result.review.count("shader_filter"),
+			"Missing types or versions must retain their original settings and be reported");
 		const auto after = collection;
 		require(stagekit::convert_collection(collection, catalog, resources).converted == 0 &&
 				collection == after,

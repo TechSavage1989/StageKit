@@ -63,6 +63,8 @@ Each utility stores its own configuration. Recreate settings stored outside scen
 2. Open **Tools > StageKit > OBS filter replacements > Save a converted collection copy**. Select the export and give the output a new filename.
 3. Review the conversion summary, then use **Scene Collection > Import** and select the new file. Compare the two collections before removing any original plugins.
 
+If the installed StageKit build cannot load the saved version of a filter, the copy keeps the original entry and lists it for review. This also applies to filters that require a missing runtime or a different platform.
+
 The copy keeps source names, UUIDs, filter order, enabled state, settings and Move filter references. Matching ShaderFilter example files are relinked to StageKit's own copies. An edited example stays at its existing path and is listed for review. Keep custom shader files and any referenced images available when removing their original plugin.
 
 **Automatic Scene Switcher** is the built-in OBS tool. **Advanced Scene Switcher** is a separate third-party macro engine. The copy preserves its macro data and reports the number of macros, excluding group headings. Older StreamFX blur and SDF effects also retain their original IDs. Keep those plugins available for collections that depend on them. [Advanced Scene Switcher](https://github.com/WarmUpTill/SceneSwitcher)

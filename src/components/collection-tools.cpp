@@ -29,12 +29,10 @@ QString tr(const char *key)
 	return QString::fromUtf8(obs_module_text(key));
 }
 
-bool registered_source(const std::string &id)
+bool registered_source(const std::set<std::string> &types, const std::string &id)
 {
 	const std::string version = id + "_v";
-	const char *type = nullptr;
-	for (size_t i = 0; obs_enum_source_types(i, &type); ++i) {
-		const std::string name(type);
+	for (const auto &name : types) {
 		if (name == id || (name.compare(0, version.size(), version) == 0 && name.size() > version.size() &&
 				   name.find_first_not_of("0123456789", version.size()) == std::string::npos))
 			return true;
@@ -42,9 +40,9 @@ bool registered_source(const std::string &id)
 	return false;
 }
 
-QString availability(const std::string &port, const std::string &id)
+QString availability(const std::set<std::string> &types, const std::string &port, const std::string &id)
 {
-	if (port == "ndi" && !registered_source("stagekit_port_ndi_filter"))
+	if (port == "ndi" && !registered_source(types, "stagekit_port_ndi_filter"))
 		return tr("Ports.NDIRuntime");
 	if (!component_loaded(port))
 		return tr("Ports.NotLoaded");
@@ -53,7 +51,7 @@ QString availability(const std::string &port, const std::string &id)
 	if (id.empty() || id == "ndi_output")
 		return tr("Ports.Available");
 	const std::string replacement = "stagekit_port_" + id;
-	if (registered_source(replacement))
+	if (registered_source(types, replacement))
 		return tr("Ports.Available");
 	if (id == "move_directshow_filter")
 		return tr("Ports.Windows");
@@ -65,8 +63,12 @@ QString availability(const std::string &port, const std::string &id)
 struct Catalog {
 	std::filesystem::path resources;
 	Json definitions;
+	std::set<std::string> registered_types;
 	Catalog()
 	{
+		const char *type = nullptr;
+		for (size_t i = 0; obs_enum_source_types(i, &type); ++i)
+			registered_types.emplace(type);
 		resources = std::filesystem::u8path(obs_get_module_data_path(obs_current_module()));
 		const auto filename = (resources / "ports.json").u8string();
 		QFile file(QString::fromUtf8(reinterpret_cast<const char *>(filename.c_str())));
@@ -98,7 +100,7 @@ void convert_copy(QWidget *parent, const Catalog &catalog)
 			throw std::runtime_error(file.errorString().toStdString());
 		const auto bytes = file.readAll();
 		auto collection = Json::parse(bytes.begin(), bytes.end());
-		const auto report = convert_collection(collection, catalog.definitions, catalog.resources);
+		const auto report = convert_collection(collection, catalog.definitions, catalog.resources, &catalog.registered_types);
 		collection["name"] = QFileInfo(output).completeBaseName().toUtf8().toStdString();
 		const std::string result = collection.dump(2) + "\n";
 		QTemporaryFile tmp(QFileInfo(output).dir().filePath(".stagekit-copy-XXXXXX"));
@@ -153,12 +155,12 @@ void collection_tools_menu(QMenu *menu)
 							rows.emplace(
 								QString::fromStdString(type.at(3).get<std::string>()),
 								tr(type.at(2).get<std::string>().c_str()),
-								availability(port, type.at(0).get<std::string>()));
+								availability(catalog.registered_types, port, type.at(0).get<std::string>()));
 					}
 				if (spec.contains("tool") && spec.contains("originalTool"))
 					rows.emplace(QString::fromStdString(spec.at("originalTool").get<std::string>()),
 						     tr(spec.at("tool").get<std::string>().c_str()),
-						     availability(port, ""));
+						     availability(catalog.registered_types, port, ""));
 				if (spec.contains("controls"))
 					for (const auto &item : spec.at("controls"))
 						rows.emplace(QString::fromStdString(item.at(0).get<std::string>()),

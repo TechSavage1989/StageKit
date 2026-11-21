@@ -146,7 +146,8 @@ bool built_in(const std::string &id)
 	return id.rfind("stagekit_", 0) == 0 || types.count(id) != 0;
 }
 
-void convert_source(Json &source, const Map &mapping, const Path &data, CollectionReport &report)
+void convert_source(Json &source, const Map &mapping, const Path &data, CollectionReport &report,
+		    const std::set<std::string> *registered_types)
 {
 	if (!source.is_object())
 		return;
@@ -154,15 +155,17 @@ void convert_source(Json &source, const Map &mapping, const Path &data, Collecti
 	auto match = mapping.find(id);
 	if (match != mapping.end()) {
 		const std::string version = string_at(source, "versioned_id");
-		if (version.empty() || version == id || version.rfind(id + "_v", 0) == 0) {
+		const bool related = version.empty() || version == id || version.rfind(id + "_v", 0) == 0;
+		const std::string target = related && !version.empty() ? match->second + version.substr(id.size()) : match->second;
+		if (related && (!registered_types || registered_types->count(target))) {
 			source["id"] = match->second;
 			if (!version.empty())
-				source["versioned_id"] = match->second + version.substr(id.size());
+				source["versioned_id"] = target;
 			if (id == "shader_filter" && source.contains("settings"))
 				shader_file(source["settings"], data, report);
 			++report.converted;
 		} else {
-			++report.review[id + " / " + version];
+			++report.review[version.empty() || version == id ? id : id + " / " + version];
 		}
 	} else if (!id.empty() && !built_in(id)) {
 		++report.review[id];
@@ -170,7 +173,7 @@ void convert_source(Json &source, const Map &mapping, const Path &data, Collecti
 	auto children = source.find("filters");
 	if (children != source.end() && children->is_array())
 		for (auto &filter : *children)
-			convert_source(filter, mapping, data, report);
+			convert_source(filter, mapping, data, report, registered_types);
 }
 
 void rename_key(Json &obj, const std::string &from, const std::string &to)
@@ -182,7 +185,8 @@ void rename_key(Json &obj, const std::string &from, const std::string &to)
 }
 } // namespace
 
-CollectionReport convert_collection(Json &collection, const Json &catalog, const Path &resource_dir)
+CollectionReport convert_collection(Json &collection, const Json &catalog, const Path &resource_dir,
+				    const std::set<std::string> *registered_types)
 {
 	if (!collection.is_object() || !collection.contains("sources") || !collection["sources"].is_array())
 		throw std::invalid_argument("Expected a saved OBS scene collection.");
@@ -201,10 +205,10 @@ CollectionReport convert_collection(Json &collection, const Json &catalog, const
 	for (auto &[name, value] : collection.items()) {
 		if ((name == "sources" || name == "groups" || name == "transitions") && value.is_array()) {
 			for (auto &source : value)
-				convert_source(source, mapping, resource_dir, report);
+				convert_source(source, mapping, resource_dir, report, registered_types);
 		} else if (value.is_object() && value.contains("id") && value.contains("settings") &&
 			   value.contains("name")) {
-			convert_source(value, mapping, resource_dir, report);
+			convert_source(value, mapping, resource_dir, report, registered_types);
 		}
 	}
 	auto modules = collection.find("modules");

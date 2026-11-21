@@ -25,6 +25,18 @@ static QAction *action_named(const QString &name)
 static void exercise()
 {
 	QStringList issues;
+	QStringList registered;
+	const char *id = nullptr;
+	for (size_t i = 0; obs_enum_filter_types(i, &id); ++i) {
+		const char *label = obs_source_get_display_name(id);
+		if (label)
+			registered.append(QString::fromUtf8(label));
+	}
+	const QStringList expected = {"Source Filter: Advanced Mask (StageKit)", "Source Filter: Gaussian Blur (StageKit)",
+				      "Scene Filter: Move Source (StageKit)", "Scene Filter: Move Source Swap (StageKit)"};
+	for (const auto &name : expected)
+		if (!registered.contains(name))
+			issues.append(name);
 	const QStringList tools = {"Source Copy (StageKit)",          "Source Dock (StageKit)",
 				   "Transition Table (StageKit)",     "Scene Collection Manager (StageKit)",
 				   "Quick Access Utility (StageKit)", "Dock Layout Manager (StageKit)"};
@@ -52,7 +64,8 @@ static void exercise()
 					    status != "Available")
 						issues.append(original + ": " + status);
 #ifdef __linux__
-					if (original == "Move Video Capture Device" && status != "Requires Windows DirectShow")
+					if (original == "Move Video Capture Device" &&
+					    status != "Requires Windows DirectShow")
 						issues.append(original + ": " + status);
 #endif
 				}
