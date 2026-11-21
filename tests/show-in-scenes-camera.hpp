@@ -7,6 +7,7 @@
 #include <QElapsedTimer>
 #include <QThread>
 #include <QStringList>
+#include <cstdlib>
 
 namespace camera_test {
 
@@ -158,6 +159,79 @@ inline void check(QStringList &issues)
 		    obs_sceneitem_get_transition_duration(plain, show) != 650)
 			issues.append("The switch did not update its fallback fade on the unconfigured item");
 	}
+
+	// A regular OBS color source linked beside the camera has a different nearest edge.
+	auto *caption = obs_scene_add(scene, feed);
+	position(caption, .10f, .46f);
+	auto *link_settings = obs_data_create();
+	obs_data_set_string(link_settings, "linked", obs_source_get_name(feed));
+	auto *move = obs_source_create_private("stagekit_send_to", "Linked caption", link_settings);
+	obs_data_release(link_settings);
+	obs_source_set_enabled(move, false);
+	obs_source_filter_add(square, move);
+	auto *linked_settings = obs_source_get_settings(sw);
+	obs_data_set_string(linked_settings, "transition", "stagekit_morph");
+	obs_data_set_int(linked_settings, "transition_ms", 850);
+	obs_data_set_string(linked_settings, "show|stagekit_morph|unpaired", "morph_make_room");
+	obs_data_set_int(linked_settings, "show|stagekit_morph|room_way", 1);
+	// The primary has its own linear easing. The caption uses the shared cubic default on its own.
+	obs_data_set_string(linked_settings, "for|Square test view|transition", "stagekit_morph");
+	obs_data_set_int(linked_settings, "for|Square test view|transition_ms", 850);
+	obs_data_set_string(linked_settings, "for|Square test view|show|stagekit_morph|unpaired", "morph_make_room");
+	obs_data_set_int(linked_settings, "for|Square test view|show|stagekit_morph|ease_curve", 0);
+	auto observe_link = [&](bool show, bool carry) {
+		bool crossed = false, together = false, drifted = false, idle = true;
+		QElapsedTimer clock;
+		clock.start();
+		do {
+			wait_frame();
+			const auto frame = replacement_test::render(output, 160, 100, w, h);
+			auto first_row = [&](int x) {
+				for (int y = 0; y < 100; ++y) {
+					const size_t pixel = (160 * y + x) * 4;
+					if (std::min(frame[pixel], frame[pixel + 3]) > 110)
+						return y;
+				}
+				return 100;
+			};
+			const int primary_y = first_row(96), caption_y = first_row(16);
+			crossed |= caption_y >= 70 && caption_y < 95;
+			idle &= caption_y >= 45 && caption_y <= 47;
+			if (carry && primary_y > 73 && primary_y < 94 && caption_y < 100) {
+				const bool aligned = std::abs(primary_y - caption_y - 22) <= 3;
+				together |= aligned;
+				drifted |= !aligned;
+			}
+		} while (clock.elapsed() < 1250);
+		const bool ok = carry ? crossed && together && !drifted : idle;
+		if (!ok || obs_sceneitem_visible(caption) != (carry ? show : true))
+			issues.append(
+				QString("Linked color source %1: carry %2 crossed %3 together %4 drifted %5 idle %6")
+					.arg(show ? "show" : "hide")
+					.arg(carry)
+					.arg(crossed)
+					.arg(together)
+					.arg(drifted)
+					.arg(idle));
+		blog(LOG_INFO,
+		     "[camera transition test] linked source %s: carry %d crossed %d together %d drifted %d idle %d",
+		     show ? "show" : "hide", carry, crossed, together, drifted, idle);
+	};
+	for (int phase = 0; phase < 3; ++phase) {
+		const bool carry = phase != 2;
+		obs_data_set_bool(linked_settings, "with_linked", carry);
+		obs_data_set_bool(linked_settings, "restore_hidden", phase == 1);
+		obs_source_update(sw, linked_settings);
+		for (int i = 0; i < 8; ++i)
+			wait_frame();
+		for (bool show : {false, true}) {
+			obs_source_set_enabled(sw, show);
+			observe_link(show, carry);
+		}
+	}
+	obs_data_release(linked_settings);
+	obs_source_filter_remove(square, move);
+	obs_source_release(move);
 
 	obs_set_output_source(0, before);
 	obs_source_release(before);
