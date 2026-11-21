@@ -654,7 +654,7 @@ def main():
          one_list("Timer", "getTimers", "target", "Choose a timer", "The private timer or a named Countdown Timer source in this OBS collection.")
          + options("On press", "timerPress", "toggle", operations, "Cycle advances the selected mark when tapped. Hold for 0.8 seconds to start or stop.")
          + options("Clock shortcut", "timerMark", "next", marks, "Set the timer to the next occurrence on the OBS computer's clock.")
-         + '<sdpi-item id="cycleHelp" label="Cycle"><span>Tap to select :15, :30, :45 or :00. Hold for 0.8 seconds to start or stop.</span></sdpi-item>\n',
+         + '<sdpi-item id="cycleHelp" label="Cycle" title="A tap changes the deadline. A hold starts or stops without advancing the mark."><span>Tap to select :15, :30, :45 or :00. Hold for 0.8 seconds to start or stop.</span></sdpi-item>\n',
          script="""<script>
             (() => {
                 const select = document.querySelector('[setting="timerPress"]');

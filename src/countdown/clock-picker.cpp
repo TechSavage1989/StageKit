@@ -232,8 +232,8 @@ ClockPicker::ClockPicker(int64_t duration_ms, QTime target, QWidget *parent) : Q
 		connect(b, &QPushButton::clicked, this, [this, mark] {
 			const auto next = next_timer_mark(QDateTime::currentDateTime(), mark);
 			target_ = next.time();
-			if (date_picked)
-				date_picked(next.date());
+			if (deadline_picked)
+				deadline_picked(next);
 			notify();
 		});
 	}

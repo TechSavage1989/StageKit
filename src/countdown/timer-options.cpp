@@ -82,8 +82,10 @@ public:
 
 		auto *body = new QHBoxLayout;
 		clock_ = new ClockPicker(o.duration, target.time(), this);
-		clock_->date_picked = [this](QDate date) {
-			date_->setDate(date);
+		exact_deadline_ = target;
+		clock_->deadline_picked = [this](const QDateTime &instant) {
+			exact_deadline_ = instant;
+			date_->setDate(instant.date());
 		};
 		body->addWidget(clock_, 0, Qt::AlignTop);
 		auto *options_layout = new QVBoxLayout;
@@ -227,7 +229,9 @@ public:
 		for (size_t i = 0; i < units_.size(); ++i)
 			if (!automatic_->isChecked() && units_[i]->isChecked())
 				o.units |= bits[i];
-		const QDateTime chosen(date_->date(), clock_->local_time());
+		// Keep the selected occurrence when local clocks repeat an hour.
+		const QDateTime chosen = exact_deadline_.date() == date_->date() && exact_deadline_.time() == clock_->local_time()
+						? exact_deadline_ : QDateTime(date_->date(), clock_->local_time());
 		o.deadline = chosen.isValid() ? chosen.toMSecsSinceEpoch() : 0;
 		o.limit = limit_->isChecked();
 		o.on_program = active_->isChecked();
@@ -249,6 +253,7 @@ public:
 private:
 	QComboBox *mode_, *scene_;
 	QDateEdit *date_;
+	QDateTime exact_deadline_;
 	ClockPicker *clock_;
 	QLineEdit *message_, *output_;
 	QCheckBox *limit_, *active_, *automatic_, *stream_, *steady_, *date_up_;

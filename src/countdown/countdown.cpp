@@ -570,8 +570,10 @@ public:
 							 value != last_value_ &&
 							 (msg != last_message_ || style != last_style_) &&
 							 now - last_draw_ < 500000000ULL;
-				const bool free_text = msg || (options.format_output && options.output_format != QStringLiteral("%time%"));
-				if (!update_texture(value, free_text, wanted, switch_view, now))
+				const bool free_text = msg || (options.format_output &&
+							       options.output_format != QStringLiteral("%time%"));
+				const bool repaint = dirty_ || !texture_ || wanted != density_ || value != last_value_ || msg != last_message_;
+				if (repaint && !update_texture(value, free_text, wanted, switch_view, now))
 					return;
 				last_value_ = value;
 				last_style_ = style;

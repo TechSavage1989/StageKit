@@ -5,7 +5,7 @@ SPDX-License-Identifier: GPL-2.0-or-later
 */
 #pragma once
 
-#include <QDate>
+#include <QDateTime>
 #include <QTime>
 #include <QWidget>
 #include <array>
@@ -27,7 +27,7 @@ public:
 	int64_t duration_ms() const;
 	QTime local_time() const { return target_; }
 	std::function<void()> changed;
-	std::function<void(QDate)> date_picked;
+	std::function<void(const QDateTime &)> deadline_picked;
 
 private:
 	void select_unit(int unit);

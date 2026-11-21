@@ -223,6 +223,7 @@ inline void check(QStringList &issues, bool restart)
 	}
 	expect(choose(QStringLiteral("Operator timer")) && until([&] { return readout->text() == "01:13"; }),
 	       "the scene timer was not available in the dock");
+	blog(LOG_INFO, "StageKit timer controls: checking scene timer clock marks");
 	const char *id = obs_source_get_uuid(source);
 	for (const int minute : {15, 30, 45, 0, 15}) {
 		OBSDataAutoRelease cycled = press(id, "cycle", -2);
@@ -251,6 +252,7 @@ inline void check(QStringList &issues, bool restart)
 	OBSDataAutoRelease stopped = press(id, "stop", -2);
 	expect(obs_data_get_bool(stopped, "success") && !obs_data_get_bool(stopped, "running"),
 	       "dedicated Stream Deck stop");
+	blog(LOG_INFO, "StageKit timer controls: cycle, hold, set, start and stop checked");
 	obs_data_set_int(data, "timer_mode", 0);
 	obs_source_update(source, data);
 	expect(until([&] { return readout->text() == "01:13"; }), "return to saved duration after a clock shortcut");

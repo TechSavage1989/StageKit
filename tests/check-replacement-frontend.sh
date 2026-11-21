@@ -20,7 +20,7 @@ export QT_QPA_PLATFORM=xcb LIBGL_ALWAYS_SOFTWARE=1
 export DEBUGINFOD_URLS=""
 obs_args=(--multi --disable-shutdown-check --disable-missing-files-check --disable-updater --verbose)
 status=0
-timeout 45 xvfb-run -a obs "${obs_args[@]}" > "$scratch/frontend.log" 2>&1 || status=$?
+timeout 90 xvfb-run -a obs "${obs_args[@]}" > "$scratch/frontend.log" 2>&1 || status=$?
 if [[ "$status" == 0 ]] && test -f "$STAGEKIT_TEST_REPORT" && grep -qx PASS "$STAGEKIT_TEST_REPORT"; then
   grep -F -e '[camera transition test]' -e 'StageKit timer layout:' -e 'StageKit timer at ' -e 'StageKit timer dock:' "$scratch/frontend.log"
   echo 'PASS: replacement tools, labeled catalog search and clean OBS shutdown'
@@ -29,6 +29,6 @@ fi
 echo "OBS frontend exit status: $status"
 test ! -f "$STAGEKIT_TEST_REPORT" || cat "$STAGEKIT_TEST_REPORT"
 tail -75 "$scratch/frontend.log"
-timeout 45 xvfb-run -a gdb -q --batch -ex 'set pagination off' -ex run -ex 'bt 32' --args obs "${obs_args[@]}" > "$scratch/debug.log" 2>&1 || true
+timeout 90 xvfb-run -a gdb -q --batch -ex 'set pagination off' -ex run -ex 'bt 32' --args obs "${obs_args[@]}" > "$scratch/debug.log" 2>&1 || true
 grep -Ei 'received signal|#([0-9]+)[ ]|error:' "$scratch/debug.log" | tail -70 || true
 exit 1

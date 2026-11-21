@@ -133,7 +133,7 @@ inline void clock_shortcuts(QStringList &issues)
 	if (zone.isValid()) {
 		// Spring jumps to 03:00 while the autumn change revisits 01:00.
 		for (const auto &utc : {QDateTime(QDate(2026, 3, 8), QTime(6, 58), utc_zone),
-					    QDateTime(QDate(2026, 11, 1), QTime(5, 58), utc_zone)})
+					QDateTime(QDate(2026, 11, 1), QTime(5, 58), utc_zone)})
 			expect(utc.toTimeZone(zone), -1, utc.addSecs(120).toTimeZone(zone));
 	}
 }

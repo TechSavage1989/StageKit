@@ -160,16 +160,3 @@ jobs:
             paths+=("$plugin/ui/$key.html" "$plugin/imgs/actions/$key")
           done
           git diff --exit-code -- "${paths[@]}"
-      - name: Collect timer key assets
-        if: always()
-        run: |
-          python3 - <<'PY'
-          import base64
-          from pathlib import Path
-          plugin = Path("streamdeck/com.techsavage1989.stagekit.sdPlugin")
-          for f in [plugin/"manifest.json", plugin/"ui/timer.html", *sorted((plugin/"imgs/actions/timer").glob("*.png"))]:
-              if not f.is_file(): continue
-              data = base64.b64encode(f.read_bytes()).decode()
-              for i in range(0, len(data), 12000):
-                  print("TIMER_ASSET", f.as_posix(), i, data[i:i+12000])
-          PY
