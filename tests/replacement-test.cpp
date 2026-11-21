@@ -383,7 +383,8 @@ int main(int argc, char **argv)
 				(void)render(image_source, w, h);
 				sleep_ms(60);
 				const auto original_frame = render(image_source, w, h);
-				check(retains_artwork(original_frame), name + " original renders visible colored artwork");
+				check(retains_artwork(original_frame),
+				      name + " original renders visible colored artwork");
 				const double error = mean_abs_diff(port_frame, original_frame);
 				printf("Original and replacement %s mean difference %.4f\n", example.name, error);
 				check(error <= 0.10, name + " matches the original plugin on the same OBS source");
