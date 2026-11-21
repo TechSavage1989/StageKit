@@ -477,8 +477,8 @@ public:
 					  return;
 				  // A listed source's own change, or the usual one.
 				  const auto own = own_change.find(name);
-				  apply_item_change(item, own == own_change.end() ? change : own->second, scene);
-				  set_item_visible(item, show);
+				  if (!set_item_visible(item, show, own == own_change.end() ? change : own->second, scene))
+					  return;
 				  changed++;
 				  if (restore && !show) {
 					  obs_source_t *owner = obs_scene_get_source(obs_sceneitem_get_scene(item));
@@ -646,9 +646,8 @@ public:
 			if (item && scene && !obs_sceneitem_visible(item) && !mode_holds_hidden(scene, item)) {
 				const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
 				const auto own = own_change.find(name ? name : "");
-				apply_item_change(item, own == own_change.end() ? change : own->second, scene);
-				set_item_visible(item, true);
-				shown++;
+				if (set_item_visible(item, true, own == own_change.end() ? change : own->second, scene))
+					shown++;
 			}
 			obs_source_release(scene);
 			obs_sceneitem_release(item);
