@@ -29,6 +29,7 @@ void vendor_emit_blur_changed(obs_source_t *filter, bool active);
 // Emits "OptionsChanged" when the dock's arrange options change, so a key
 // showing one can follow. Safe from any thread.
 void vendor_emit_options_changed();
+void vendor_emit_timer_changed(obs_source_t *timer);
 
 // A window or source switcher (or Auto Capture) says whether it is on a
 // manual window and whether its capture is hidden. Emits "SwitcherChanged"

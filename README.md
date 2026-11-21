@@ -1318,7 +1318,7 @@ the camera view shows it even when the camera switch is off; press the switch of
 
 Open **Docks > StageKit Timer** and select **Private timer** to keep a timer off stream. To show one to viewers, add **Countdown Timer (StageKit)** under **Sources > +**. Select that source by name in the dock to see and control the same clock. Each source has its own settings and hotkeys.
 
-Open **Timer settings** in the dock or in the source properties.
+Open **Settings** in the dock, or **Timer settings** in the source properties.
 
 | Mode | How to set the time |
 | --- | --- |
@@ -1326,17 +1326,31 @@ Open **Timer settings** in the dock or in the source properties.
 | Count down to a date and time | Pick a date from the calendar, click the hour and minute on the clock face, then choose AM or PM. Pausing freezes the readout. Resuming counts toward the original date and time. |
 | Count up | Start at zero. Enable **Stop after a duration** to set a finish time on the same clock. |
 
-Use **Start or resume**, **Pause** and **Reset** in the dock or source properties. **Reset** leaves the timer ready. For a scene source, **Restart when the scene goes live** starts it when the scene enters Program.
+From the dock, choose **Next quarter hour**, **Next :15**, **Next :30**, **Next :45**, or **Next full hour**, then press **Set and start**. These use the next matching local time, including across midnight. For example, at 2:38 the next quarter hour is 2:45, the next full hour is 3:00, and **Next :15** is 3:15. The date and time picker offers the same shortcuts. For a fixed duration, choose a minute preset such as **45 min** instead.
+
+In Stream Deck, add **StageKit > Countdown Timer**, select the private timer or a named scene timer, and choose a **Clock shortcut**. **Set and start / Stop** uses one key for both actions. For separate keys select **Set only**, **Set and start**, **Start or resume**, **Pause**, or **Stop and reset**. For one key that selects all four marks, choose **Cycle :15 / :30 / :45 / :00**. Tap to advance and hold for 0.8 seconds to start or stop the displayed mark. Tapping while the timer runs changes its deadline and keeps it running. The key lights while its timer runs.
+
+Use **Start**, **Pause** and **Reset** in the dock. **Start** also resumes a paused timer. The source properties offer the same controls. **Reset** leaves the timer ready. For a scene source, **Restart when the scene goes live** starts it when the scene enters Program.
 
 **Time display** previews the number layout. Leave **Automatic format** on or select any combination of **Days**, **Hours**, **Minutes** and **Seconds**. Selecting minutes and seconds, for example, shows 90 minutes as **90:00**. The source properties also control the overlay font, size and color.
 
-Under **When the timer finishes**, enter an optional **End message** and select a scene under **Switch Program to scene**. The message replaces the time in the dock and overlay. The scene switch runs once, including in Studio Mode. A blank message holds the final time. A private timer can also switch Program when a destination is selected.
+Under **When the timer finishes**, enter an optional **End message** and select a scene under **Switch Program to scene**. The message replaces the time in the dock and overlay. The scene switch runs once, including in Studio Mode. A blank message holds the final time. A private timer can also switch Program when a destination is selected. Each action has its own checkbox. Turning an action off keeps the saved message or scene.
+
+Enable **Start when streaming starts** for any timer that should start or resume when OBS starts streaming. Date timers can count up to their selected deadline. **Steady second increment** advances a period timer by at most one second after an OBS delay, which can extend its run time.
+
+**Leading zero** selects 04:06 or 4:06. Enable **Format output** and enter a pattern such as **IN %time%**. The dock, overlay and settings preview use the same output. Both the output and end message accept %time%, %days%, %hours%, %minutes% and %seconds%. Add 2 to a unit name for two digits, such as %seconds2%.
+
+The dock fits its readout to the space above the playback buttons. In a scene, position the box around the bare digits. Formatted output and the end message fit inside that rectangle. They resize and fade in place when the display changes or you reset. Longer phrases can wrap. Enlarging the source renders sharper letters and digits.
 
 ![Countdown in OBS when ready, paused and finished](docs/images/countdown-timer.png)
 
 ![The private OBS dock controlling a paused scene timer](docs/images/countdown-dock.png)
 
 ![Calendar, time display and finish actions in the timer settings](docs/images/countdown-settings.png)
+
+![Clock, formatted output and ending message inside the same OBS transform](docs/images/countdown-layout.png)
+
+![Timer glyphs enlarged five times in an OBS scene](docs/images/countdown-scaled.png)
 
 ### Ambient Background
 
@@ -2146,6 +2160,8 @@ With obs-websocket, send `CallVendorRequest` with `vendorName: "StageKit"`:
 | `StandbyCover` | `sourceName`; `filterName?` (none: the source's first enabled Standby Image); `how?`: `on`, `off` or `toggle` (none only asks) | `filterName`, `covered`, `enabled`. The Standby Image shown over the source on purpose, or taken away, with that filter's own transition; any source (a camera, a capture card). Refused for a filter that is switched off. A `StandbyCoverChanged` event (`sourceName`, `filterName`, `covered`) follows each change, however it was made (the hotkey, the button, a switcher's or Show in Scenes' hide, a key) |
 | `GetStandbyCover` | `sourceName`, `filterName?` | `filterName`, `covered`, `enabled` |
 | `ShowInScenesPress` | `sourceName`, `filterName`: a Show in Scenes; `how`: `toggle`, `on` or `off`; `hideAs?`: `filter` (none: as its *Hide shows Standby Image* says), `hide` or `cover` | `enabled`: the switch afterwards. Switches the filter as any key does, and that one press hides its sources the way `hideAs` says; the press that shows them undoes it (uncovers what was covered, shows what was hidden) |
+| ListTimers | None | Available scene timers by UUID and name, plus the private timer in the current collection. |
+| TimerControl | Supply a timer UUID or "private" and an operation. Operations include "state", "set", "setStart", "start", "stop", "pause", "toggle", "cycle" and "cycleToggle". The optional mark is 0, 15, 30, 45, -1 for the next quarter or -2 for the saved settings. | Returns the running state, displayed text and selected clock mark. TimerChanged identifies the timer when playback or its clock shortcut changes. |
 
 Every response has `success` and, on failure, `error`. A `BlurChanged` event is sent when a blur turns
 on or off. The other tools are filters, so the standard `SetSourceFilterEnabled` request triggers them.

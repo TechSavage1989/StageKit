@@ -17,6 +17,7 @@ the Free Software Foundation; either version 2 of the License, or
 // Every response carries "success" (bool) and, on failure, "error".
 
 #include "vendor-api.hpp"
+#include "../countdown/countdown.hpp"
 
 #include "../blur/ramp-blur.hpp"
 #include "../capture/auto-capture.hpp"
@@ -45,12 +46,12 @@ namespace {
 
 std::atomic<obs_websocket_vendor> g_vendor{nullptr};
 
-const char *const kRequests[] = {"GetVersion",       "ListBlurFilters", "BlurOn",       "BlurOff",
-				 "BlurToggle",       "SetBlur",         "BlurAll",      "HookFront",
-				 "SetPictureShape",  "GetOptions",      "SetOption",    "Slide",
-				 "GetSwitcherState", "ListSceneModes",  "GetSceneMode", "SetSceneMode",
-				 "ListSceneBlurs",   "SceneBlur",       "StandbyCover", "GetStandbyCover",
-				 "ShowInScenesPress"};
+const char *const kRequests[] = {"GetVersion",        "ListBlurFilters", "BlurOn",       "BlurOff",
+				 "BlurToggle",        "SetBlur",         "BlurAll",      "HookFront",
+				 "SetPictureShape",   "GetOptions",      "SetOption",    "Slide",
+				 "GetSwitcherState",  "ListSceneModes",  "GetSceneMode", "SetSceneMode",
+				 "ListSceneBlurs",    "SceneBlur",       "StandbyCover", "GetStandbyCover",
+				 "ShowInScenesPress", "ListTimers",      "TimerControl"};
 
 void fail(obs_data_t *response, const char *message)
 {
@@ -645,6 +646,8 @@ void vendor_api_register()
 		{"StandbyCover", req_standby_cover},
 		{"GetStandbyCover", req_get_standby_cover},
 		{"ShowInScenesPress", req_show_in_scenes_press},
+		{"ListTimers", timer_vendor_list},
+		{"TimerControl", timer_vendor_control},
 	};
 	for (const auto &r : requests) {
 		if (!obs_websocket_vendor_register_request(vendor, r.name, r.fn, nullptr))
@@ -707,6 +710,16 @@ void vendor_switch_forget(obs_source_t *filter)
 {
 	std::lock_guard lock(g_switch_mutex);
 	g_switch.erase(filter);
+}
+
+void vendor_emit_timer_changed(obs_source_t *timer)
+{
+	if (!timer || !g_vendor.load())
+		return;
+	obs_data_t *data = obs_data_create();
+	obs_data_set_string(data, "timer", obs_obj_is_private(timer) ? "private" : obs_source_get_uuid(timer));
+	emit_event("TimerChanged", data);
+	obs_data_release(data);
 }
 
 void vendor_emit_options_changed()
@@ -798,6 +811,8 @@ void vendor_api_add_test_calls()
 				{"StandbyCover", req_standby_cover},
 				{"GetStandbyCover", req_get_standby_cover},
 				{"ShowInScenesPress", req_show_in_scenes_press},
+				{"ListTimers", timer_vendor_list},
+				{"TimerControl", timer_vendor_control},
 			};
 			obs_data_t *request = json && *json ? obs_data_create_from_json(json) : obs_data_create();
 			if (!request)

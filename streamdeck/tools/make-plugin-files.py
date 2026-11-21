@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.36.0.0"
+VERSION = "0.37.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -646,6 +646,33 @@ def main():
         )
         add(feature["key"], feature["name"], feature["tip"], feature["key"], "imgs/actions/switch/icon", two(feature["key"]))
 
+    timer = features["timer"]
+    timer_script = "import { MARKS, OPERATIONS } from './src/timer.ts'; console.log(JSON.stringify([MARKS.map(m => [m.value, m.label]), OPERATIONS]));"
+    marks, operations = json.loads(subprocess.run(["node", "--input-type=module", "-e", timer_script], cwd=ROOT, capture_output=True, text=True, check=True).stdout)
+    key_pictures("timer", "options/type-countdown-on", "options/type-countdown-off")
+    page("timer", "StageKit Countdown Timer",
+         one_list("Timer", "getTimers", "target", "Choose a timer", "The private timer or a named Countdown Timer source in this OBS collection.")
+         + options("On press", "timerPress", "toggle", operations, "Cycle advances the selected mark when tapped. Hold for 0.8 seconds to start or stop.")
+         + options("Clock shortcut", "timerMark", "next", marks, "Set the timer to the next occurrence on the OBS computer's clock.")
+         + '<sdpi-item id="cycleHelp" label="Cycle" title="A tap changes the deadline. A hold starts or stops without advancing the mark."><span>Tap to select :15, :30, :45 or :00. Hold for 0.8 seconds to start or stop.</span></sdpi-item>\n',
+         script="""<script>
+            (() => {
+                const select = document.querySelector('[setting="timerPress"]');
+                const shortcut = document.querySelector('[setting="timerMark"]').closest('sdpi-item');
+                const help = document.getElementById('cycleHelp');
+                const update = () => {
+                    const op = select.value || 'toggle';
+                    shortcut.style.display = ['set', 'toggle', 'setStart'].includes(op) ? '' : 'none';
+                    help.style.display = op === 'cycle' ? '' : 'none';
+                };
+                for (const e of ['change', 'valuechange']) select.addEventListener(e, update);
+                window.SDPIComponents?.streamDeckClient?.didReceiveSettings?.subscribe(() => requestAnimationFrame(update));
+                customElements.whenDefined('sdpi-select').then(() => requestAnimationFrame(update));
+                update();
+            })();
+         </script>""")
+    add("timer", timer["name"], timer["tip"], "timer", "imgs/actions/timer/icon", two("timer"))
+
     # Stream and Record: obs-websocket's own requests. Their pictures are
     # tools/make-live-icons.py's frames (the key's own code moves them).
     lists = output_lists()
@@ -737,7 +764,7 @@ def main():
         ("hook", "autocapture", "appcapture", "activeapp", "appswitch", "autoframe", "shape", "standby", "scenestandby", "programtrigger"),
         ("sendto", "placeitem", "matchitem", "layout", "fititem", "scenefit", "fitoverlap", "slide", "tool", "option"),
         ("blur", "sceneblur", "blurall", "shadow", "sceneshadow", "corners", "scenecorners", "zoom"),
-        ("stream", "record"),
+        ("stream", "record", "timer"),
         ("obsfilter", "obssource", "obsmute", "obsstudio", "obscamera", "movesourceport", "moveswapport"), ("switch", "move"),
     ]
     rank = {key: index for index, key in enumerate(key for group in groups for key in group)}

@@ -86,7 +86,7 @@ try {
     }
     Write-Output 'PASS: OBS recognizes the native StageKit sources, filters and transition and the bundled Composite Blur filter.'
     $testLog = Get-ChildItem -LiteralPath (Join-Path $obsRoot 'config/obs-studio/logs') -Filter '*.txt' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    Select-String -LiteralPath $testLog.FullName -SimpleMatch -Pattern '[camera transition test]', '[Quick Access test]' | ForEach-Object { Write-Output $_.Line }
+    Select-String -LiteralPath $testLog.FullName -SimpleMatch -Pattern '[camera transition test]', '[Quick Access test]', 'StageKit timer layout:', 'StageKit timer at ', 'StageKit timer dock:' | ForEach-Object { Write-Output $_.Line }
     Write-Output 'PASS: source and scene filters, six Tools entries, catalog search, three visible Composite Blur modes and clean Windows OBS shutdown.'
     $env:STAGEKIT_TEST_NDI = 'restart'
     $env:STAGEKIT_TEST_REPORT = Join-Path $scratch 'ndi-restart.txt'
@@ -103,6 +103,7 @@ try {
     }
 } catch {
     $logs = Get-ChildItem -LiteralPath (Join-Path $obsRoot 'config/obs-studio/logs') -Filter '*.txt' -ErrorAction SilentlyContinue
+    if ($logs) { Select-String -LiteralPath ($logs | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName -SimpleMatch -Pattern 'StageKit timer' | ForEach-Object { Write-Output $_.Line } }
     if ($logs) { Get-Content -LiteralPath ($logs | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName -Tail 160 }
     if (Test-Path -LiteralPath $report) { Get-Content -LiteralPath $report }
     throw

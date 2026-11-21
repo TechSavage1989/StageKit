@@ -4,6 +4,7 @@ Copyright (C) 2026 StageKit contributors
 SPDX-License-Identifier: GPL-2.0-or-later
 */
 #include "clock-picker.hpp"
+#include "countdown.hpp"
 
 #include <obs-module.h>
 #include <QDial>
@@ -214,11 +215,36 @@ ClockPicker::ClockPicker(int64_t duration_ms, QTime target, QWidget *parent) : Q
 	pm_ = period_button(true);
 	layout->addWidget(period_row_);
 
+	auto *marks_row = new QWidget(this);
+	auto *marks_layout = new QHBoxLayout(marks_row);
+	marks_layout->setContentsMargins(0, 0, 0, 0);
+	for (size_t i = 0; i < std::size(timer_marks); ++i) {
+		const int mark = timer_marks[i];
+		auto *b = new QPushButton(mark == kNextQuarter
+						  ? label("Countdown.NextQuarterShort")
+						  : QStringLiteral(":%1").arg(mark, 2, 10, QLatin1Char('0')),
+					  marks_row);
+		b->setObjectName(QStringLiteral("clockMark%1").arg(mark));
+		b->setToolTip(label(timer_mark_labels[i]));
+		b->setAccessibleName(b->toolTip());
+		b->setAutoDefault(false);
+		marks_layout->addWidget(b);
+		connect(b, &QPushButton::clicked, this, [this, mark] {
+			const auto next = next_timer_mark(QDateTime::currentDateTime(), mark);
+			target_ = next.time();
+			if (deadline_picked)
+				deadline_picked(next);
+			notify();
+		});
+	}
+	layout->addWidget(marks_row);
+	marks_row_ = marks_row;
+
 	duration_row_ = new QWidget(this);
 	auto *duration_layout = new QVBoxLayout(duration_row_);
 	duration_layout->setContentsMargins(0, 0, 0, 0);
 	auto *presets = new QHBoxLayout;
-	for (int mins : {1, 5, 15, 30, 60}) {
+	for (int mins : {1, 5, 15, 30, 45, 60}) {
 		auto *b = new QPushButton(mins == 60 ? label("Countdown.OneHour") : label("Countdown.Mins").arg(mins),
 					  duration_row_);
 		b->setObjectName(QStringLiteral("clockPreset%1").arg(mins));
@@ -292,6 +318,7 @@ void ClockPicker::sync()
 	face_->configure(unit_ == 0, wall_, values[unit_], units_[unit_]->accessibleName());
 	time_label_->setVisible(wall_);
 	period_row_->setVisible(wall_);
+	marks_row_->setVisible(wall_);
 	duration_row_->setVisible(!wall_);
 	am_->setChecked(t.hour() < 12);
 	pm_->setChecked(t.hour() >= 12);

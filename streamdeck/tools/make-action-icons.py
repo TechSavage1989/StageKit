@@ -132,6 +132,7 @@ ICONS = {
     "shape": lambda d: (box(d, 0.04, 0.18, 0.96, 0.82), box(d, 0.3, 0.3, 0.7, 0.7, r=0.03, width=W - 4), arrow(d, 0.26, 0.5, 0.12, 0.5, 0.09, W - 4), arrow(d, 0.74, 0.5, 0.88, 0.5, 0.09, W - 4)),
     "hook": lambda d: (box(d, 0.06, 0.38, 0.94, 0.92), line(d, 0.06, 0.52, 0.94, 0.52), arrow(d, 0.5, 0.04, 0.5, 0.36, 0.14)),
     "appswitch": lambda d: (arrow(d, 0.1, 0.32, 0.88, 0.32, 0.15), arrow(d, 0.9, 0.68, 0.12, 0.68, 0.15)),
+    "timer": lambda d: (ring(d, 0.5, 0.53, 0.40), line(d, 0.5, 0.53, 0.5, 0.29), line(d, 0.5, 0.53, 0.68, 0.63), line(d, 0.41, 0.05, 0.59, 0.05, W - 4)),
     "fitoverlap": lambda d: (box(d, 0.06, 0.1, 0.78, 0.7), box(d, 0.5, 0.5, 0.94, 0.9, r=0.04, fill=True)),
     "tool": lambda d: (line(d, 0.1, 0.08, 0.1, 0.92), bars(d, 0.2, 0.12, 0.88, [0.7, 0.42, 0.56])),
     "blurall": blurred(lambda d: (ring(d, 0.26, 0.34, 0.16, fill=True), ring(d, 0.74, 0.34, 0.16, fill=True), ring(d, 0.5, 0.72, 0.16, fill=True)), 7),

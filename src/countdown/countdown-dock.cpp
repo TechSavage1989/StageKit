@@ -5,19 +5,23 @@ SPDX-License-Identifier: GPL-2.0-or-later
 */
 
 #include "countdown.hpp"
+#include "stream-start.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
 #include <obs.hpp>
 #include <QComboBox>
 #include <QFontDatabase>
-#include <QFormLayout>
+#include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPointer>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QSignalBlocker>
 #include <QTimer>
+#include <QApplication>
+#include <QThread>
 #include <QVBoxLayout>
 #include <QWidget>
 #include <algorithm>
@@ -33,19 +37,110 @@ QString text(const char *key)
 	return QString::fromUtf8(obs_module_text(key));
 }
 
+// OBS themes can override setFont() on a QLabel. Give this label its own
+// font rule and fit the actual output to the space above the playback buttons.
+class TimerReadout final : public QLabel {
+public:
+	explicit TimerReadout(QWidget *parent)
+		: QLabel(parent),
+		  face_(QFontDatabase::systemFont(QFontDatabase::FixedFont))
+	{
+		setObjectName("countdownReadout");
+		setTextFormat(Qt::PlainText);
+		setAlignment(Qt::AlignCenter);
+		setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
+		setMinimumHeight(68);
+		face_.setBold(true);
+	}
+
+	void display(const QString &value, bool message)
+	{
+		if (value == text() && message == message_)
+			return;
+		const bool changed_mode = message_ != message;
+		message_ = message;
+		if (changed_mode) {
+			setWordWrap(message);
+			updateGeometry();
+		}
+		setText(value);
+		QString sample = value;
+		for (auto &c : sample)
+			if (c.isDigit())
+				c = QLatin1Char('8');
+		if (changed_mode || sample != sample_) {
+			sample_ = sample;
+			fit();
+		}
+	}
+
+	QSize sizeHint() const override { return QSize(220, 92); }
+	QSize minimumSizeHint() const override { return QSize(0, 68); }
+
+protected:
+	void resizeEvent(QResizeEvent *e) override
+	{
+		QLabel::resizeEvent(e);
+		fit();
+	}
+
+private:
+	void fit()
+	{
+		int size = 24;
+		if (!sample_.isEmpty()) {
+			const QSize room = contentsRect().size() - QSize(8, 4);
+			int low = 1, high = 88;
+			while (low < high) {
+				const int mid = (low + high + 1) / 2;
+				face_.setPixelSize(mid);
+				const QFontMetrics metrics(face_, this);
+				const QRect ink =
+					message_ ? metrics.boundingRect(QRect(0, 0, room.width(), 10000),
+									Qt::TextWordWrap, sample_)
+						 : QRect(0, 0, metrics.horizontalAdvance(sample_), metrics.height());
+				if (ink.height() <= room.height() && ink.width() <= room.width())
+					low = mid;
+				else
+					high = mid - 1;
+			}
+			size = low;
+		}
+		if (size != pixels_) {
+			pixels_ = size;
+			setStyleSheet(
+				QStringLiteral(
+					"QLabel#countdownReadout { font-family: \"%1\"; font-size: %2px; font-weight: bold; }")
+					.arg(face_.family())
+					.arg(size));
+		}
+	}
+
+	QFont face_;
+	QString sample_;
+	int pixels_ = 0;
+	bool message_ = false;
+};
+
 class TimerDock : public QWidget {
 public:
 	TimerDock()
 	{
 		setObjectName("stagekitCountdownControls");
 		auto *layout = new QVBoxLayout(this);
-		auto *form = new QFormLayout;
+		layout->setContentsMargins(6, 5, 6, 5);
+		layout->setSpacing(4);
+		auto *header = new QHBoxLayout;
 		targets_ = new QComboBox(this);
 		targets_->setObjectName("countdownTarget");
-		form->addRow(text("Countdown.Timer"), targets_);
-		auto *settings = new QPushButton(text("Countdown.Settings"), this);
+		targets_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+		targets_->setAccessibleName(text("Countdown.Timer"));
+		header->addWidget(targets_, 1);
+		auto *settings = new QPushButton(text("Countdown.DockSettings"), this);
+		settings->setToolTip(text("Countdown.Settings"));
+		settings->setAccessibleName(text("Countdown.Settings"));
 		settings->setObjectName("countdownSettings");
-		form->addRow(settings);
+		header->addWidget(settings);
 		connect(settings, &QPushButton::clicked, this, [this] {
 			auto source = target();
 			if (source) {
@@ -57,18 +152,10 @@ public:
 				refresh_time();
 			}
 		});
-		layout->addLayout(form);
+		layout->addLayout(header);
 
-		readout_ = new QLabel(this);
-		readout_->setObjectName("countdownReadout");
-		readout_->setTextFormat(Qt::PlainText);
-		readout_->setWordWrap(true);
-		readout_->setAlignment(Qt::AlignCenter);
-		auto font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-		font.setPointSize(24);
-		font.setBold(true);
-		readout_->setFont(font);
-		layout->addWidget(readout_);
+		readout_ = new TimerReadout(this);
+		layout->addWidget(readout_, 1);
 		status_ = new QLabel(this);
 		status_->setObjectName("countdownStatus");
 		status_->setAlignment(Qt::AlignCenter);
@@ -85,13 +172,31 @@ public:
 			});
 			return widget;
 		};
-		start_ = button("countdownStart", "Countdown.Start",
+		start_ = button("countdownStart", "Countdown.DockStart",
 				[](obs_source_t *s) { obs_source_media_play_pause(s, false); });
+		start_->setToolTip(text("Countdown.Start"));
+		start_->setAccessibleName(text("Countdown.Start"));
 		pause_ = button("countdownPause", "Countdown.Pause",
 				[](obs_source_t *s) { obs_source_media_play_pause(s, true); });
 		button("countdownReset", "Countdown.Reset", obs_source_media_stop);
 		layout->addLayout(buttons);
-		layout->addStretch();
+		auto *shortcuts = new QHBoxLayout;
+		auto *mark = new QComboBox(this);
+		mark->setObjectName("countdownMark");
+		mark->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+		mark->setAccessibleName(text("Countdown.ClockShortcut"));
+		for (size_t i = 0; i < std::size(timer_marks); ++i)
+			mark->addItem(text(timer_mark_labels[i]), timer_marks[i]);
+		auto *go = new QPushButton(text("Countdown.SetStart"), this);
+		go->setObjectName("countdownSetStart");
+		shortcuts->addWidget(mark, 1);
+		shortcuts->addWidget(go);
+		layout->addLayout(shortcuts);
+		connect(go, &QPushButton::clicked, this, [this, mark] {
+			auto source = target();
+			if (timer_command(source, "setStart", mark->currentData().toInt()))
+				obs_frontend_save();
+		});
 		connect(targets_, &QComboBox::currentIndexChanged, this, [this] {
 			selected_ = targets_->currentData().toString();
 			refresh_time();
@@ -137,6 +242,14 @@ public:
 			selected_ = QString::fromUtf8(obs_data_get_string(root, "stagekit.countdown.selected"));
 			open_collection();
 		}
+	}
+
+	obs_source_t *private_timer() const { return loaded_ && !closed_ ? obs_source_get_ref(private_) : nullptr; }
+
+	void stream_started()
+	{
+		if (loaded_ && !closed_)
+			start_stream_timers(private_);
 	}
 
 	void open_collection()
@@ -212,14 +325,15 @@ private:
 		refresh_time();
 	}
 
+public:
 	void refresh_time()
 	{
 		auto source = target();
 		if (!source)
 			return;
-		const QString time = timer_readout(source);
-		if (readout_->text() != time)
-			readout_->setText(time);
+		bool message = false;
+		const QString time = timer_readout(source, &message);
+		readout_->display(time, message);
 		const auto state = obs_source_media_get_state(source);
 		const char *key = "Countdown.Ready";
 		if (state == OBS_MEDIA_STATE_PLAYING)
@@ -233,8 +347,9 @@ private:
 		pause_->setEnabled(state == OBS_MEDIA_STATE_PLAYING);
 	}
 
+private:
 	QComboBox *targets_ = nullptr;
-	QLabel *readout_ = nullptr;
+	TimerReadout *readout_ = nullptr;
 	QLabel *status_ = nullptr;
 	QPushButton *start_ = nullptr;
 	QPushButton *pause_ = nullptr;
@@ -261,6 +376,8 @@ void frontend_event(obs_frontend_event e, void *)
 		return;
 	if (e == OBS_FRONTEND_EVENT_EXIT || e == OBS_FRONTEND_EVENT_SCRIPTING_SHUTDOWN)
 		dock->shutdown();
+	else if (e == OBS_FRONTEND_EVENT_STREAMING_STARTED)
+		dock->stream_started();
 	else if (e == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CLEANUP)
 		dock->clear_collection();
 	else if (e == OBS_FRONTEND_EVENT_FINISHED_LOADING || e == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED)
@@ -268,6 +385,82 @@ void frontend_event(obs_frontend_event e, void *)
 }
 
 } // namespace
+
+// The dock owns the private timer. Resolve it on the frontend thread before accessing a collection.
+void timer_vendor_list(obs_data_t *, obs_data_t *response, void *)
+{
+	auto list = [&] {
+		OBSDataArrayAutoRelease entries = obs_data_array_create();
+		auto append = [](obs_data_array_t *items, const char *id, const char *name) {
+			OBSDataAutoRelease entry = obs_data_create();
+			obs_data_set_string(entry, "value", id);
+			obs_data_set_string(entry, "label", name);
+			obs_data_array_push_back(items, entry);
+		};
+		OBSSourceAutoRelease hidden = dock ? dock->private_timer() : nullptr;
+		if (hidden)
+			append(entries, "private", obs_module_text("Countdown.Private"));
+		struct Context {
+			obs_data_array_t *items;
+			decltype(append) &add;
+		} ctx{entries, append};
+		obs_enum_sources(
+			[](void *p, obs_source_t *s) {
+				auto &c = *static_cast<Context *>(p);
+				if (!obs_obj_is_private(s) && !obs_source_removed(s) &&
+				    std::strcmp(obs_source_get_id(s), kCountdownId) == 0)
+					c.add(c.items, obs_source_get_uuid(s), obs_source_get_name(s));
+				return true;
+			},
+			&ctx);
+		obs_data_set_array(response, "timers", entries);
+		obs_data_set_bool(response, "success", true);
+	};
+	if (qApp && QThread::currentThread() != qApp->thread())
+		QMetaObject::invokeMethod(qApp, list, Qt::BlockingQueuedConnection);
+	else
+		list();
+}
+
+void timer_vendor_control(obs_data_t *request, obs_data_t *response, void *)
+{
+	auto apply = [&] {
+		const char *id = obs_data_get_string(request, "timer");
+		const char *op = obs_data_get_string(request, "operation");
+		OBSSourceAutoRelease timer = std::strcmp(id, "private") == 0
+						     ? (dock ? dock->private_timer() : nullptr)
+						     : (*id ? obs_get_source_by_uuid(id) : nullptr);
+		bool ok = timer && !obs_source_removed(timer) &&
+			  std::strcmp(obs_source_get_id(timer), kCountdownId) == 0;
+		if (ok && std::strcmp(op, "state") != 0) {
+			const auto mark = obs_data_has_user_value(request, "mark") ? obs_data_get_int(request, "mark")
+										   : kSavedTimer;
+			ok = mark >= kSavedTimer && mark <= 45 && timer_command(timer, op, int(mark));
+			if (ok && dock)
+				dock->refresh_time();
+			if (ok &&
+			    (mark != kSavedTimer || std::strcmp(op, "cycle") == 0 ||
+			     std::strcmp(op, "cycleToggle") == 0) &&
+			    obs_frontend_get_main_window())
+				obs_frontend_save();
+		}
+		obs_data_set_bool(response, "success", ok);
+		if (ok) {
+			OBSDataAutoRelease settings = obs_source_get_settings(timer);
+			obs_data_set_int(response, "mark", saved_timer_mark(settings));
+			obs_data_set_bool(response, "running",
+					  obs_source_media_get_state(timer) == OBS_MEDIA_STATE_PLAYING);
+			obs_data_set_string(response, "text", timer_readout(timer).toUtf8().constData());
+		} else {
+			obs_data_set_string(response, "error",
+					    "Choose an available StageKit timer and clock shortcut.");
+		}
+	};
+	if (qApp && QThread::currentThread() != qApp->thread())
+		QMetaObject::invokeMethod(qApp, apply, Qt::BlockingQueuedConnection);
+	else
+		apply();
+}
 
 void register_countdown_dock()
 {

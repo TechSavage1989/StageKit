@@ -1,7 +1,14 @@
 #pragma once
 
 #include "replacement-frame.hpp"
+#include "../src/common/alpha-bounds.hpp"
+#include "../src/countdown/stream-start.hpp"
+#include "../src/countdown/countdown.hpp"
+#include <QTimeZone>
+#include <QFileInfo>
+#include <QDir>
 #include <obs-module.h>
+#include <graphics/vec2.h>
 #include <QDateTime>
 #include <QElapsedTimer>
 #include <obs.hpp>
@@ -107,6 +114,30 @@ inline QString readout(obs_source_t *source)
 	return text;
 }
 
+inline void clock_shortcuts(QStringList &issues)
+{
+	const QDate d(2026, 11, 21);
+	const QTimeZone utc_zone(0);
+	const QDateTime now(d, QTime(23, 38, 12, 777), utc_zone);
+	const auto expect = [&](const QDateTime &clock, int mark, const QDateTime &expected) {
+		if (stagekit::next_timer_mark(clock, mark) != expected)
+			issues.append(QStringLiteral("Countdown: wrong next clock mark %1").arg(mark));
+	};
+	expect(now, -1, QDateTime(d, QTime(23, 45), utc_zone));
+	expect(now, 45, QDateTime(d, QTime(23, 45), utc_zone));
+	for (int mark : {0, 15, 30})
+		expect(now, mark, QDateTime(d.addDays(1), QTime(0, mark), utc_zone));
+	expect(QDateTime(d, QTime(12, 15), utc_zone), 15, QDateTime(d, QTime(13, 15), utc_zone));
+	expect(now, 14, {});
+	const QTimeZone zone("America/New_York");
+	if (zone.isValid()) {
+		// Spring jumps to 03:00 while the autumn change revisits 01:00.
+		for (const auto &utc : {QDateTime(QDate(2026, 3, 8), QTime(6, 58), utc_zone),
+					QDateTime(QDate(2026, 11, 1), QTime(5, 58), utc_zone)})
+			expect(utc.toTimeZone(zone), -1, utc.addSecs(120).toTimeZone(zone));
+	}
+}
+
 inline void modes(QStringList &issues)
 {
 	auto fail = [&](bool ok, const char *msg) {
@@ -128,6 +159,15 @@ inline void modes(QStringList &issues)
 		return wait_for([&] { return readout(timer) == s; });
 	};
 	fail(is("01:02:03:04"), "day/hour/minute/second format");
+	obs_data_set_bool(config, "leading_zero", false);
+	obs_data_set_bool(config, "format_output", true);
+	obs_data_set_string(config, "output_format", "IN %time% (%days%d %hours2%h %minutes%m %seconds2%s)");
+	obs_source_update(timer, config);
+	fail(is("IN 1:02:03:04 (1d 02h 3m 04s)") && visible_digits(frame(timer)),
+	     "leading field and custom output tokens");
+	obs_data_set_bool(config, "leading_zero", true);
+	obs_data_set_bool(config, "format_output", false);
+	obs_source_update(timer, config);
 	for (const auto &pair : {std::pair{12, "1563:04"}, {8, "93784"}, {1, "02"}, {5, "01:124"}}) {
 		obs_data_set_int(config, "display_units", pair.first);
 		obs_source_update(timer, config);
@@ -154,6 +194,8 @@ inline void modes(QStringList &issues)
 	obs_source_media_restart(timer);
 	obs_source_media_set_time(timer, 1850);
 	fail(is("Break over") && obs_source_media_get_time(timer) == 2000, "count-up finish message at its limit");
+	frame(timer);
+	QThread::msleep(280);
 	const auto ending = frame(timer);
 	fail(visible_digits(ending) && ending != before && ending.size() == before.size(),
 	     "message did not render on the same canvas");
@@ -200,6 +242,236 @@ inline void modes(QStringList &issues)
 	fail(wait_for([&] { return ends == 1 && readout(timer) == "Break over"; }),
 	     "overdue resume missed finish actions");
 	signal_handler_disconnect(obs_source_get_signal_handler(timer), "media_ended", ended, &ends);
+	obs_data_set_int(config, "deadline_ms", QDateTime::currentMSecsSinceEpoch() + 1900);
+	obs_data_set_bool(config, "count_up_to_date", true);
+	obs_data_set_bool(config, "steady_seconds", true);
+	obs_data_set_bool(config, "use_end_message", false);
+	obs_source_update(timer, config);
+	fail(is("00:00"), "count up to a date must start at zero");
+	obs_source_media_play_pause(timer, false);
+	fail(is("00:01") && wait_for([&] { return obs_source_media_get_state(timer) == OBS_MEDIA_STATE_ENDED; }) &&
+		     readout(timer) != "Break over",
+	     "calendar count-up or disabled legacy end message");
+	obs_data_set_int(config, "timer_mode", 2);
+	obs_data_set_bool(config, "limit_up", false);
+	obs_data_set_bool(config, "start_on_stream", true);
+	obs_source_update(timer, config);
+	OBSDataAutoRelease private_settings = obs_data_create();
+	obs_data_set_bool(private_settings, "start_on_stream", true);
+	OBSSourceAutoRelease hidden = obs_source_create_private("stagekit_countdown", nullptr, private_settings);
+	OBSSourceAutoRelease manual = obs_source_create("stagekit_countdown", "Manual timer fixture", nullptr, nullptr);
+	fail(is("00:00"), "steady preset");
+	stagekit::start_stream_timers(hidden);
+	fail(wait_for([&] {
+		     return obs_source_media_get_state(timer) == OBS_MEDIA_STATE_PLAYING &&
+			    obs_source_media_get_state(hidden) == OBS_MEDIA_STATE_PLAYING &&
+			    obs_source_media_get_state(manual) == OBS_MEDIA_STATE_STOPPED;
+	     }),
+	     "stream-start opt-in for scene and private timers");
+	obs_source_media_set_time(timer, 5000);
+	fail(wait_for([&] { return obs_source_media_get_time(timer) >= 5000; }), "steady timer seek");
+	stagekit::start_stream_timers(hidden);
+	fail(obs_source_media_get_time(timer) >= 5000, "a repeated stream-start reset a running timer");
+	const auto start_ms = obs_source_media_get_time(timer);
+	obs_queue_task(OBS_TASK_GRAPHICS, [](void *) { QThread::msleep(2200); }, nullptr, true);
+	fail(wait_for([&] { return obs_source_media_get_time(timer) >= start_ms + 950; }) &&
+		     obs_source_media_get_time(timer) < start_ms + 1600,
+	     "a late render skipped multiple steady seconds");
+	obs_source_media_stop(timer);
+}
+
+inline QRect painted(const QImage &image)
+{
+	const auto b = stagekit::visible_alpha_bounds(image.constBits(), size_t(image.bytesPerLine()),
+						      uint32_t(image.width()), uint32_t(image.height()));
+	return b.left < uint32_t(image.width())
+		       ? QRect(QPoint(int(b.left), int(b.top)), QPoint(int(b.right), int(b.bottom)))
+		       : QRect();
+}
+
+inline void fitted_states(QStringList &issues, const QString &sheet_path)
+{
+	auto require = [&](bool ok, const char *why) {
+		if (!ok)
+			issues.append(QStringLiteral("Countdown: ") + QString::fromLatin1(why));
+	};
+	OBSDataAutoRelease config = obs_data_create();
+	OBSSourceAutoRelease timer = obs_source_create_private("stagekit_countdown", nullptr, config);
+	OBSSourceAutoRelease neighbor = obs_source_create_private("stagekit_countdown", nullptr, nullptr);
+	OBSSceneAutoRelease scene = obs_scene_create_private("Adjacent timer layout");
+	if (!timer || !neighbor || !scene) {
+		require(false, "could not create timer layout");
+		return;
+	}
+	const QImage clock = frame(timer);
+	auto *guard = obs_scene_add(scene, neighbor);
+	auto *item = obs_scene_add(scene, timer);
+	if (clock.isNull() || !guard || !item) {
+		require(false, "could not place adjacent sources");
+		return;
+	}
+	const int w = clock.width(), h = clock.height();
+	vec2 position;
+	vec2_set(&position, float(w), 8.0f);
+	obs_sceneitem_set_pos(item, &position);
+	obs_sceneitem_force_update_transform(item);
+	const QRect target(w, 8, w, h);
+	// Include eight pixels beyond the intended bottom and right canvas edges as overscan.
+	auto scene_frame = [&] {
+		const int sw = 2 * w + 8, sh = h + 16;
+		auto pixels = replacement_test::render(obs_scene_get_source(scene), sw, sh);
+		return QImage(pixels.data(), sw, sh, sw * 4, QImage::Format_RGBA8888_Premultiplied).copy();
+	};
+	const QImage reference = scene_frame();
+	const QImage placed_clock = reference.copy(target);
+	const QRect clock_ink = painted(clock);
+	const QRect scene_ink = painted(placed_clock);
+	require(clock_ink.width() >= w * 0.90 && clock_ink.height() >= h * 0.90, "digits did not fill the transform");
+	require(std::abs(scene_ink.width() - clock_ink.width()) <= 3 &&
+			std::abs(scene_ink.height() - clock_ink.height()) <= 3 &&
+			!painted(reference.copy(0, 0, w, h)).isEmpty(),
+		"edge fixture placement");
+	auto inside = [&](const QImage &capture) {
+		QImage outside = capture;
+		QPainter cover(&outside);
+		cover.setCompositionMode(QPainter::CompositionMode_Source);
+		cover.fillRect(target, Qt::transparent);
+		cover.end();
+		QImage expected = reference;
+		QPainter clean(&expected);
+		clean.setCompositionMode(QPainter::CompositionMode_Source);
+		clean.fillRect(target, Qt::transparent);
+		clean.end();
+		return outside == expected && int(obs_source_get_width(timer)) == w &&
+		       int(obs_source_get_height(timer)) == h;
+	};
+	auto change = [&](const QString &text, bool animate) {
+		require(wait_for([&] { return readout(timer) == text; }), "timer layout readout");
+		const QImage first = scene_frame();
+		QThread::msleep(85);
+		const QImage middle = scene_frame();
+		QThread::msleep(195);
+		const QImage last = scene_frame();
+		require(inside(first) && inside(middle) && inside(last),
+			"text crossed the transform, screen edge or neighboring source");
+		require(!animate || (first != middle && middle != last && first != last),
+			"text did not morph through an intermediate frame");
+		const auto img = last.copy(target);
+		const QRect ink = painted(img);
+		require(!ink.isEmpty() && (ink.width() >= w * 0.88 || ink.height() >= h * 0.88),
+			"fitted text left its box empty");
+		return img;
+	};
+	obs_data_set_string(config, "end_message", "MOMENTARILY");
+	obs_data_set_bool(config, "use_end_message", true);
+	obs_data_set_string(config, "output_format", "IN %time%");
+	obs_source_update(timer, config);
+	require(change("05:00", false) == placed_clock, "a hidden message or format changed the running digits");
+	obs_data_set_bool(config, "format_output", true);
+	obs_source_update(timer, config);
+	const auto formatted = change("IN 05:00", true);
+	obs_source_media_restart(timer);
+	obs_source_media_set_time(timer, 299990);
+	const auto message = change("MOMENTARILY", true);
+	obs_source_media_stop(timer);
+	require(change("IN 05:00", true) == formatted, "reset did not restore formatted output in place");
+	obs_data_set_bool(config, "format_output", false);
+	obs_source_update(timer, config);
+	require(change("05:00", true) == placed_clock, "returning from formatted text moved the digits");
+	obs_data_set_bool(config, "format_output", true);
+	obs_data_set_string(config, "output_format", "WE WILL BE RIGHT BACK IN %time%");
+	obs_source_update(timer, config);
+	change("WE WILL BE RIGHT BACK IN 05:00", true);
+	blog(LOG_INFO, "StageKit timer layout: %dx%d source, clock ink %dx%d, formatted ink %dx%d, message ink %dx%d",
+	     w, h, clock_ink.width(), clock_ink.height(), painted(formatted).width(), painted(formatted).height(),
+	     painted(message).width(), painted(message).height());
+	if (!sheet_path.isEmpty()) {
+		QImage sheet(3 * (w + 20), h + 50, QImage::Format_RGB32);
+		sheet.fill(QColor("#202329"));
+		QPainter painter(&sheet);
+		const QImage samples[]{placed_clock, formatted, message};
+		const QString labels[]{QStringLiteral("Timer"), QStringLiteral("Formatted output"),
+				       QStringLiteral("End message")};
+		for (int i = 0; i < 3; ++i) {
+			const QRect box(10 + i * (w + 20), 8, w, h);
+			painter.setPen(QColor("#72cbd7"));
+			painter.drawRect(box.adjusted(-1, -1, 0, 0));
+			painter.drawImage(box.topLeft(), samples[i]);
+			painter.setPen(Qt::white);
+			painter.drawText(QRect(box.left(), h + 12, w, 30), Qt::AlignCenter, labels[i]);
+		}
+		painter.end();
+		require(sheet.save(QFileInfo(sheet_path).dir().filePath("countdown-layout.png")),
+			"could not save timer layout preview");
+	}
+}
+
+// Match an OBS scene item enlarged fivefold, and compare its alpha edges
+// with the old operation of enlarging a one-to-one timer bitmap.
+inline bool sharp_scaled_timer(const QString &sheet_path, int font_size, int zoom)
+{
+	OBSDataAutoRelease config = obs_data_create();
+	OBSDataAutoRelease font = obs_data_create();
+	obs_data_set_string(font, "face", "Open Sans");
+	obs_data_set_int(font, "size", font_size);
+	obs_data_set_int(font, "flags", OBS_FONT_BOLD);
+	obs_data_set_obj(config, "font", font);
+	OBSSourceAutoRelease source = obs_source_create_private("stagekit_countdown", nullptr, config);
+	OBSSceneAutoRelease scene = obs_scene_create_private("Timer at five times size");
+	if (!source || !scene)
+		return false;
+	const QImage original = frame(source);
+	if (original.isNull())
+		return false;
+	auto *item = obs_scene_add(scene, source);
+	if (!item)
+		return false;
+	vec2 scale;
+	vec2_set(&scale, float(zoom), float(zoom));
+	obs_sceneitem_set_scale(item, &scale);
+	obs_sceneitem_force_update_transform(item);
+	const int w = original.width() * zoom, h = original.height() * zoom;
+	auto pixels = replacement_test::render(obs_scene_get_source(scene), w, h);
+	const QImage sharp(pixels.data(), w, h, w * 4, QImage::Format_RGBA8888_Premultiplied);
+	const QImage enlarged = original.scaled(w, h, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+	auto coverage = [](const QImage &image) {
+		struct Coverage {
+			int solid = 0, soft = 0;
+			int64_t alpha = 0;
+		} totals;
+		for (int y = 0; y < image.height(); ++y) {
+			const auto *line = image.constScanLine(y);
+			for (int x = 0; x < image.width(); ++x) {
+				const int a = line[4 * x + 3];
+				totals.solid += a >= 224;
+				totals.alpha += a;
+				totals.soft += a >= 32 && a < 224;
+			}
+		}
+		return totals;
+	};
+	const auto old = coverage(enlarged), current = coverage(sharp);
+	blog(LOG_INFO, "StageKit timer at %dx: solid pixels %d/%d, soft edge pixels %d/%d (bitmap/native)", zoom,
+	     old.solid, current.solid, old.soft, current.soft);
+	if (!sheet_path.isEmpty()) {
+		const int cell = 270;
+		const QRect crop(w / 2 - cell / 2, h / 2 - cell / 2, cell, cell);
+		QImage sheet(cell * 2, cell + 36, QImage::Format_RGB32);
+		sheet.fill(QColor("#202329"));
+		QPainter painter(&sheet);
+		painter.drawImage(QPoint(0, 0), enlarged, crop);
+		painter.drawImage(QPoint(cell, 0), sharp, crop);
+		painter.setPen(Qt::white);
+		painter.drawText(QRect(0, cell, cell, 32), Qt::AlignCenter, QStringLiteral("Enlarged bitmap"));
+		painter.drawText(QRect(cell, cell, cell, 32), Qt::AlignCenter,
+				 QStringLiteral("Rendered at %1x").arg(zoom));
+		painter.end();
+		if (!sheet.save(QFileInfo(sheet_path).dir().filePath("countdown-scaled.png")))
+			return false;
+	}
+	return current.alpha > old.alpha * 0.88 && current.alpha < old.alpha * 1.12 && old.soft > 100 &&
+	       current.soft < old.soft * 0.68 && int(obs_source_get_width(source)) == original.width() &&
+	       int(obs_source_get_height(source)) == original.height();
 }
 
 inline void check(QStringList &issues, const QString &sheet_path = {})
@@ -303,7 +575,12 @@ inline void check(QStringList &issues, const QString &sheet_path = {})
 	signal_handler_disconnect(obs_source_get_signal_handler(source), "media_ended", ended, &ends);
 	obs_source_dec_showing(source);
 	obs_source_release(source);
+	clock_shortcuts(issues);
 	modes(issues);
+	fitted_states(issues, sheet_path);
+	expect(sharp_scaled_timer(sheet_path, 100, 5),
+	       "the fivefold timer lost edge detail or changed its logical dimensions");
+	expect(sharp_scaled_timer({}, 24, 16), "a small timer lost edge detail when enlarged sixteenfold");
 }
 
 } // namespace countdown_test

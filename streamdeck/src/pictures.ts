@@ -694,6 +694,10 @@ export function outputShown(output: "stream" | "record", state: string, firstFra
 	return { picture: BY_ID.get(firstFrame) ?? plain("switch") };
 }
 
+export function timerPicture(sourceType?: string): Picture {
+	return pictureById(sourceTypePicture(sourceType) ?? "options/type-countdown") ?? plain("switch");
+}
+
 export function ordinaryControlPicture(key: string, source: string | undefined, sourceType?: string, sceneType?: string): Picture {
 	if (key === "obsstudio" || key === "movesourceport" || key === "moveswapport") return scenePicture(undefined, source, sceneType);
 	return chooseFor(undefined, "", {}, source, undefined, { sourceType }) ?? plain("switch");

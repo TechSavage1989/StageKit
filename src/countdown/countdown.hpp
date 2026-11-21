@@ -7,6 +7,7 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <obs.h>
 #include <QString>
+#include <QDateTime>
 
 class QWidget;
 
@@ -23,6 +24,14 @@ struct TimerOptions {
 	int64_t deadline = 0;
 	bool limit = false;
 	bool on_program = false;
+	bool on_stream = false;
+	bool steady = false;
+	bool date_up = false;
+	bool leading_zero = true;
+	bool format_output = false;
+	bool use_message = false;
+	bool switch_scene = false;
+	QString output_format = QStringLiteral("%time%");
 	int units = 0; // zero selects the automatic format
 	QString message;
 	QString scene;
@@ -30,11 +39,37 @@ struct TimerOptions {
 	static TimerOptions read(obs_data_t *settings);
 	void write(obs_data_t *settings) const;
 	bool same_timing(const TimerOptions &other) const;
+	bool counts_up() const { return mode == TimerMode::CountUp || (mode == TimerMode::Deadline && date_up); }
+	QString clock_text(int64_t ms, int64_t range) const;
+	QString display_text(int64_t ms, int64_t range, bool at_end = false) const;
 	bool unlimited() const { return mode == TimerMode::CountUp && !limit; }
 };
 
-QString timer_text(int64_t milliseconds, int units, bool round_up, int64_t range);
-QString timer_readout(obs_source_t *source);
+inline constexpr int kSavedTimer = -2, kNextQuarter = -1;
+inline constexpr int timer_marks[]{kNextQuarter, 15, 30, 45, 0};
+inline constexpr const char *timer_mark_labels[]{"Countdown.NextQuarter", "Countdown.Next15", "Countdown.Next30",
+						 "Countdown.Next45", "Countdown.NextHour"};
+
+inline QDateTime next_timer_mark(const QDateTime &now, int mark)
+{
+	if (!now.isValid() || (mark != kNextQuarter && mark != 0 && mark != 15 && mark != 30 && mark != 45))
+		return {};
+	// Advance real minutes so midnight and both sides of a daylight-saving change use the OBS computer's clock.
+	auto next = now.addMSecs(60000 - now.time().second() * 1000 - now.time().msec());
+	while (next.isValid() && (mark == kNextQuarter ? next.time().minute() % 15 != 0 : next.time().minute() != mark))
+		next = next.addSecs(60);
+	return next;
+}
+inline int saved_timer_mark(obs_data_t *settings)
+{
+	return obs_data_has_user_value(settings, "clock_shortcut") ? int(obs_data_get_int(settings, "clock_shortcut"))
+								   : kSavedTimer;
+}
+bool timer_command(obs_source_t *source, const char *operation, int mark = kSavedTimer);
+void timer_vendor_list(obs_data_t *request, obs_data_t *response, void *);
+void timer_vendor_control(obs_data_t *request, obs_data_t *response, void *);
+
+QString timer_readout(obs_source_t *source, bool *end_message = nullptr);
 void edit_timer(QWidget *parent, obs_source_t *source);
 void register_countdown();
 void register_countdown_dock();
