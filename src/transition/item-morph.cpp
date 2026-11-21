@@ -285,7 +285,8 @@ void Layer::render()
 		const Shown &only = had ? was : will;
 		if (had || has) {
 			const double gone = had ? t : 1.0 - t;
-			const Quad quad = room_moved(only.quad, job->room_path ? job->room_path->bounds : bounds_of(only.quad),
+			const Quad quad = room_moved(only.quad,
+						     job->room_path ? job->room_path->bounds : bounds_of(only.quad),
 						     job->edge, gone, (double)job->cx, (double)job->cy);
 			const float opacity = job->fade ? (float)std::clamp(1.0 - gone, 0.0, 1.0) : 1.0f;
 			if (opacity >= 0.999f) {
@@ -907,7 +908,8 @@ void link_room_moves(std::vector<RoomMove> &moves)
 				path = std::make_shared<RoomPath>(*move.primary->bounds);
 			Bounds &a = path->bounds;
 			const Bounds &b = *move.bounds;
-			a = Bounds{std::min(a.x0, b.x0), std::min(a.y0, b.y0), std::max(a.x1, b.x1), std::max(a.y1, b.y1)};
+			a = Bounds{std::min(a.x0, b.x0), std::min(a.y0, b.y0), std::max(a.x1, b.x1),
+				   std::max(a.y1, b.y1)};
 		}
 	}
 }
@@ -1058,7 +1060,8 @@ void tick(void *, float)
 	}
 	// A change that was under way for something that has started again is over.
 	for (const std::shared_ptr<Job> &job : g_jobs)
-		if (started.count(job->to_transition) || started.count(job->from_transition) || started.count(job->room_clock))
+		if (started.count(job->to_transition) || started.count(job->from_transition) ||
+		    started.count(job->room_clock))
 			job->done = true;
 
 	// Pairs: a hide and a show in one scene that is on screen. Linked sources

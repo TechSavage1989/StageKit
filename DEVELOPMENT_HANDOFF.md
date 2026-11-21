@@ -28,7 +28,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 When Show in Scenes brings an item along through a Move Source or Move Scene Item link, Morph
 keeps that relationship for this press. Two Make Room items in the same scene take the primary
 item's edge and travel far enough for both to clear the canvas. The portable frontend fixture
-checks direction and spacing on hide, show and restore, and checks the switch with links disabled.
+checks direction and spacing on hide, show and restore, including different easing choices and the switch with links disabled. Items with matching durations share the primary clock and wait for their layers together.
 
 ## Show in Scenes camera transitions
 
