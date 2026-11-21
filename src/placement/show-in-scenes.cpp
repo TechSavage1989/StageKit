@@ -77,6 +77,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/pick-list.hpp"
 #include "../common/scene-rev.hpp"
 #include "../common/tooltip.hpp"
+#include "../transition/item-morph.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -181,11 +182,18 @@ void each_item(const std::vector<std::string> &sources, const std::vector<std::s
 
 // Adds to `sources` the items their Send To filters bring along, and those
 // Place Item filters that move them bring along.
-void add_linked(std::vector<std::string> &sources)
+RoomMoveLinks add_linked(std::vector<std::string> &sources)
 {
 	const std::vector<std::string> leaders = sources;
-	auto add = [&sources](const char *name) {
-		if (name && *name && std::find(sources.begin(), sources.end(), name) == sources.end())
+	MorphLinks links;
+	auto add = [&](const std::string &leader, const std::string &name) {
+		// Explicitly listed sources each use their own rule. Only a source brought along follows.
+		if (name.empty() || std::find(leaders.begin(), leaders.end(), name) != leaders.end())
+			return;
+		const auto link = std::make_pair(leader, name);
+		if (std::find(links.begin(), links.end(), link) == links.end())
+			links.push_back(link);
+		if (std::find(sources.begin(), sources.end(), name) == sources.end())
 			sources.push_back(name);
 	};
 	for (const std::string &leader : leaders) {
@@ -207,11 +215,11 @@ void add_linked(std::vector<std::string> &sources)
 			&linked);
 		obs_source_release(found);
 		for (const std::string &name : linked)
-			add(name.c_str());
+			add(leader, name);
 	}
 	struct Scan {
 		const std::vector<std::string> *leaders;
-		std::vector<std::string> linked;
+		MorphLinks linked;
 	} scan{&leaders, {}};
 	obs_enum_scenes(
 		[](void *param, obs_source_t *scene) {
@@ -226,15 +234,16 @@ void add_linked(std::vector<std::string> &sources)
 					const char *moved = obs_data_get_string(settings, "item");
 					if (std::find(sc->leaders->begin(), sc->leaders->end(), moved) !=
 					    sc->leaders->end())
-						sc->linked.push_back(obs_data_get_string(settings, "linked"));
+						sc->linked.emplace_back(moved, obs_data_get_string(settings, "linked"));
 					obs_data_release(settings);
 				},
 				param);
 			return true;
 		},
 		&scan);
-	for (const std::string &name : scan.linked)
-		add(name.c_str());
+	for (const auto &[leader, name] : scan.linked)
+		add(leader, name);
+	return links.empty() ? nullptr : std::make_shared<const MorphLinks>(std::move(links));
 }
 
 class ShowInScenes {
@@ -426,17 +435,14 @@ public:
 			hide_standby = as == HideAs::Filter ? hide_standby_ : as == HideAs::Cover;
 			restore = restore_;
 		}
-		// "Show only what it hid": a show brings back what the last hides
-		// noted, nothing else.
-		if (restore && show)
-			return restore_record(change, own_change);
 		obs_source_t *parent = obs_filter_get_parent(source_);
 		if (sources.empty() && parent && obs_source_get_name(parent))
 			sources.push_back(obs_source_get_name(parent));
 		// "Bring-along items too": whatever the sources' Send To keys, and
 		// Place Item filters that move them, are set to bring along.
-		if (with_linked)
-			add_linked(sources);
+		const RoomMoveLinks links = with_linked ? add_linked(sources) : nullptr;
+		if (restore && show)
+			return restore_record(change, own_change, links);
 		// "Hide shows Standby Image": a source with an enabled Standby Image
 		// is covered with it instead of hidden, and uncovered by a show.
 		// (A show also takes away what an earlier hide covered, whichever
@@ -480,6 +486,7 @@ public:
 				  if (!set_item_visible(item, show, own == own_change.end() ? change : own->second,
 							scene))
 					  return;
+				  item_morph_note_move_links(item, show, links);
 				  changed++;
 				  if (restore && !show) {
 					  obs_source_t *owner = obs_scene_get_source(obs_sceneitem_get_scene(item));
@@ -626,7 +633,8 @@ public:
 
 	// A show press with "Show only what it hid": brings back what was noted
 	// and is still hidden, then forgets it all.
-	int restore_record(const ItemChange &change, const std::map<std::string, ItemChange> &own_change)
+	int restore_record(const ItemChange &change, const std::map<std::string, ItemChange> &own_change,
+			   const RoomMoveLinks &links)
 	{
 		Record record;
 		{
@@ -647,8 +655,10 @@ public:
 			if (item && scene && !obs_sceneitem_visible(item) && !mode_holds_hidden(scene, item)) {
 				const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
 				const auto own = own_change.find(name ? name : "");
-				if (set_item_visible(item, true, own == own_change.end() ? change : own->second, scene))
+				if (set_item_visible(item, true, own == own_change.end() ? change : own->second, scene)) {
+					item_morph_note_move_links(item, true, links);
 					shown++;
+				}
 			}
 			obs_source_release(scene);
 			obs_sceneitem_release(item);

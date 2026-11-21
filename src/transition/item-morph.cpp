@@ -84,6 +84,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <cmath>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -143,6 +144,7 @@ struct Job {
 	// off, or in from, `edge`.
 	bool solo = false;
 	RoomEdge edge = RoomEdge::Left;
+	std::optional<Bounds> room_bounds; // the whole linked set travels far enough to clear the screen
 	bool fade = false;
 	std::atomic<float> t0{-1.0f}; // the clock's time when the change was first drawn
 	// Said by OBS's own thread: the layer is in the scene, or could not be put there.
@@ -273,7 +275,7 @@ void Layer::render()
 		const Shown &only = had ? was : will;
 		if (had || has) {
 			const double gone = had ? t : 1.0 - t;
-			const Quad quad = room_moved(only.quad, bounds_of(only.quad), job->edge, gone, (double)job->cx,
+			const Quad quad = room_moved(only.quad, job->room_bounds.value_or(bounds_of(only.quad)), job->edge, gone, (double)job->cx,
 						     (double)job->cy);
 			const float opacity = job->fade ? (float)std::clamp(1.0 - gone, 0.0, 1.0) : 1.0f;
 			if (opacity >= 0.999f) {
@@ -328,6 +330,7 @@ struct Entry {
 	std::atomic<bool> over{false};
 	obs_weak_source_t *scene = nullptr; // weak
 	int64_t item_id = 0;
+	RoomMoveLinks move_links; // only the links from the press that started this transition
 	const char *edge = nullptr; // the nearest edge, as the change began (a string of OBS's own)
 	uint64_t at_ns = 0;
 	// Which start of its transition this is: a change knows its entries by it.
@@ -376,7 +379,8 @@ struct Bin {
 std::mutex g_mutex;
 std::unordered_map<obs_source_t *, MorphSaid> g_said; // every Morph there is
 std::unordered_map<obs_source_t *, Entry> g_entries;  // those that are an item's
-std::vector<obs_source_t *> g_started;                // started, and not yet looked up
+using Starts = std::unordered_map<obs_source_t *, RoomMoveLinks>;
+Starts g_started; // started, and not yet looked up
 // Changed by the tick only (and by the ending of all changes), with
 // `g_tick_mutex` and `g_mutex` both held; read by the tick without the second.
 std::vector<std::shared_ptr<Job>> g_jobs;
@@ -645,7 +649,7 @@ struct Found {
 // layer out with its scene locked and every listener called meanwhile; one
 // that asks OBS for a source there would wait for this thread, and this
 // thread for the scene.
-void find_items(const std::vector<obs_source_t *> &wanted, std::vector<Found> &out, Bin &held)
+void find_items(const Starts &wanted, std::vector<Found> &out, Bin &held)
 {
 	std::vector<obs_source_t *> scenes;
 	obs_enum_scenes(
@@ -656,7 +660,7 @@ void find_items(const std::vector<obs_source_t *> &wanted, std::vector<Found> &o
 		},
 		&scenes);
 	struct Look {
-		const std::vector<obs_source_t *> *wanted;
+		const Starts *wanted;
 		std::vector<Found> *out;
 		obs_source_t *scene;
 	} look{&wanted, &out, nullptr};
@@ -672,8 +676,7 @@ void find_items(const std::vector<obs_source_t *> &wanted, std::vector<Found> &o
 				auto *l = static_cast<Look *>(p);
 				for (const bool show : {true, false}) {
 					obs_source_t *has = obs_sceneitem_get_transition(item, show);
-					if (!has ||
-					    std::find(l->wanted->begin(), l->wanted->end(), has) == l->wanted->end())
+					if (!l->wanted->count(has))
 						continue;
 					obs_sceneitem_addref(item);
 					l->out->push_back(Found{has, obs_source_get_ref(l->scene), item, show,
@@ -839,16 +842,71 @@ RoomCentre room_centre(const Half &self, const std::vector<Half> &opposite, Bin 
 	return centre;
 }
 
-// Make Room: one item by itself, moved off (or in from) `edge` by a layer.
-// False when it cannot be (it then goes by itself, inside its own frame).
-bool start_solo(Half &h, RoomEdge edge, bool pushed)
+struct RoomMove {
+	Half *half;
+	RoomEdge edge;
+	bool pushed;
+	std::optional<Bounds> bounds;
+	RoomMove *primary = nullptr;
+	std::optional<Bounds> together = std::nullopt;
+};
+
+// Resolve only the items actually moving on the same press, in the same scene and direction.
+// Choose the primary's edge before adding followers to the bounds used for travel.
+void link_room_moves(std::vector<RoomMove> &moves)
 {
+	for (RoomMove &move : moves) {
+		const Half &follower = *move.half;
+		const RoomMoveLinks &links = follower.entry->move_links;
+		if (!links || !move.bounds)
+			continue;
+		const char *name = obs_source_get_name(obs_sceneitem_get_source(follower.item));
+		for (const auto &[leader, linked] : *links) {
+			if (linked != name)
+				continue;
+			double best = 0.0;
+			for (RoomMove &candidate : moves) {
+				const Half &primary = *candidate.half;
+				if (!candidate.bounds || primary.scene != follower.scene ||
+				    primary.entry->show != follower.entry->show || primary.entry->move_links != links ||
+				    leader != obs_source_get_name(obs_sceneitem_get_source(primary.item)))
+					continue;
+				// If the scene uses the primary more than once, follow the nearest instance.
+				const Bounds &a = *move.bounds, &b = *candidate.bounds;
+				const double distance = std::hypot(a.x0 + a.x1 - b.x0 - b.x1, a.y0 + a.y1 - b.y0 - b.y1);
+				if (!move.primary || distance < best ||
+				    (distance == best && primary.entry->item_id < move.primary->half->entry->item_id)) {
+					move.primary = &candidate;
+					best = distance;
+				}
+			}
+			if (move.primary)
+				break;
+		}
+		if (move.primary) {
+			auto &bounds = move.primary->together;
+			if (!bounds)
+				bounds = move.primary->bounds;
+			const Bounds &b = *move.bounds;
+			bounds = Bounds{std::min(bounds->x0, b.x0), std::min(bounds->y0, b.y0),
+					std::max(bounds->x1, b.x1), std::max(bounds->y1, b.y1)};
+		}
+	}
+}
+
+// Make Room: one item moved off (or in from) its chosen edge by a layer.
+// False when it cannot be (it then goes by itself, inside its own frame).
+bool start_solo(const RoomMove &move)
+{
+	Half &h = *move.half;
+	const RoomMove &path = move.primary ? *move.primary : move;
 	obs_source_t *clock = obs_sceneitem_get_transition(h.item, h.entry->show);
 	if (clock != h.transition || !obs_scene_from_source(h.scene))
 		return false;
 	auto job = std::make_shared<Job>();
 	job->solo = true;
-	job->edge = edge;
+	job->edge = path.edge;
+	job->room_bounds = path.together;
 	job->fade = h.said.room_fade;
 	job->to_transition = obs_source_get_ref(clock);
 	job->from_transition = clock;
@@ -874,8 +932,8 @@ bool start_solo(Half &h, RoomEdge edge, bool pushed)
 	h.taken = true;
 	static const char *const kEdges[] = {"left", "right", "top", "bottom"};
 	obs_log(LOG_INFO, "Morph: '%s' %s '%s', by the %s edge (%s)", obs_source_get_name(source),
-		h.entry->show ? "comes into" : "makes room in", obs_source_get_name(h.scene), kEdges[(int)edge],
-		pushed ? "away from the change under way" : "the nearest edge");
+		h.entry->show ? "comes into" : "makes room in", obs_source_get_name(h.scene), kEdges[(int)path.edge],
+		move.primary ? "with its linked primary" : (path.pushed ? "away from the change under way" : "the nearest edge"));
 	return true;
 }
 
@@ -895,7 +953,7 @@ void tick(void *, float)
 	}
 	const uint64_t now = os_gettime_ns();
 	take_up_layers();
-	std::vector<obs_source_t *> started;
+	Starts started;
 	{
 		std::lock_guard lock(g_mutex);
 		started.swap(g_started);
@@ -913,8 +971,8 @@ void tick(void *, float)
 	std::vector<Half> hides, shows;
 	{
 		std::lock_guard lock(g_mutex);
-		for (obs_source_t *transition : started) {
-			auto old = g_entries.find(transition);
+		for (const auto &start : started) {
+			auto old = g_entries.find(start.first);
 			if (old != g_entries.end()) {
 				old->second.let_go();
 				g_entries.erase(old);
@@ -928,6 +986,7 @@ void tick(void *, float)
 				entry.scene = obs_source_get_weak_source(f.scene);
 				entry.item_id = obs_sceneitem_get_id(f.item);
 				entry.edge = f.edge;
+				entry.move_links = started.at(f.transition);
 				entry.at_ns = now;
 				entry.seq = ++g_seq;
 			}
@@ -971,8 +1030,7 @@ void tick(void *, float)
 	}
 	// A change that was under way for something that has started again is over.
 	for (const std::shared_ptr<Job> &job : g_jobs)
-		if (std::find(started.begin(), started.end(), job->to_transition) != started.end() ||
-		    std::find(started.begin(), started.end(), job->from_transition) != started.end())
+		if (started.count(job->to_transition) || started.count(job->from_transition))
 			job->done = true;
 
 	// Pairs: a hide and a show in one scene that is on screen. Linked sources
@@ -1083,21 +1141,23 @@ void tick(void *, float)
 	// Make Room: each edge is chosen before any of them moves, so the order
 	// they are gone through in changes nothing. (Not in a scene off screen,
 	// nor in a group: there it goes off its own frame's edge, as a slide.)
-	std::vector<std::pair<RoomEdge, bool>> edges;
+	std::vector<RoomMove> moves;
 	for (Half *h : rooms) {
 		const RoomCentre centre = h->said.room_push ? room_centre(*h, h->entry->show ? hides : shows, held)
 							    : RoomCentre();
 		Shown shown;
 		const double cw = obs_source_get_width(h->scene), ch = obs_source_get_height(h->scene);
-		const RoomEdge edge = shown_of(h->item, shown) ? room_edge(bounds_of(shown.quad), cw, ch,
-									   centre.any() ? &centre : nullptr)
-							       : RoomEdge::Left;
-		edges.emplace_back(edge, centre.any());
+		std::optional<Bounds> bounds;
+		if (shown_of(h->item, shown))
+			bounds = bounds_of(shown.quad);
+		const RoomEdge edge = bounds ? room_edge(*bounds, cw, ch, centre.any() ? &centre : nullptr) : RoomEdge::Left;
+		moves.push_back({h, edge, centre.any(), bounds});
 	}
-	for (size_t i = 0; i < rooms.size(); i++) {
-		if (!start_solo(*rooms[i], edges[i].first, edges[i].second)) {
+	link_room_moves(moves);
+	for (const RoomMove &move : moves) {
+		if (!start_solo(move)) {
 			std::lock_guard lock(g_mutex);
-			rooms[i]->entry->state = ItemMorph::Alone;
+			move.half->entry->state = ItemMorph::Alone;
 		}
 	}
 	// Changes that are over: the clock has run out, the item was hidden
@@ -1163,9 +1223,21 @@ void item_morph_started(obs_source_t *transition)
 	auto entry = g_entries.find(transition);
 	if (entry != g_entries.end())
 		entry->second.over = true;
-	if (std::find(g_started.begin(), g_started.end(), transition) == g_started.end())
-		g_started.push_back(transition);
+	g_started[transition].reset(); // a later independent start never inherits a previous press
 	g_busy = true;
+}
+
+void item_morph_note_move_links(obs_sceneitem_t *item, bool show, const RoomMoveLinks &links)
+{
+	if (!links)
+		return;
+	// Show in Scenes applies its whole press on the video thread. OBS announces the
+	// transition start synchronously, before set_item_visible returns.
+	obs_source_t *transition = obs_sceneitem_get_transition(item, show);
+	std::lock_guard lock(g_mutex);
+	auto start = g_started.find(transition);
+	if (start != g_started.end())
+		start->second = links;
 }
 
 void item_morph_stopped(obs_source_t *transition)
@@ -1180,7 +1252,7 @@ void item_morph_gone(obs_source_t *transition)
 {
 	std::lock_guard lock(g_mutex);
 	g_said.erase(transition);
-	g_started.erase(std::remove(g_started.begin(), g_started.end(), transition), g_started.end());
+	g_started.erase(transition);
 	auto entry = g_entries.find(transition);
 	if (entry != g_entries.end())
 		entry->second.over = true;

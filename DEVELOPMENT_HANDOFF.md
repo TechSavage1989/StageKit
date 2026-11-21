@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | fix/show-in-scenes-camera-transitions. Release notes in docs/releases/0.1.0-beta236.md. |
+| Working branch | fix/linked-make-room-direction. Release notes in docs/releases/0.1.0-beta237.md. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -22,6 +22,13 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
+
+## Linked Make Room motion
+
+When Show in Scenes brings an item along through a Move Source or Move Scene Item link, Morph
+keeps that relationship for this press. Two Make Room items in the same scene take the primary
+item's edge and travel far enough for both to clear the canvas. The portable frontend fixture
+checks direction and spacing on hide, show and restore, and checks the switch with links disabled.
 
 ## Show in Scenes camera transitions
 

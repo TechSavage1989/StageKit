@@ -31,6 +31,9 @@ For Show in Scenes, resolve show and hide separately for each targeted item. An 
 transition uses the covering Scene Transitions rule, then the transition the Sources eye
 would play for that direction. Exercise the actual Stream Deck request, filter toggle,
 manually operated items and saved restore rules in the OBS frontend camera test.
+Keep directional Move links scoped to the press that changed visibility. For linked Make Room
+items, use the primary's edge and the complete linked set's travel bounds. Test with an
+ordinary OBS source near a different edge, including restore and the switch with links disabled.
 
 ## Checking setting names in the guide
 

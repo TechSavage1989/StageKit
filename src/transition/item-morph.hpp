@@ -14,6 +14,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/easing.hpp"
 
 #include <obs.h>
+#include <memory>
 
 // Morph between two items of one scene: one hidden and another shown at the
 // same moment, each with Morph as its way of going and coming. The one moves,
@@ -49,6 +50,10 @@ void item_morph_said(obs_source_t *transition, const MorphSaid &said);
 void item_morph_started(obs_source_t *transition);
 void item_morph_stopped(obs_source_t *transition);
 void item_morph_gone(obs_source_t *transition);
+
+// The directional Move links for a single Show in Scenes press, shared by the starts it caused.
+using RoomMoveLinks = std::shared_ptr<const MorphLinks>;
+void item_morph_note_move_links(obs_sceneitem_t *item, bool show, const RoomMoveLinks &links);
 
 // What a Morph transition that is an item's own is to draw.
 enum class ItemMorph {
