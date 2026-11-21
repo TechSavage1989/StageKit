@@ -1,6 +1,6 @@
 # Replacing OBS filters and tools with StageKit
 
-In OBS, open **Tools > StageKit > OBS filter replacements**. Search for the name currently shown in OBS, including names such as **DWM.Name** or **Move Source Swap**. The second column shows the corresponding StageKit control or the built-in OBS feature.
+In OBS, open **Tools > StageKit > OBS filter replacements**. Search for the name currently shown in OBS, including names such as **DWM.Name** or **Move Source Swap**. The second column shows the corresponding StageKit control or the built-in OBS feature. The Availability column identifies platform and runtime requirements on this computer.
 
 To add a filter, right-click the source, group or scene in OBS, open **Filters** and click **+** under **Effect Filters**. Choose **Source Filter** for a filter that acts on its host source. Choose **Scene Filter** for a filter that addresses items inside a scene or group. OBS can also apply a Source Filter to the finished image of a scene.
 
@@ -65,7 +65,7 @@ Each utility stores its own configuration. Recreate settings stored outside scen
 
 The copy keeps source names, UUIDs, filter order, enabled state, settings and Move filter references. Matching ShaderFilter example files are relinked to StageKit's own copies. An edited example stays at its existing path and is listed for review. Keep custom shader files and any referenced images available when removing their original plugin.
 
-**Automatic Scene Switcher** is the built-in OBS tool. **Advanced Scene Switcher** is a separate third-party macro engine. The copy preserves its macro data and reports its macro count. Older StreamFX blur and SDF effects also retain their original IDs. Keep those plugins available for collections that depend on them. [Advanced Scene Switcher](https://github.com/WarmUpTill/SceneSwitcher)
+**Automatic Scene Switcher** is the built-in OBS tool. **Advanced Scene Switcher** is a separate third-party macro engine. The copy preserves its macro data and reports the number of macros, excluding group headings. Older StreamFX blur and SDF effects also retain their original IDs. Keep those plugins available for collections that depend on them. [Advanced Scene Switcher](https://github.com/WarmUpTill/SceneSwitcher)
 
 ## Implementation sources
 

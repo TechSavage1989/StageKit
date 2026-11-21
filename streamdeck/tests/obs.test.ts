@@ -55,6 +55,10 @@ let blurred = false;
 let programScene = "Game Scene";
 let previewScene = "";
 let studioMode = false;
+let virtualCamera = false;
+let muted = false;
+let collection = "Test collection";
+const member = { sceneItemId: 7, sourceName: "camera", sceneItemEnabled: true };
 let selectedTransition = "Fade";
 let selectedDuration = 300;
 
@@ -155,6 +159,30 @@ function answer(requestType: string, data: Record<string, unknown> = {}): { ok: 
 			return { ok: true, data: { scenes: [{ sceneName: "Game Scene" }] } };
 		case "GetGroupList":
 			return { ok: true, data: { groups: ["A Group"] } };
+		case "GetSceneCollectionList":
+			return { ok: true, data: { currentSceneCollectionName: collection } };
+		case "GetGroupSceneItemList":
+			return { ok: true, data: { sceneItems: data.sceneName === "A Group" ? [member] : [] } };
+		case "GetSceneItemList":
+			return { ok: true, data: { sceneItems: [] } };
+		case "SetSceneItemEnabled":
+			if (data.sceneItemId !== 7 || data.sceneName !== "A Group") return { ok: false };
+			member.sceneItemEnabled = Boolean(data.sceneItemEnabled);
+			return { ok: true };
+		case "GetInputMute":
+			return data.inputName === "camera" ? { ok: true, data: { inputMuted: muted } } : { ok: false };
+		case "SetInputMute":
+			muted = Boolean(data.inputMuted);
+			return { ok: true };
+		case "SetStudioModeEnabled":
+			studioMode = Boolean(data.studioModeEnabled);
+			return { ok: true };
+		case "GetVirtualCamStatus":
+			return { ok: true, data: { outputActive: virtualCamera } };
+		case "StartVirtualCam":
+		case "StopVirtualCam":
+			virtualCamera = requestType === "StartVirtualCam";
+			return { ok: true };
 		case "GetSourceFilterList":
 			return list ? { ok: true, data: { filters: list } } : { ok: false };
 		case "GetSourceFilter": {
@@ -984,4 +1012,24 @@ test("a key's Works with row says the kind of the filter chosen, what the captur
 	// Nothing chosen, and a key set to nothing in OBS.
 	assert.equal((await worksWithNow(uuid("showinscenes"), {}))?.chosen, "(choose one below)");
 	assert.deepEqual(await worksWithNow(uuid("stream"), {}), { kind: "OBS streaming", chosen: "" });
+});
+
+test("OBS control keys use ordinary filters, scene and group identities, mixer, Studio Mode and virtual camera", async () => {
+	assert.ok((await obs.stageKitFilters(true)).some((f) => f.name === "Colour"));
+	assert.equal((await obs.stageKitFilters()).some((f) => f.name === "Colour"), false);
+	const [target] = await obs.sceneItemTargets();
+	assert.equal(await obs.controlState("obssource", target.value), true);
+	assert.equal(await obs.controlState("obssource", target.value, false), false);
+	collection = "Other collection";
+	try { await assert.rejects(obs.controlState("obssource", target.value, true)); }
+	finally { collection = "Test collection"; }
+	member.sourceName = "Changed";
+	try { await assert.rejects(obs.controlState("obssource", target.value, true)); }
+	finally { member.sourceName = "camera"; }
+	assert.equal(member.sceneItemEnabled, false);
+	assert.deepEqual(await obs.mixerInputs(), ["camera"]);
+	for (const [key, value] of [["obsmute","camera"], ["obsstudio",""], ["obscamera",""]]) {
+		assert.equal(await obs.controlState(key, value, true), true);
+		assert.equal(await obs.controlState(key, value, false), false);
+	}
 });

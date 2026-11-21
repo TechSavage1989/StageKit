@@ -60,7 +60,7 @@ int main(int argc, char **argv)
 			"transitions":[{"id":"move_transition","settings":{"duration":300}}],
 			"AuxAudioDevice1":{"id":"wasapi_input_capture","name":"Mic","settings":{},"filters":[{"id":"move_audio_action_filter"}]},
 			"modules":{"quick_access_utility":{"entries":[1]},"source-dock":{"old":1},"stagekit.dock":{"new":2},
-			"advanced-scene-switcher":{"macros":[{"name":"kept"}]}}
+			"advanced-scene-switcher":{"macros":[{"name":"kept"},{"name":"Folder","group":true}]}}
 		})");
 		auto collection = original;
 		auto result = stagekit::convert_collection(collection, catalog, resources);

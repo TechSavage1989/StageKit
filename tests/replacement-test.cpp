@@ -158,7 +158,24 @@ int main(int argc, char **argv)
 	if (!load_module(plugin_bin, plugin_data))
 		return 1;
 
+	const auto reference = std::filesystem::path(plugin_bin).parent_path() / "tests" / "obs-original";
+	for (auto [name, resources] : {std::pair{"move-transition", "move"}, {"obs-shaderfilter", "shader"}, {"obs-composite-blur", "composite"}}) {
+		const std::string binary = (reference / (std::string(name) + ".so")).string();
+		const std::string data = std::string(plugin_data) + "/components/" + resources;
+		if (!load_module(binary.c_str(), data.c_str())) return 1;
+	}
 	obs_post_load_modules();
+	auto move_callback = [](const char *proc, const char *filter) {
+		calldata_t data{};
+		calldata_set_string(&data, "filter_id", filter);
+		proc_handler_call(obs_get_proc_handler(), proc, &data);
+		auto *result = calldata_ptr(&data, "callback");
+		calldata_free(&data);
+		return result;
+	};
+	const auto *ported = move_callback("stagekit_port_move_get_transition_filter_function", "stagekit_port_shader_filter");
+	const auto *original_move = move_callback("move_get_transition_filter_function", "shader_filter");
+	check(ported && original_move && ported != original_move, "the original Move module and the StageKit component keep independent callbacks");
 	const auto has_label = [](const char *id, const char *prefix) {
 		const char *version = obs_get_latest_input_type_id(id);
 		const char *name = version ? obs_source_get_display_name(version) : nullptr;
@@ -297,6 +314,28 @@ int main(int argc, char **argv)
 			} else {
 				check(false, name + " unexpectedly changed the source size");
 			}
+		}
+		if ((name == "composite" || name == "saved-shader") && w == fw && h == fh) {
+			const auto port_frame = render(image_source, w, h);
+			auto *saved = obs_source_get_settings(filter);
+			const char *original_id = name == "composite" ? "obs_composite_blur" : "shader_filter";
+			auto *original = obs_source_create(original_id, "Upstream comparison", saved, nullptr);
+			obs_data_release(saved);
+			obs_source_filter_remove(image_source, filter);
+			if (original) {
+				obs_source_filter_add(image_source, original);
+				sleep_ms(140);
+				(void)render(image_source, w, h);
+				sleep_ms(60);
+				const double error = mean_abs_diff(port_frame, render(image_source, w, h));
+				printf("Original and replacement %s mean difference %.4f\n", example.name, error);
+				check(error <= 0.10, name + " matches the original plugin on the same OBS source");
+				obs_source_filter_remove(image_source, original);
+				obs_source_release(original);
+			} else {
+				check(false, name + " original plugin could not be created");
+			}
+			obs_source_filter_add(image_source, filter);
 		}
 		obs_source_filter_remove(image_source, filter);
 		obs_source_release(filter);

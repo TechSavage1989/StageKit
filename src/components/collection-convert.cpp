@@ -212,8 +212,14 @@ CollectionReport convert_collection(Json &collection, const Json &catalog, const
 		const auto automations = modules->find("advanced-scene-switcher");
 		if (automations != modules->end() && automations->is_object()) {
 			const auto macros = automations->find("macros");
-			if (macros != automations->end() && macros->is_array() && !macros->empty())
-				report.review["Advanced Scene Switcher macros"] = macros->size();
+			if (macros != automations->end() && macros->is_array()) {
+				size_t count = 0;
+				for (const auto &entry : *macros)
+					if (entry.is_object() && (!entry.contains("group") || entry["group"] != true))
+						++count;
+				if (count)
+					report.review["Advanced Scene Switcher macros"] = count;
+			}
 		}
 		rename_key(*modules, "quick_access_utility", "stagekit.quick_access");
 		rename_key(*modules, "source-dock", "stagekit.dock");

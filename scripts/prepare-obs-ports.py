@@ -23,11 +23,14 @@ def write_if_changed(path, text):
     path.write_text(text, encoding="utf-8", newline="\n")
 
 
-def adapt_file(text, key, filename, settings):
-    types = [row[:3] for row in settings.get("types", [])]
+def modern_obs_api(text):
     text = text.replace("util/circlebuf.h", "util/deque.h")
     text = re.sub(r"\bcirclebuf\b", "deque", text)
-    text = re.sub(r"\bcirclebuf_", "deque_", text)
+    return re.sub(r"\bcirclebuf_", "deque_", text)
+
+
+def adapt_file(text, key, filename, settings):
+    types = [row[:3] for row in settings.get("types", [])]
     for old, callback, label in types:
         text = text.replace('"' + old + '"', '"stagekit_port_' + old + '"')
         text = re.sub(r'(\bget_name\s*=\s*)' + callback + r'\b', r'\1sk_' + callback, text)
@@ -40,13 +43,16 @@ def adapt_file(text, key, filename, settings):
     text = re.sub(r'(obs_websocket_register_vendor\(")([^"]+)', r'\1stagekit-port-\2', text)
     text = re.sub(r'(obs_hotkey_register_frontend\(\s*")([^"]+)', r'\1stagekit.port.\2', text)
     # Source UUIDs and user-assigned filter names must never be rewritten.
-    if key == "shader":
-        text = text.replace('obs_get_module("move-transition")', 'obs_get_module("stagekit-port-move")')
+    text = text.replace('obs_get_module("move-transition")', 'obs_get_module("stagekit-port-move")')
+    for name in ("move_get_transition_filter_function", "get_transition_table_transition"):
+        text = text.replace('"' + name + '"', '"stagekit_port_' + name + '"')
+        text = text.replace('"void ' + name + '(', '"void stagekit_port_' + name + '(')
     if key == "move":
         text = re.sub(r'strcmp\((id(?:_a|_b)?), "source-clone"\) == 0',
                       lambda m: '(' + m[0] + ' || strcmp(' + m[1] + ', "stagekit_port_source-clone") == 0)', text)
         text = text.replace('obs_get_module("obs-shaderfilter")', 'obs_get_module("stagekit-port-shader")')
     if key == "quick":
+        text = text.replace('"source-clone"', '"stagekit_port_source-clone"')
         text = text.replace('"source_release"', '"source_destroy"')
         if filename == "quick-access-utility.cpp":
             text = text.replace("std::string uuid = obs_source_get_uuid(newScene);", "if (!newScene) return;\n\tstd::string uuid = obs_source_get_uuid(newScene);")
@@ -66,7 +72,29 @@ def adapt_file(text, key, filename, settings):
         for name in ("copyTransformHotkey", "pasteTransformHotkey", "sceneCollectionManagerHotkey",
                      "backupHotkey", "loadLastBackupHotkey", "loadFirstBackupHotkey"):
             text = text.replace('"' + name + '"', '"stagekit.port.' + name + '"')
-        text = text.replace("scenes/source_copy_temp.json", "scenes/stagekit_source_copy_temp.json")
+        text = text.replace("source_copy_temp", "stagekit_source_copy_temp").replace("Source Copy Temp", "StageKit Source Copy Temp")
+    if key == "dock":
+        text = text.replace("obs_frontend_add_dock_by_id(title, title,", 'obs_frontend_add_dock_by_id((QByteArray("stagekit-source-dock-") + title).constData(), title,')
+        text = text.replace("obs_frontend_add_dock_by_id(t.constData(), t.constData(),", 'obs_frontend_add_dock_by_id((QByteArray("stagekit-source-dock-") + t).constData(), t.constData(),')
+        text = re.sub(r'obs_frontend_remove_dock\((.+?)->objectName\(\).toUtf8\(\).constData\(\)\)',
+                      r'obs_frontend_remove_dock((QByteArray("stagekit-source-dock-") + \1->objectName().toUtf8()).constData())', text)
+    if key == "collections" and filename == "scene-collection-manager.cpp":
+        text = text.replace('"SceneCollectionManager",', '"StageKitCollectionManager",')
+        text = text.replace('"scene_collection_manager_temp"', '"stagekit_collection_manager_temp"')
+        text = replace_once(text, "static std::string customBackupDir;", """static std::string customBackupDir;
+static std::string stagekitBackupDir()
+{
+    char *path = obs_module_config_path("collection-backups");
+    std::string result = path ? path : "";
+    bfree(path);
+    return result;
+}""")
+        text = text.replace("std::string backupDir = filename;", "std::string backupDir = stagekitBackupDir();")
+        start = text.index("if (customBackupDir.empty())", text.index("std::string GetBackupDirectory(std::string filename)\n{"))
+        end = text.index("filename = GetFilenameFromPath", start)
+        text = text[:start] + text[end:]
+        text = text.replace("std::string dir = customBackupDir;", "std::string dir = customBackupDir.empty() ? stagekitBackupDir() : customBackupDir;")
+        text = text.replace("auto ptr = SceneCollectionsPath();", "auto ptr = stagekitBackupDir();")
     if key == "layouts" and filename == "plugin-main.cpp":
         start = text.index("    const char *moduleFilePathCStr")
         end = text.index("    // Log the settings file path", start)
@@ -88,10 +116,12 @@ def adapt_file(text, key, filename, settings):
     return text
 
 
-def prepare(origin):
+def prepare(origin, reference=False):
     key = origin["key"]
     settings = spec[key]
     source, dest = ports / key, build / key
+    if reference:
+        dest = build / "reference" / key
     labels = {row[1]: row[2] for row in settings.get("types", [])}
     header = ['#pragma once', '#include <obs-module.h>',
               'static inline const char *sk_text(const char *key) {',
@@ -115,11 +145,16 @@ def prepare(origin):
                 text = text.replace("${" + name + "}", value).replace("@" + name + "@", value)
         elif path.name == "version.h" and path.with_name("version.h.in").exists():
             continue
-        text = adapt_file(text, key, path.name, settings)
+        text = modern_obs_api(text)
+        if not reference:
+            text = adapt_file(text, key, path.name, settings)
         if ('sk_text(' in text or re.search(r'\bsk_\w+get_name|\bget_name\s*=\s*sk_', text)) and path.suffix in (".cpp", ".cc", ".c"):
             text = '#include "stagekit-port-names.h"\n' + text
         write_if_changed(dest / rel, text)
 
 
 for project in origins:
-    prepare(project)
+    if len(sys.argv) < 4:
+        prepare(project)
+    elif project["key"] in ("move", "shader", "composite"):
+        prepare(project, reference=True)

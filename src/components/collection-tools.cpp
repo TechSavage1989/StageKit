@@ -18,6 +18,7 @@
 #include <QVBoxLayout>
 #include <algorithm>
 #include <set>
+#include <tuple>
 
 namespace stagekit {
 namespace {
@@ -25,6 +26,22 @@ using Json = nlohmann::json;
 QString tr(const char *key)
 {
 	return QString::fromUtf8(obs_module_text(key));
+}
+
+QString availability(const std::string &port, const std::string &id)
+{
+	if (port == "ndi" && !obs_get_latest_input_type_id("stagekit_port_ndi_filter"))
+		return tr("Ports.NDIRuntime");
+	if (id.empty() || id == "ndi_output")
+		return tr("Ports.Available");
+	const std::string replacement = "stagekit_port_" + id;
+	if (obs_get_latest_input_type_id(replacement.c_str()))
+		return tr("Ports.Available");
+	if (id == "move_directshow_filter")
+		return tr("Ports.Windows");
+	if (id == "nv_move_filter")
+		return tr("Ports.NVIDIA");
+	return tr("Ports.NotLoaded");
 }
 
 struct Catalog {
@@ -101,35 +118,36 @@ void collection_tools_menu(QMenu *menu)
 			auto *search = new QLineEdit(&dialog);
 			search->setPlaceholderText(tr("Ports.Find"));
 			layout->addWidget(search);
-			auto *table = new QTableWidget(0, 2, &dialog);
-			table->setHorizontalHeaderLabels({tr("Ports.Original"), tr("Ports.StageKitControl")});
+			auto *table = new QTableWidget(0, 3, &dialog);
+			table->setHorizontalHeaderLabels({tr("Ports.Original"), tr("Ports.StageKitControl"), tr("Ports.Availability")});
 			table->setEditTriggers(QAbstractItemView::NoEditTriggers);
 			table->verticalHeader()->hide();
 			table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
 			table->horizontalHeader()->setStretchLastSection(true);
 			layout->addWidget(table);
-			std::set<std::pair<QString, QString>> rows;
+			std::set<std::tuple<QString, QString, QString>> rows;
 			for (const auto &[port, spec] : catalog.definitions.items()) {
 				if (spec.contains("types"))
 					for (const auto &type : spec.at("types")) {
-						if (type.size() >= 4)
+						if (type.size() >= 4 && type.at(0) != "source_clone_audio_wrapper_source")
 							rows.emplace(
 								QString::fromStdString(type.at(3).get<std::string>()),
-								tr(type.at(2).get<std::string>().c_str()));
+								tr(type.at(2).get<std::string>().c_str()), availability(port, type.at(0).get<std::string>()));
 					}
 				if (spec.contains("tool") && spec.contains("originalTool"))
 					rows.emplace(QString::fromStdString(spec.at("originalTool").get<std::string>()),
-						     tr(spec.at("tool").get<std::string>().c_str()));
+						     tr(spec.at("tool").get<std::string>().c_str()), availability(port, ""));
 				if (spec.contains("controls"))
 					for (const auto &item : spec.at("controls"))
 						rows.emplace(QString::fromStdString(item.at(0).get<std::string>()),
-							     tr(item.at(1).get<std::string>().c_str()));
+							     tr(item.at(1).get<std::string>().c_str()), tr(item.at(1) == "Ports.Deck" ? "Ports.Companion" : "Ports.Available"));
 			}
-			for (const auto &[old, next] : rows) {
+			for (const auto &[old, next, status] : rows) {
 				const int row = table->rowCount();
 				table->insertRow(row);
 				table->setItem(row, 0, new QTableWidgetItem(old));
 				table->setItem(row, 1, new QTableWidgetItem(next));
+				table->setItem(row, 2, new QTableWidgetItem(status));
 			}
 			QObject::connect(search, &QLineEdit::textChanged, table, [table](const QString &s) {
 				for (int r = 0; r < table->rowCount(); ++r)
@@ -143,7 +161,7 @@ void collection_tools_menu(QMenu *menu)
 					 [&] { convert_copy(&dialog, catalog); });
 			QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 			layout->addWidget(buttons);
-			dialog.resize(760, 530);
+			dialog.resize(830, 530);
 			dialog.exec();
 		} catch (const std::exception &e) {
 			QMessageBox::warning(menu, tr("Ports.Manager"), QString::fromUtf8(e.what()));
