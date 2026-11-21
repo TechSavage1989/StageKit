@@ -2,6 +2,7 @@
 #include <obs-module.h>
 #include <obs-nix-platform.h>
 #include "replacement-frame.hpp"
+#include "replacement-native.hpp"
 #include <graphics/vec2.h>
 #include <QApplication>
 #include <dlfcn.h>
@@ -130,6 +131,10 @@ int main(int argc, char **argv)
 		return 1;
 	if (!load_module(plugin_bin, plugin_data))
 		return 1;
+
+	QStringList native_issues;
+	replacement_test::check_native_filters(QString::fromUtf8(image), native_issues);
+	check(native_issues.isEmpty(), "native component renders and saved IDs: " + native_issues.join(", ").toStdString());
 
 	const auto reference = std::filesystem::path(plugin_bin).parent_path() / "tests" / "obs-original";
 	for (auto [name, resources] : {std::pair{"move-transition", "move"},

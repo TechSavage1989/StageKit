@@ -17,6 +17,7 @@ if len(sys.argv) == 2:
         draw.rectangle((x, 45, x + 2, 125), fill=(250, 230, 40, 255))
     draw.ellipse((165, 45, 285, 140), fill=(150, 45, 110, 160))
     art.save(out / "art.png")
+    art.transpose(Image.Transpose.FLIP_LEFT_RIGHT).save(out / "alternate.png")
     mask = Image.new("RGBA", (w, h))
     ImageDraw.Draw(mask).rectangle((0, 0, w // 2, h), fill=(255, 255, 255, 255))
     mask.save(out / "mask.png")

@@ -56,6 +56,7 @@
     ]
   },
   "pixel": {
+    "implementation": "stagekit",
     "types": [
       [
         "pixel_art_plugin",
@@ -66,6 +67,7 @@
     ]
   },
   "freeze": {
+    "implementation": "stagekit",
     "types": [
       [
         "freeze_filter",

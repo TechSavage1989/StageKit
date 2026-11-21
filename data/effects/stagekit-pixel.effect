@@ -1,0 +1,30 @@
+uniform float4x4 ViewProj;
+uniform texture2d image;
+uniform float2 grid;
+uniform float4 palette;
+uniform float tile;
+
+sampler_state nearest { Filter = Point; AddressU = Clamp; AddressV = Clamp; };
+struct Vertex { float4 pos : POSITION; float2 uv : TEXCOORD0; };
+Vertex project(Vertex v) { v.pos = mul(float4(v.pos.xyz, 1.0), ViewProj); return v; }
+
+float ordered_digit(float2 cell)
+{
+	float2 bit = frac(floor(cell) * 0.5) * 2.0;
+	return 2.0 * abs(bit.x - bit.y) + bit.y;
+}
+
+float4 paint(Vertex v) : TARGET
+{
+	float2 cell = min(floor(v.uv * grid), grid - 1.0);
+	float4 pixel = image.Sample(nearest, (cell + 0.5) / grid);
+	float rank = ordered_digit(cell);
+	if (tile >= 4.0) rank = 4.0 * rank + ordered_digit(cell * 0.5);
+	if (tile >= 8.0) rank = 4.0 * rank + ordered_digit(cell * 0.25);
+	float offset = ((rank + 0.5) / (tile * tile) - 0.5) * palette.a;
+	float3 scale = max(palette.rgb - 1.0, float3(1.0, 1.0, 1.0));
+	float3 mapped = saturate(floor(pixel.rgb * scale + 0.5 + offset) / scale);
+	return float4(mapped, pixel.a);
+}
+
+technique Draw { pass { vertex_shader = project(v); pixel_shader = paint(v); } }

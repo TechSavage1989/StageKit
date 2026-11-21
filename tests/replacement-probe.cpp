@@ -1,4 +1,5 @@
 #include "replacement-frame.hpp"
+#include "replacement-native.hpp"
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 #include <QApplication>
@@ -176,6 +177,7 @@ static void exercise()
 		if (!opened || !matched)
 			issues.append("Catalog search did not return the labeled Directory Watch Media filter");
 	}
+	replacement_test::check_native_filters(qEnvironmentVariable("STAGEKIT_TEST_ART"), issues);
 	check_plugin_manager(issues);
 	check_blur_output(issues);
 	QFile report(qEnvironmentVariable("STAGEKIT_TEST_REPORT"));
