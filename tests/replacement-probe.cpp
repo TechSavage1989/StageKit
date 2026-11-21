@@ -6,6 +6,9 @@
 #include <QCheckBox>
 #include <QDialog>
 #include <QFile>
+#include <QListWidget>
+#include <QMainWindow>
+#include <QSettings>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
@@ -75,6 +78,36 @@ static void check_blur_output(QStringList &issues)
 	}
 	obs_source_dec_showing(source);
 	obs_source_release(source);
+}
+
+static void check_native_layout(QStringList &issues)
+{
+	auto *module = obs_get_module("stagekit-port-layouts");
+	const char *author = obs_get_module_author(module);
+	auto *action = action_named("Dock Layout Manager (StageKit)");
+	auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+	if (!author || QString::fromUtf8(author) != "StageKit contributors" || !action || !main) {
+		issues.append("Missing native dock layout manager");
+		return;
+	}
+	char *path = obs_module_get_config_path(module, "dock-layouts.ini");
+	QSettings layouts(QString::fromUtf8(path), QSettings::IniFormat);
+	bfree(path);
+	layouts.setValue("Saved beta234 docks/WindowState", main->saveState());
+	layouts.sync();
+	bool found = false;
+	QObject owner;
+	QTimer::singleShot(100, &owner, [&] {
+		auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+		if (!dialog)
+			return;
+		auto *list = dialog->findChild<QListWidget *>("nativeLayouts");
+		found = list && list->findItems("Saved beta234 docks", Qt::MatchExactly).size() == 1;
+		dialog->reject();
+	});
+	action->trigger();
+	if (!found)
+		issues.append("Native dock layouts did not read the existing WindowState entry");
 }
 
 static void check_plugin_manager(QStringList &issues)
@@ -178,6 +211,7 @@ static void exercise()
 			issues.append("Catalog search did not return the labeled Directory Watch Media filter");
 	}
 	replacement_test::check_native_filters(qEnvironmentVariable("STAGEKIT_TEST_ART"), issues);
+	check_native_layout(issues);
 	check_plugin_manager(issues);
 	check_blur_output(issues);
 	QFile report(qEnvironmentVariable("STAGEKIT_TEST_REPORT"));

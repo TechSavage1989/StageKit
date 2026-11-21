@@ -19,3 +19,9 @@ void obs_module_unload(void)
 	if (stagekit::native::component.unload)
 		stagekit::native::component.unload();
 }
+
+void obs_module_post_load(void)
+{
+	if (stagekit::native::component.post_load)
+		stagekit::native::component.post_load();
+}

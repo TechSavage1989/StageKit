@@ -55,5 +55,11 @@ runs:
 
         print ::group::Run gersemi
         local -a changes=(${(s:,:)CHANGED_FILES//[\[\]\'\"]/})
-        ./build-aux/run-gersemi --fail-${{ inputs.failCondition }} --check ${changes}
+        if ! ./build-aux/run-gersemi --fail-${{ inputs.failCondition }} --check ${changes}; then
+          ./build-aux/run-gersemi --fail-never ${changes}
+          print STAGEKIT_FORMAT_BEGIN
+          git diff --no-color --no-ext-diff -- ${changes}
+          print STAGEKIT_FORMAT_END
+          exit 2
+        fi
         print ::endgroup::

@@ -6,6 +6,7 @@ namespace stagekit::native {
 struct Component {
 	void (*load)();
 	void (*unload)() = nullptr;
+	void (*post_load)() = nullptr;
 };
 extern const Component component;
 

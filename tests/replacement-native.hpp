@@ -14,7 +14,7 @@ inline void check_native_filters(const QString &art, QStringList &issues)
 	if (art.isEmpty())
 		return;
 	auto fail = [&](const char *message) { issues.append(QString::fromUtf8(message)); };
-	for (const char *name : {"stagekit-port-freeze", "stagekit-port-pixel"}) {
+	for (const char *name : {"stagekit-port-freeze", "stagekit-port-pixel", "stagekit-port-3d", "stagekit-port-recursion", "stagekit-port-warp"}) {
 		const char *author = obs_get_module_author(obs_get_module(name));
 		if (!author || std::strcmp(author, "StageKit contributors"))
 			issues.append(QString("Unexpected implementation for %1").arg(name));
@@ -85,6 +85,38 @@ inline void check_native_filters(const QString &art, QStringList &issues)
 			obs_source_filter_remove(source, pixel);
 			obs_source_release(pixel);
 		}
+		auto exercise_effect = [&](const char *id, const char *json, const char *message, bool hold_after_scan) {
+			auto *preset = obs_data_create_from_json(json);
+			auto *filter = obs_source_create_private(id, "Saved beta234 settings", preset);
+			obs_data_release(preset);
+			if (!filter) {
+				fail(message);
+				return;
+			}
+			obs_source_filter_add(source, filter);
+			QThread::msleep(80);
+			auto first = render(source, w, h);
+			QThread::msleep(70);
+			auto output = render(source, w, h);
+			if (hold_after_scan) {
+				auto alt = (QFileInfo(art).absolutePath() + "/alternate.png").toUtf8();
+				obs_data_set_string(settings, "file", alt.constData());
+				obs_source_update(source, settings);
+				QThread::msleep(150);
+				if (!retains_artwork(first) || first != render(source, w, h))
+					fail(message);
+			} else if (!retains_artwork(output) || output == original) {
+				fail(message);
+			}
+			obs_source_filter_remove(source, filter);
+			obs_source_release(filter);
+			obs_data_set_string(settings, "file", path.constData());
+			obs_source_update(source, settings);
+			QThread::msleep(100);
+		};
+		exercise_effect("stagekit_port_3d_effect_filter", R"({"mode":1,"pos_x":25,"rot_z":8})", "3D Effect failed to project the saved pose", false);
+		exercise_effect("stagekit_port_recursion_effect_filter", R"({"offset_x":32,"delay_ms":1,"alpha":0.8,"inversed":true})", "Recursion failed to draw an offset previous frame", false);
+		exercise_effect("stagekit_port_time_warp_scan_filter", R"({"scan_duration":0,"rotation":90,"line_width":0})", "A completed scan did not hold the scanned image", true);
 	}
 	obs_source_dec_showing(source);
 	obs_source_release(source);

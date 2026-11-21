@@ -1,5 +1,6 @@
 {
   "3d": {
+    "implementation": "stagekit",
     "types": [
       [
         "3d_effect_filter",
@@ -88,6 +89,7 @@
     ]
   },
   "recursion": {
+    "implementation": "stagekit",
     "types": [
       [
         "recursion_effect_filter",
@@ -98,6 +100,7 @@
     ]
   },
   "warp": {
+    "implementation": "stagekit",
     "types": [
       [
         "time_warp_scan_filter",
@@ -270,6 +273,7 @@
     "originalTool": "Quick Access Utility"
   },
   "layouts": {
+    "implementation": "stagekit",
     "tool": "Ports.Tool.layouts",
     "originalTool": "Dock Layout Manager"
   },
