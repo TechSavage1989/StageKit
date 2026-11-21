@@ -275,8 +275,8 @@ void Layer::render()
 		const Shown &only = had ? was : will;
 		if (had || has) {
 			const double gone = had ? t : 1.0 - t;
-			const Quad quad = room_moved(only.quad, job->room_bounds.value_or(bounds_of(only.quad)), job->edge, gone, (double)job->cx,
-						     (double)job->cy);
+			const Quad quad = room_moved(only.quad, job->room_bounds.value_or(bounds_of(only.quad)),
+						     job->edge, gone, (double)job->cx, (double)job->cy);
 			const float opacity = job->fade ? (float)std::clamp(1.0 - gone, 0.0, 1.0) : 1.0f;
 			if (opacity >= 0.999f) {
 				draw_item(only, quad, only.crop);
@@ -330,7 +330,7 @@ struct Entry {
 	std::atomic<bool> over{false};
 	obs_weak_source_t *scene = nullptr; // weak
 	int64_t item_id = 0;
-	RoomMoveLinks move_links; // only the links from the press that started this transition
+	RoomMoveLinks move_links;   // only the links from the press that started this transition
 	const char *edge = nullptr; // the nearest edge, as the change began (a string of OBS's own)
 	uint64_t at_ns = 0;
 	// Which start of its transition this is: a change knows its entries by it.
@@ -873,7 +873,8 @@ void link_room_moves(std::vector<RoomMove> &moves)
 					continue;
 				// If the scene uses the primary more than once, follow the nearest instance.
 				const Bounds &a = *move.bounds, &b = *candidate.bounds;
-				const double distance = std::hypot(a.x0 + a.x1 - b.x0 - b.x1, a.y0 + a.y1 - b.y0 - b.y1);
+				const double distance =
+					std::hypot(a.x0 + a.x1 - b.x0 - b.x1, a.y0 + a.y1 - b.y0 - b.y1);
 				if (!move.primary || distance < best ||
 				    (distance == best && primary.entry->item_id < move.primary->half->entry->item_id)) {
 					move.primary = &candidate;
@@ -933,7 +934,8 @@ bool start_solo(const RoomMove &move)
 	static const char *const kEdges[] = {"left", "right", "top", "bottom"};
 	obs_log(LOG_INFO, "Morph: '%s' %s '%s', by the %s edge (%s)", obs_source_get_name(source),
 		h.entry->show ? "comes into" : "makes room in", obs_source_get_name(h.scene), kEdges[(int)path.edge],
-		move.primary ? "with its linked primary" : (path.pushed ? "away from the change under way" : "the nearest edge"));
+		move.primary ? "with its linked primary"
+			     : (path.pushed ? "away from the change under way" : "the nearest edge"));
 	return true;
 }
 
@@ -1150,7 +1152,8 @@ void tick(void *, float)
 		std::optional<Bounds> bounds;
 		if (shown_of(h->item, shown))
 			bounds = bounds_of(shown.quad);
-		const RoomEdge edge = bounds ? room_edge(*bounds, cw, ch, centre.any() ? &centre : nullptr) : RoomEdge::Left;
+		const RoomEdge edge = bounds ? room_edge(*bounds, cw, ch, centre.any() ? &centre : nullptr)
+					     : RoomEdge::Left;
 		moves.push_back({h, edge, centre.any(), bounds});
 	}
 	link_room_moves(moves);

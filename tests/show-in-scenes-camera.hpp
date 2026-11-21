@@ -200,10 +200,16 @@ inline void check(QStringList &issues)
 		} while (clock.elapsed() < 1250);
 		const bool ok = carry ? crossed && together && !drifted : idle;
 		if (!ok || obs_sceneitem_visible(caption) != (carry ? show : true))
-			issues.append(QString("Linked color source %1: carry %2 crossed %3 together %4 drifted %5 idle %6")
-					      .arg(show ? "show" : "hide").arg(carry).arg(crossed).arg(together)
-					      .arg(drifted).arg(idle));
-		blog(LOG_INFO, "[camera transition test] linked source %s: carry %d crossed %d together %d drifted %d idle %d",
+			issues.append(
+				QString("Linked color source %1: carry %2 crossed %3 together %4 drifted %5 idle %6")
+					.arg(show ? "show" : "hide")
+					.arg(carry)
+					.arg(crossed)
+					.arg(together)
+					.arg(drifted)
+					.arg(idle));
+		blog(LOG_INFO,
+		     "[camera transition test] linked source %s: carry %d crossed %d together %d drifted %d idle %d",
 		     show ? "show" : "hide", carry, crossed, together, drifted, idle);
 	};
 	for (int phase = 0; phase < 3; ++phase) {

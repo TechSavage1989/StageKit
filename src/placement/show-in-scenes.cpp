@@ -655,7 +655,8 @@ public:
 			if (item && scene && !obs_sceneitem_visible(item) && !mode_holds_hidden(scene, item)) {
 				const char *name = obs_source_get_name(obs_sceneitem_get_source(item));
 				const auto own = own_change.find(name ? name : "");
-				if (set_item_visible(item, true, own == own_change.end() ? change : own->second, scene)) {
+				if (set_item_visible(item, true, own == own_change.end() ? change : own->second,
+						     scene)) {
 					item_morph_note_move_links(item, true, links);
 					shown++;
 				}
