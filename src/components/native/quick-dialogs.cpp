@@ -56,14 +56,13 @@ void dock_options(QWidget *parent, const Options &initial, bool creating, std::f
 	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dialog);
 	auto *ok = buttons->button(QDialogButtonBox::Ok);
 	ok->setEnabled(!title->text().trimmed().isEmpty());
-	QObject::connect(title, &QLineEdit::textChanged, dialog, [ok](const QString &name) {
-		ok->setEnabled(!name.trimmed().isEmpty());
-	});
+	QObject::connect(title, &QLineEdit::textChanged, dialog,
+			 [ok](const QString &name) { ok->setEnabled(!name.trimmed().isEmpty()); });
 	QObject::connect(buttons, &QDialogButtonBox::accepted, dialog, &QDialog::accept);
 	QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
 	QObject::connect(dialog, &QDialog::accepted, dialog, [=] {
-		apply({title->text().trimmed(), mode->currentData().toString(), props->isChecked(), filters->isChecked(),
-		       parents->isChecked(), clickable->isChecked()});
+		apply({title->text().trimmed(), mode->currentData().toString(), props->isChecked(),
+		       filters->isChecked(), parents->isChecked(), clickable->isChecked()});
 	});
 	layout->addRow(buttons);
 	dialog->resize(360, dialog->sizeHint().height());
@@ -122,11 +121,13 @@ void pick_sources(QWidget *parent, const QList<Source> &pinned, std::function<vo
 	}
 	auto filter = [available, search] {
 		for (int i = 0; i < available->count(); ++i)
-			available->item(i)->setHidden(!available->item(i)->text().contains(search->text(), Qt::CaseInsensitive));
+			available->item(i)->setHidden(
+				!available->item(i)->text().contains(search->text(), Qt::CaseInsensitive));
 	};
 	auto transfer = [filter](QListWidget *from, QListWidget *to) {
 		auto selected = from->selectedItems();
-		std::sort(selected.begin(), selected.end(), [from](auto *a, auto *b) { return from->row(a) < from->row(b); });
+		std::sort(selected.begin(), selected.end(),
+			  [from](auto *a, auto *b) { return from->row(a) < from->row(b); });
 		for (auto *item : selected)
 			if (!item->isHidden()) {
 				auto *moved = from->takeItem(from->row(item));

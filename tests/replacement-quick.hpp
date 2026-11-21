@@ -97,7 +97,7 @@ inline QDockWidget *create(QDialog *manager, const QString &name, const QString 
 inline QTreeWidgetItem *result(QTreeWidget *list, const QString &name, const QString &section = {})
 {
 	for (auto *row : list->findItems(name, Qt::MatchExactly | Qt::MatchRecursive, 0))
-		if (!row->data(0, Qt::UserRole).toString().isEmpty() &&
+		if (!row->data(0, Qt::UserRole).toString().isEmpty() && (!row->parent() || row->parent()->isExpanded()) &&
 		    (section.isEmpty() || (row->parent() && row->parent()->text(0) == section)))
 			return row;
 	return nullptr;
@@ -146,7 +146,7 @@ inline bool check_manual(QDockWidget *board, obs_sceneitem_t *nested, obs_scenei
 		auto *entry = qobject_cast<QWidgetAction *>(action);
 		if (!entry || entry->data().toString() != nested_name)
 			continue;
-		auto *eye = entry->defaultWidget()->findChild<QToolButton *>("nativeQuickVisibility");
+		auto *eye = entry->defaultWidget()->findChild<QCheckBox *>("nativeQuickVisibility");
 		auto *transform = entry->defaultWidget()->findChild<QToolButton *>("nativeQuickTransform");
 		if (eye && transform) {
 			eye->click();
@@ -278,6 +278,8 @@ inline void check_restart(QStringList &issues)
 	if (!list || list->topLevelItemCount() != 2 || list->topLevelItem(0)->text(0) != zulu ||
 	    list->topLevelItem(1)->text(0) != alpha || !list->isColumnHidden(2) || !dock(dynamic_title) || !dock(search_title))
 		issues.append("Quick Access lost a dock, its options or the manual source order after restarting OBS");
+	else
+		blog(LOG_INFO, "[Quick Access test] Restored all three docks, row options and manual order on restart");
 }
 
 inline void check(QStringList &issues, QAction *toolsAction)
@@ -330,12 +332,20 @@ inline void check(QStringList &issues, QAction *toolsAction)
 	manager->close();
 	if (!manual || !check_manual(manual, nestedItem, direct) || !edit_manual(manual))
 		issues.append("Quick Access manual picker, order, row actions, parent controls or dock editing failed");
+	else
+		blog(LOG_INFO, "[Quick Access test] Manual multi-select, ordering, row menus, parent visibility and dock editing passed");
 	if (!dynamic || !check_dynamic(dynamic, nested, group, third))
 		issues.append("Quick Access dynamic dock missed a nested source, group edit or scene or changed Program on a Preview click");
+	else
+		blog(LOG_INFO, "[Quick Access test] Dynamic followed Program, nested scenes and group edits; clickable scenes selected Preview");
 	if (!search || !check_search(search, first))
 		issues.append("Quick Access dock did not group source, UUID, type, file and filter matches or clear empty results");
+	else
+		blog(LOG_INFO, "[Quick Access test] Source Search matched name, UUID, type, file, URL and filter");
 	if (!check_popup(first))
 		issues.append("Quick Search hotkey did not open, search and dismiss a single popup");
+	else
+		blog(LOG_INFO, "[Quick Access test] The Quick Search hotkey opened, searched and dismissed the popup");
 	obs_frontend_save();
 }
 } // namespace quick_test

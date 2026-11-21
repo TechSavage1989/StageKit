@@ -19,7 +19,7 @@ enum Match { Name = 1, Type = 2, Filter = 4, Url = 8, File = 16 };
 Source describe(obs_source_t *source);
 OBSSourceAutoRelease resolve(const Source &source);
 QList<Source> available_sources();
-QList<Source> program_sources();
+QList<Source> program_sources(QList<Source> &containers);
 unsigned search_matches(obs_source_t *source, const QString &query);
 QIcon source_icon(obs_source_t *source);
 bool can_open_properties(obs_source_t *source);

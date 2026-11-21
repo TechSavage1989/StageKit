@@ -3,6 +3,7 @@
 
 #include <obs-frontend-api.h>
 #include <QApplication>
+#include <QCheckBox>
 #include <QDialog>
 #include <QHBoxLayout>
 #include <QInputDialog>
@@ -26,6 +27,8 @@ Source describe(obs_source_t *source)
 
 OBSSourceAutoRelease resolve(const Source &source)
 {
+	if (source.uuid.isEmpty() && source.name.isEmpty())
+		return {};
 	OBSSourceAutoRelease found = source.uuid.isEmpty() ? obs_get_source_by_name(source.name.toUtf8().constData())
 							 : obs_get_source_by_uuid(source.uuid.toUtf8().constData());
 	if (found && !obs_source_removed(found))
@@ -52,11 +55,13 @@ QList<Source> available_sources()
 namespace {
 struct SceneWalk {
 	QList<Source> sources;
+	QList<Source> &containers;
 	QSet<QString> seen;
 	void visit(obs_scene_t *scene)
 	{
 		if (!scene)
 			return;
+		containers.append(describe(obs_scene_get_source(scene)));
 		obs_scene_enum_items(scene, [](obs_scene_t *, obs_sceneitem_t *item, void *data) {
 			auto &walk = *static_cast<SceneWalk *>(data);
 			auto *child = obs_sceneitem_get_source(item);
@@ -74,10 +79,10 @@ struct SceneWalk {
 };
 }
 
-QList<Source> program_sources()
+QList<Source> program_sources(QList<Source> &containers)
 {
 	OBSSourceAutoRelease scene = obs_frontend_get_current_scene();
-	SceneWalk walk;
+	SceneWalk walk{{}, containers, {}};
 	walk.visit(obs_scene_from_source(scene));
 	return walk.sources;
 }
@@ -107,17 +112,27 @@ unsigned search_matches(obs_source_t *source, const QString &query)
 	if (filters.found)
 		result |= Filter;
 	OBSDataAutoRelease settings = obs_source_get_settings(source);
-	for (const char *key : {"file", "local_file", "text_file", "window", "capture_window"})
-		if (contains(obs_data_get_string(settings, key)))
-			result |= File;
-	for (const char *key : {"url", "input"})
-		if (contains(obs_data_get_string(settings, key)))
+	if (qstrcmp(obs_source_get_unversioned_id(source), "ffmpeg_source") == 0) {
+		const bool local = obs_data_get_bool(settings, "is_local_file");
+		if (contains(obs_data_get_string(settings, local ? "local_file" : "input")))
+			result |= local ? File : Url;
+	} else {
+		for (const char *key : {"file", "local_file", "text_file"})
+			if (contains(obs_data_get_string(settings, key)))
+				result |= File;
+		if (contains(obs_data_get_string(settings, "url")))
 			result |= Url;
+	}
+	for (const char *key : {"window", "capture_window"})
+		if (contains(obs_data_get_string(settings, key)))
+			result |= Name;
 	return result;
 }
 
 QIcon source_icon(obs_source_t *source)
 {
+	if (!source)
+		return {};
 	auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
 	const char *property = "defaultIcon";
 	if (obs_source_is_group(source))
@@ -214,7 +229,7 @@ QMenu *popup(QWidget *parent, const char *name)
 {
 	auto *menu = new QMenu(parent);
 	menu->setObjectName(name);
-	menu->setAttribute(Qt::WA_DeleteOnClose);
+	QObject::connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
 	return menu;
 }
 
@@ -260,13 +275,14 @@ void add_to_scene(QWidget *parent, const Source &entry, bool clone)
 void open_parents(QWidget *parent, const QPoint &position, const Source &source)
 {
 	ParentSearch search{source.uuid, {}, {}};
-	obs_frontend_source_list scenes{};
-	obs_frontend_get_scenes(&scenes);
-	for (size_t i = 0; i < scenes.sources.num; ++i) {
-		search.root = describe(scenes.sources.array[i]);
-		search.visit(obs_scene_from_source(scenes.sources.array[i]));
-	}
-	obs_frontend_source_list_free(&scenes);
+	obs_enum_scenes([](void *data, obs_source_t *scene) {
+		auto &parents = *static_cast<ParentSearch *>(data);
+		if (!obs_obj_is_private(scene) && !obs_source_removed(scene)) {
+			parents.root = describe(scene);
+			parents.visit(obs_scene_from_source(scene));
+		}
+		return true;
+	}, &search);
 	std::stable_sort(search.items.begin(), search.items.end(), [](const ParentItem &a, const ParentItem &b) {
 		return QString::localeAwareCompare(a.label(), b.label()) < 0;
 	});
@@ -299,12 +315,15 @@ void open_parents(QWidget *parent, const QPoint &position, const Source &source)
 			menu->close();
 		});
 		auto item = get_item(parentItem, source);
-		auto *visible = tool_button(row, "nativeQuickVisibility", "Quick.Visibility", "icon-visible",
-					    row->style()->standardIcon(QStyle::SP_DialogYesButton));
-		visible->setCheckable(true);
+		auto *visible = new QCheckBox(row);
+		visible->setObjectName("nativeQuickVisibility");
+		visible->setAccessibleName(text("Quick.Visibility"));
+		visible->setToolTip(visible->accessibleName());
+		visible->setProperty("visibilityCheckBox", true);
+		visible->setProperty("class", "indicator-visibility");
 		visible->setChecked(item && obs_sceneitem_visible(item));
 		layout->addWidget(visible);
-		QObject::connect(visible, &QToolButton::clicked, menu, [parentItem, source](bool value) {
+		QObject::connect(visible, &QCheckBox::clicked, menu, [parentItem, source](bool value) {
 			auto target = get_item(parentItem, source);
 			if (target)
 				obs_sceneitem_set_visible(target, value);

@@ -24,6 +24,7 @@
 #include <QTreeWidget>
 #include <QUuid>
 #include <QVBoxLayout>
+#include <vector>
 
 namespace stagekit::native {
 namespace {
@@ -57,6 +58,12 @@ public:
 		auto *layout = new QVBoxLayout(this);
 		layout->setContentsMargins(2, 2, 2, 2);
 		layout->setSpacing(2);
+		graph_update = new QTimer(this);
+		graph_update->setSingleShot(true);
+		connect(graph_update, &QTimer::timeout, this, [this] {
+			if (isVisible())
+				refresh();
+		});
 		if (options.mode == "Source Search") {
 			search = new QLineEdit(this);
 			search->setObjectName("nativeQuickSearch");
@@ -88,8 +95,9 @@ public:
 		layout->addWidget(message, 1);
 		connect(list, &QTreeWidget::currentItemChanged, this, [this] { update_moves(); });
 		connect(list, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *row, int col) {
-			if (options.clickable && col == 0) {
-				auto source = resolve(row_source(row));
+			const auto entry = row_source(row);
+			if (options.clickable && col == 0 && !entry.uuid.isEmpty()) {
+				auto source = resolve(entry);
 				if (source && obs_source_is_scene(source)) {
 					activate_scene(source);
 					dismiss_search();
@@ -205,7 +213,9 @@ public:
 			}
 			empty = "Quick.EmptyManual";
 		} else if (options.mode == "Dynamic") {
-			sections.append({"Quick.Scene", program_sources()});
+			QList<Source> containers;
+			sections.append({"Quick.Scene", program_sources(containers)});
+			watch_scenes(containers);
 			empty = "Quick.EmptyDynamic";
 		} else {
 			sections = {{"Native.Source", {}}, {"Quick.SourceType", {}}, {"Quick.FilePath", {}}, {"Quick.Url", {}}, {"Native.Filters", {}}};
@@ -226,7 +236,10 @@ public:
 		if (!force && drawn && sections == shown)
 			return;
 		drawn = true;
-		const auto selected = row_source(list->currentItem()).uuid;
+		auto *current = list->currentItem();
+		const auto selected = row_source(current).uuid;
+		const auto selectedGroup = current && current->parent() ? current->parent()->text(0) : QString();
+		QTreeWidgetItem *restore = nullptr;
 		const int scroll = list->verticalScrollBar()->value();
 		shown = sections;
 		list->clear();
@@ -244,7 +257,6 @@ public:
 				auto font = group->font(0);
 				font.setBold(true);
 				group->setFont(0, font);
-				group->setExpanded(true);
 			}
 			for (const auto &entry : section.sources) {
 				auto source = resolve(entry);
@@ -285,15 +297,25 @@ public:
 						open_parents(this, button->mapToGlobal(QPoint(0, button->height())), entry);
 					});
 				}
-				if (entry.uuid == selected && !list->currentItem())
-					list->setCurrentItem(row);
+				if (entry.uuid == selected && (!restore || (row->parent() && row->parent()->text(0) == selectedGroup)))
+					restore = row;
 			}
+			if (section.label)
+				group->setExpanded(true);
 		}
+		if (restore)
+			list->setCurrentItem(restore);
 		list->verticalScrollBar()->setValue(scroll);
 		const bool hasRows = list->topLevelItemCount() > 0;
 		list->setVisible(hasRows);
 		message->setVisible(!hasRows);
 		update_moves();
+	}
+protected:
+	void showEvent(QShowEvent *event) override
+	{
+		QWidget::showEvent(event);
+		refresh();
 	}
 private:
 	QTreeWidget *list;
@@ -301,7 +323,31 @@ private:
 	QToolButton *remove = nullptr, *up = nullptr, *down = nullptr;
 	QList<Source> pins;
 	QList<Section> shown;
+	QTimer *graph_update;
+	QStringList watched;
+	std::vector<OBSSignal> scene_connections;
 	bool drawn = false;
+	void watch_scenes(const QList<Source> &containers)
+	{
+		QStringList ids;
+		for (const auto &entry : containers)
+			ids.append(entry.uuid);
+		if (ids == watched)
+			return;
+		watched = ids;
+		scene_connections.clear();
+		for (const auto &entry : containers) {
+			auto source = resolve(entry);
+			if (!source)
+				continue;
+			auto *handler = obs_source_get_signal_handler(source);
+			for (const char *signal : {"item_add", "item_remove", "reorder", "refresh"})
+				scene_connections.emplace_back(handler, signal, [](void *data, calldata_t *) {
+					auto *board = static_cast<Board *>(data);
+					QMetaObject::invokeMethod(board, [board] { board->graph_update->start(0); }, Qt::QueuedConnection);
+				}, this);
+		}
+	}
 	static Source row_source(QTreeWidgetItem *row)
 	{
 		return row ? Source{row->text(0), row->data(0, Qt::UserRole).toString()} : Source{};
