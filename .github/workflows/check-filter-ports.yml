@@ -101,7 +101,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import base64
-          for name in ("countdown-rollover.png", "countdown-dock.png", "countdown-layout.png", "timer-initial.png", "timer-next.png", "timer-reset.png"):
+          for name in ("countdown-rollover.png", "countdown-dock.png", "countdown-layout.png"):
               path = Path("build-ports/filter-results") / name
               if path.exists():
                   data = base64.b64encode(path.read_bytes()).decode()

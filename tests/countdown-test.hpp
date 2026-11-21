@@ -323,25 +323,31 @@ inline void steady_ticks(QStringList &issues, const QString &sheet_path)
 			return false;
 		const auto box = QRect(a.width() * from / 100, 0, a.width() * (to - from) / 100, a.height());
 		const auto part = a.copy(box);
-		const auto other = b.copy(box);
-		const auto qa = painted(part), qb = painted(other);
-		if (qa.isEmpty() || part != other) {
-			int changed = 0;
-			for (int y = 0; y < part.height(); ++y)
-				for (int x = 0; x < part.width(); ++x)
-					changed += part.pixel(x, y) != other.pixel(x, y);
-			blog(LOG_INFO, "StageKit timer layout: columns %d..%d, changed %d; ink %d,%d %dx%d / %d,%d %dx%d",
-			     from, to, changed, qa.x(), qa.y(), qa.width(), qa.height(), qb.x(), qb.y(), qb.width(), qb.height());
+		return !painted(part).isEmpty() && part == b.copy(box);
+	};
+	// Find the colon and unchanged glyphs from the rendered face so the crop excludes the changing minute.
+	auto same_tail = [](const QImage &a, const QImage &b, int glyphs) {
+		if (a.isNull() || a.size() != b.size())
+			return false;
+		bool inside = false;
+		int found = 0;
+		for (int x = a.width() - 1; x >= 0; --x) {
+			bool ink = false;
+			for (int y = 0; !ink && y < a.height(); ++y)
+				ink = a.constScanLine(y)[4 * x + 3] != 0;
+			if (ink && !inside)
+				++found;
+			if (!ink && inside && found == glyphs) {
+				const QRect box(x + 1, 0, a.width() - x - 1, a.height());
+				return a.copy(box) == b.copy(box);
+			}
+			inside = ink;
 		}
-		return !qa.isEmpty() && part == other;
+		return false;
 	};
 	const QImage ten = shot(0, "IN 10:11");
 	const QImage nine = shot(60000, "IN 9:11");
-	blog(LOG_INFO, "StageKit timer layout: first %dx%d, next %dx%d, same image %d; ink %d,%d %dx%d / %d,%d %dx%d",
-	     ten.width(), ten.height(), nine.width(), nine.height(), int(ten == nine), painted(ten).x(), painted(ten).y(),
-	     painted(ten).width(), painted(ten).height(), painted(nine).x(), painted(nine).y(), painted(nine).width(),
-	     painted(nine).height());
-	expect(ten != nine && same(ten, nine, 0, 21) && same(ten, nine, 62, 100),
+	expect(ten != nine && same(ten, nine, 0, 21) && same_tail(ten, nine, 3),
 	       "prefix, colon or seconds moved when the leading digit disappeared");
 	for (int n = 0; n < 10; ++n) {
 		const auto change =
@@ -362,17 +368,10 @@ inline void steady_ticks(QStringList &issues, const QString &sheet_path)
 	const auto ended = frame(timer);
 	expect(ended.size() == ten.size() && !painted(ended).isEmpty(), "end message changed the source bounds");
 	obs_source_media_stop(timer);
+	expect(wait_for([&] { return readout(timer) == "IN 10:11"; }), "reset command");
 	frame(timer);
 	QThread::msleep(270);
-	const QImage reset = frame(timer);
-	same(ten, reset, 0, 100);
-	expect(reset == ten, "reset did not restore the same running pixels");
-	if (!sheet_path.isEmpty()) {
-		const auto dir = QFileInfo(sheet_path).dir();
-		ten.save(dir.filePath("timer-initial.png"));
-		nine.save(dir.filePath("timer-next.png"));
-		reset.save(dir.filePath("timer-reset.png"));
-	}
+	expect(frame(timer) == ten, "reset did not restore the same running pixels");
 
 	if (!sheet_path.isEmpty()) {
 		QImage sheet(840, 138, QImage::Format_RGB32);
@@ -400,12 +399,25 @@ inline void steady_ticks(QStringList &issues, const QString &sheet_path)
 	obs_source_update(timer, config);
 	const auto tokens = shot(0, "10m 11s");
 	const auto one = shot(60000, "9m 11s");
-	expect(same(tokens, one, 54, 100), "custom unit placeholders changed the suffix placement");
+	expect(same_tail(tokens, one, 4), "custom unit placeholders changed the suffix placement");
 	obs_data_set_bool(config, "format_output", false);
 	obs_source_update(timer, config);
 	const auto bare = shot(0, "10:11");
 	const auto less = shot(60000, "9:11");
-	expect(same(bare, less, 50, 100), "bare clock refitted when the leading zero was hidden");
+	expect(same_tail(bare, less, 3), "bare clock refitted when the leading zero was hidden");
+
+	obs_data_set_int(config, "timer_mode", 1);
+	obs_data_set_int(config, "deadline_ms", QDateTime::currentMSecsSinceEpoch() + 600600);
+	obs_data_set_bool(config, "format_output", true);
+	obs_data_set_string(config, "output_format", "IN %time%");
+	obs_source_update(timer, config);
+	obs_source_media_play_pause(timer, false);
+	expect(wait_for([&] { return readout(timer) == "IN 10:00"; }), "calendar countdown before rollover");
+	const auto date_before = frame(timer);
+	expect(wait_for([&] { return readout(timer) == "IN 9:59"; }), "calendar countdown after rollover");
+	obs_source_media_play_pause(timer, true);
+	expect(same(date_before, frame(timer), 0, 21), "calendar countdown shifted the prefix");
+	obs_data_set_bool(config, "format_output", false);
 
 	obs_data_set_int(config, "timer_mode", 2);
 	obs_data_set_int(font, "size", 88);
