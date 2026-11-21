@@ -103,6 +103,15 @@ struct Scan {
 			ready = false;
 			cursor = 0;
 		}
+		if (!duration && !ready) {
+			if (!buffers[previous].capture(source, size)) {
+				obs_source_skip_video_filter(source);
+				return;
+			}
+			cursor = 1;
+			ready = true;
+			rendered = now;
+		}
 		const float dx = std::sin(angle), dy = std::cos(angle);
 		const float span = std::max(1.0f, std::abs(dx) * size.width + std::abs(dy) * size.height);
 		shader.pair("sweep", dx * size.width / span, dy * size.height / span);
@@ -132,8 +141,13 @@ struct Scan {
 			cursor = position;
 			previous = next;
 		}
+		if (cursor >= 1 && !show_live && !background.texture) {
+			draw_texture(buffers[previous].texture(), size);
+			return;
+		}
 		if (!obs_source_process_filter_begin(source, GS_RGBA, OBS_NO_DIRECT_RENDERING))
 			return;
+		shader.pair("sweep", dx * size.width / span, dy * size.height / span);
 		shader.pair("progress", cursor, cursor);
 		shader.four("line_style", line / span, opacity, follow_alpha ? 1.f : 0.f, show_live ? 1.f : 0.f);
 		gs_effect_set_vec4(shader.parameter("ink"), &color);

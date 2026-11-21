@@ -155,34 +155,39 @@ static void check_native_table(QStringList &issues)
 
 static void check_native_quick(QStringList &issues)
 {
-	auto *action=action_named("Quick Access Utility (StageKit)");
-	auto *main=static_cast<QMainWindow *>(obs_frontend_get_main_window());
-	if (!action || !main) return;
-	auto *source=obs_source_create("image_source","StageKit search fixture",nullptr,nullptr);
-	bool found=false;
+	auto *action = action_named("Quick Access Utility (StageKit)");
+	auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
+	if (!action || !main)
+		return;
+	auto *source = obs_source_create("image_source", "StageKit search fixture", nullptr, nullptr);
+	bool found = false;
 	QObject owner;
-	QTimer::singleShot(100,&owner,[&] {
-		auto *dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());
-		if (!dialog) return;
-		auto *title=dialog->findChild<QLineEdit *>("nativeQuickTitle");
-		auto *create=dialog->findChild<QPushButton *>("nativeCreateQuickDock");
+	QTimer::singleShot(100, &owner, [&] {
+		auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+		if (!dialog)
+			return;
+		auto *title = dialog->findChild<QLineEdit *>("nativeQuickTitle");
+		auto *create = dialog->findChild<QPushButton *>("nativeCreateQuickDock");
 		if (title && create) {
 			title->setText("StageKit fixture dock");
 			create->click();
-			for (auto *dock: main->findChildren<QDockWidget *>()) {
-				if (dock->windowTitle()!="StageKit fixture dock") continue;
-				auto *search=dock->findChild<QLineEdit *>("nativeQuickSearch");
-				auto *list=dock->findChild<QListWidget *>("nativeQuickSources");
+			for (auto *dock : main->findChildren<QDockWidget *>()) {
+				if (dock->windowTitle() != "StageKit fixture dock")
+					continue;
+				auto *search = dock->findChild<QLineEdit *>("nativeQuickSearch");
+				auto *list = dock->findChild<QListWidget *>("nativeQuickSources");
 				if (search && list) {
 					search->setText("StageKit search fixture");
-					found=list->count()==1 && list->item(0)->text()=="StageKit search fixture";
+					found = list->count() == 1 &&
+						list->item(0)->text() == "StageKit search fixture";
 				}
 			}
 		}
 		dialog->reject();
 	});
 	action->trigger();
-	if (!found) issues.append("The native Quick Access dock did not find a live OBS source");
+	if (!found)
+		issues.append("The native Quick Access dock did not find a live OBS source");
 	obs_source_release(source);
 }
 

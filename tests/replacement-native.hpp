@@ -26,7 +26,7 @@ inline void check_native_filters(const QString &art, QStringList &issues)
 	auto *settings = obs_data_create();
 	const auto path = art.toUtf8();
 	obs_data_set_string(settings, "file", path.constData());
-	auto *source = obs_source_create_private("image_source", "Native component test", settings);
+	auto *source = obs_source_create("image_source", "Native component test", settings, nullptr);
 	if (!source) {
 		fail("Could not create native component fixture");
 		obs_data_release(settings);
@@ -212,7 +212,7 @@ inline void check_native_filters(const QString &art, QStringList &issues)
 	obs_data_set_bool(options, "copy_properties", false);
 	obs_data_set_bool(options, "copy_filters", false);
 	obs_data_set_string(options, "name_prefix", "Default ");
-	auto *marker = obs_source_create_private("stagekit_port_source_defaults_video", "Saved defaults", options);
+	auto *marker = obs_source_create_private("stagekit_port_source_defaults_video_v1", "Saved defaults", options);
 	obs_data_release(options);
 	if (model && marker) {
 		obs_source_set_volume(model, 0.37f);
