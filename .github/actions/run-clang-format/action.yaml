@@ -56,11 +56,5 @@ runs:
 
         print ::group::Run clang-format-19
         local -a changes=(${(s:,:)CHANGED_FILES//[\[\]\'\"]/})
-        if ! ./build-aux/run-clang-format --fail-${{ inputs.failCondition }} --check ${changes}; then
-          ./build-aux/run-clang-format --fail-never ${changes}
-          print STAGEKIT_FORMAT_BEGIN
-          git diff --no-color --no-ext-diff -- ${changes}
-          print STAGEKIT_FORMAT_END
-          exit 2
-        fi
+        ./build-aux/run-clang-format --fail-${{ inputs.failCondition }} --check ${changes}
         print ::endgroup::

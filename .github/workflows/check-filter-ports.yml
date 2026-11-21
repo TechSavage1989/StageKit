@@ -46,9 +46,6 @@ jobs:
           xvfb-run -a build-ports/tests/stagekit-replacement-test "$PWD/build-ports/stagekit.so" "$PWD/data" "$out/art.png" "$out" > "$out/render.log" 2>&1 || { grep -E 'FAIL|shader error|error:.*effect' "$out/render.log" || true; tail -150 "$out/render.log"; xvfb-run -a gdb -q --batch -ex run -ex 'bt 30' --args build-ports/tests/stagekit-replacement-test "$PWD/build-ports/stagekit.so" "$PWD/data" "$out/art.png" "$out" > "$out/debug.log" 2>&1 || true; tail -50 "$out/debug.log"; exit 1; }
           grep -E 'PASS|FAIL|mean difference' "$out/render.log"
           python3 tests/replacement-images.py "$out" sheet
-          echo STAGEKIT_RENDER_FIXTURE_BEGIN
-          base64 "$out/native-scene-effects.png"
-          echo STAGEKIT_RENDER_FIXTURE_END
       - name: Open the replacement catalog in a fresh OBS frontend
         if: always() && hashFiles('build-ports/tests/stagekit-replacement-probe.so') != ''
         run: bash tests/check-replacement-frontend.sh build-ports

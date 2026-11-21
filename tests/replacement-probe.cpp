@@ -255,16 +255,6 @@ static void finish_probe(const QStringList &issues)
 	QFile report(qEnvironmentVariable("STAGEKIT_TEST_REPORT"));
 	if (report.open(QIODevice::WriteOnly))
 		report.write(issues.isEmpty() ? QByteArray("PASS\n") : issues.join('\n').toUtf8());
-	auto *watchdog = new QTimer(qApp);
-	QObject::connect(watchdog, &QTimer::timeout, qApp, [] {
-		auto *modal = QApplication::activeModalWidget();
-		auto *message = qobject_cast<QMessageBox *>(modal);
-		if (modal)
-			blog(LOG_INFO, "[replacement-probe] Shutdown modal %s: %s",
-			     modal->windowTitle().toUtf8().constData(),
-			     message ? message->text().toUtf8().constData() : modal->metaObject()->className());
-	});
-	watchdog->start(1500);
 	// Close the OBS main window as the user would. QApplication::quit can close a
 	// floating dock first and queue OBS's first-time dock-close information dialog.
 	auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
