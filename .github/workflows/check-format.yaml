@@ -14,6 +14,16 @@ jobs:
         with:
           failCondition: error
 
+      - name: Show the repository formatter's patch for this change
+        if: failure()
+        shell: bash
+        run: |
+          formatter="$(brew --prefix obsproject/tools/clang-format@19)/bin/clang-format"
+          "$formatter" -style=file -i src/placement/show-in-scenes.cpp src/transition/item-morph.cpp src/transition/item-morph.hpp tests/show-in-scenes-camera.hpp
+          echo STAGEKIT_FORMAT_PATCH_BEGIN
+          git diff --no-color -- src tests
+          echo STAGEKIT_FORMAT_PATCH_END
+
   gersemi:
     runs-on: ubuntu-24.04
     steps:

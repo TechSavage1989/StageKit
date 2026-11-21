@@ -7,6 +7,7 @@
 #include <QElapsedTimer>
 #include <QThread>
 #include <QStringList>
+#include <cstdlib>
 
 namespace camera_test {
 
