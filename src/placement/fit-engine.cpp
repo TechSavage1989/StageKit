@@ -13,6 +13,7 @@ the Free Software Foundation; either version 2 of the License, or
 // the claims two fits go by, and the glances that notice a widget change.
 
 #include "fit-engine.hpp"
+#include "../common/alpha-bounds.hpp"
 #include "../common/stand-in.hpp"
 #include "../common/filter-order.hpp"
 #include "../common/holds-hidden.hpp"
@@ -46,6 +47,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <set>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace stagekit::fit {
@@ -57,7 +59,9 @@ namespace stagekit::fit {
 // that they took turns, each gliding a little after the other had, and the
 // owner's game and chat box shifted "a number of times" before they settled.
 std::mutex g_claims_mutex;
-std::map<std::pair<obs_source_t *, int64_t>, std::pair<const void *, Claim>> g_claims;
+using ClaimKey = std::pair<obs_source_t *, int64_t>;
+std::map<ClaimKey, std::pair<const void *, Claim>> g_claims;
+std::unordered_map<const void *, ClaimKey> g_owner_claim;
 
 // Raised whenever a claim is made, changed or taken back, and whenever a
 // glance sees an item draw another part of itself: what a Scene Fit at rest
@@ -80,30 +84,36 @@ bool same_claim(const Claim &a, const Claim &b)
 void claim_set(obs_source_t *scene, int64_t item, const void *owner, const Claim &claim)
 {
 	std::lock_guard lock(g_claims_mutex);
-	bool changed = false;
-	for (auto it = g_claims.begin(); it != g_claims.end();)
-		if (it->second.first == owner && it->first != std::make_pair(scene, item)) {
-			it = g_claims.erase(it);
-			changed = true;
-		} else {
-			++it;
+	const ClaimKey key{scene, item};
+	auto &slot = g_claims[key];
+	if (slot.first == owner) {
+		if (!same_claim(slot.second, claim)) {
+			slot.second = claim;
+			g_claims_rev++;
 		}
-	auto &slot = g_claims[{scene, item}];
-	if (changed || slot.first != owner || !same_claim(slot.second, claim))
-		g_claims_rev++;
+		return;
+	}
+	// One claim per owner and per item, including when two fits exchange
+	// items. A hidden entry with no claim can then clear it in one lookup.
+	const auto previous = g_owner_claim.find(owner);
+	if (previous != g_owner_claim.end())
+		g_claims.erase(previous->second);
+	if (slot.first)
+		g_owner_claim.erase(slot.first);
+	g_owner_claim[owner] = key;
 	slot = {owner, claim};
+	g_claims_rev++;
 }
 
 void claim_clear(const void *owner)
 {
 	std::lock_guard lock(g_claims_mutex);
-	for (auto it = g_claims.begin(); it != g_claims.end();)
-		if (it->second.first == owner) {
-			it = g_claims.erase(it);
-			g_claims_rev++;
-		} else {
-			++it;
-		}
+	const auto found = g_owner_claim.find(owner);
+	if (found != g_owner_claim.end()) {
+		g_claims.erase(found->second);
+		g_owner_claim.erase(found);
+		g_claims_rev++;
+	}
 }
 
 uint64_t claims_revision()
@@ -223,21 +233,10 @@ void glance_step(const void *asking, obs_source_t *scene, const std::vector<obs_
 		uint32_t linesize = 0;
 		const bool read = gs_stagesurface_map(g.stage, &data, &linesize);
 		if (read) {
-			int x0 = (int)kGlanceSize, y0 = (int)kGlanceSize, x1 = -1, y1 = -1;
-			for (uint32_t y = 0; y < kGlanceSize; y++) {
-				const uint8_t *row = data + (size_t)y * linesize;
-				for (uint32_t x = 0; x < kGlanceSize; x++) {
-					if (row[x * 4 + 3] <= 12)
-						continue;
-					x0 = std::min(x0, (int)x);
-					x1 = std::max(x1, (int)x);
-					y0 = std::min(y0, (int)y);
-					y1 = std::max(y1, (int)y);
-				}
-			}
+			const AlphaBounds bounds = visible_alpha_bounds(data, linesize, kGlanceSize, kGlanceSize);
 			gs_stagesurface_unmap(g.stage);
-			if (x1 >= x0 && y1 >= y0)
-				seen = Glance{true, x0, y0, x1, y1};
+			if (bounds.left <= bounds.right)
+				seen = Glance{true, (int)bounds.left, (int)bounds.top, (int)bounds.right, (int)bounds.bottom};
 		}
 		obs_leave_graphics();
 		if (read) {

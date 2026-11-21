@@ -14,6 +14,15 @@ jobs:
         with:
           failCondition: error
 
+      - name: Inspect formatted changes
+        if: always()
+        run: |
+          for path in src/common/alpha-bounds.hpp src/placement/fit-engine.cpp src/dock/arrange.cpp src/ambient/ambient-background.cpp tests/alpha-bounds-test.cpp; do
+            if clang-format-19 "$path" > "$RUNNER_TEMP/formatted.cpp"; then
+              cp "$RUNNER_TEMP/formatted.cpp" "$path"
+            fi
+          done
+          git diff -U2 -- src tests
   gersemi:
     runs-on: ubuntu-24.04
     steps:

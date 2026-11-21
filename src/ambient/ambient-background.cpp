@@ -1436,30 +1436,24 @@ void AmbientBackground::render()
 	// becoming completely black, even when the ambient background is
 	// capturing a live feed that has completely black content?"
 	gs_texture_t *scene = gs_texrender_get_texture(tr_scene_);
-	if (scene && s.darkest_level > 0.0005 && looks_) {
-		// The background image where the picture has it: the picture itself
-		// while it is nothing else (no capture, no change under way: no
-		// copy), otherwise the image alone, drawn the same way now. The
-		// brightness, vignette and texture of the Final pass come after, for
-		// the lift as for the rest.
+	// With only the base image on screen, lifting it toward itself is the
+	// identity at every level (PSLift). Use the composed texture directly.
+	const bool own_floor = s.darkest_fill == DarkestFill::Image && base && !live && !was;
+	if (scene && s.darkest_level > 0.0005 && looks_ && !own_floor) {
 		gs_texture_t *fill = nullptr;
 		if (s.darkest_fill == DarkestFill::Image && base) {
-			if (!live && !was) {
-				fill = scene;
-			} else {
-				gs_texrender_reset(tr_fill_);
-				if (gs_texrender_begin(tr_fill_, iw, ih)) {
-					vec4 black;
-					vec4_set(&black, 0.0f, 0.0f, 0.0f, 1.0f);
-					gs_clear(GS_CLEAR_COLOR, &black, 0.0f, 0);
-					gs_ortho(0.0f, (float)iw, 0.0f, (float)ih, -100.0f, 100.0f);
-					gs_blend_state_push();
-					gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
-					draw_base(base, iw, ih, s);
-					gs_blend_state_pop();
-					gs_texrender_end(tr_fill_);
-					fill = gs_texrender_get_texture(tr_fill_);
-				}
+			gs_texrender_reset(tr_fill_);
+			if (gs_texrender_begin(tr_fill_, iw, ih)) {
+				vec4 black;
+				vec4_set(&black, 0.0f, 0.0f, 0.0f, 1.0f);
+				gs_clear(GS_CLEAR_COLOR, &black, 0.0f, 0);
+				gs_ortho(0.0f, (float)iw, 0.0f, (float)ih, -100.0f, 100.0f);
+				gs_blend_state_push();
+				gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
+				draw_base(base, iw, ih, s);
+				gs_blend_state_pop();
+				gs_texrender_end(tr_fill_);
+				fill = gs_texrender_get_texture(tr_fill_);
 			}
 		}
 		// Every uniform the Lift pass reads, at every run (the effect file is

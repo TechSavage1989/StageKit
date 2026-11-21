@@ -11,6 +11,11 @@ on:
       - 'data/ports.json'
       - 'scripts/*obs-ports.py'
       - 'src/components/**'
+      - 'src/common/alpha-bounds.hpp'
+      - 'src/ambient/ambient-background.cpp'
+      - 'src/placement/fit-engine.cpp'
+      - 'src/dock/arrange.cpp'
+      - 'tests/alpha-bounds-test.cpp'
       - 'src/common/item-transition.*'
       - 'src/placement/show-in-scenes.*'
       - 'src/placement/scene-transitions.*'
@@ -30,6 +35,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - name: Check visible pixel bounds
+        run: |
+          c++ -std=c++17 -O2 tests/alpha-bounds-test.cpp -o "$RUNNER_TEMP/alpha-bounds"
+          "$RUNNER_TEMP/alpha-bounds"
       - name: Install OBS development files
         run: |
           sudo add-apt-repository -y ppa:obsproject/obs-studio
@@ -66,6 +75,20 @@ jobs:
               "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out" > "$out/$test.log" 2>&1 || { grep -F "  FAIL  " "$out/$test.log" || true; tail -90 "$out/$test.log"; exit 1; }
             tail -3 "$out/$test.log"
           done
+      - name: Check ambient lift and placement geometry
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          set -eu
+          out="$PWD/build-ports/camera-results"
+          mkdir -p "$out" "$out/../darkest"
+          python3 tests/make-test-image.py "$out"
+          for test in AMBIENT_DARKEST FIT_TOOL DOCK_BOUNDS; do
+            env "STAGEKIT_TEST_ONLY_$test=1" xvfb-run -a build-ports/tests/stagekit-ambient-test "$PWD/build-ports/stagekit.so" "$PWD/data" \
+              "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out" > "$out/$test.log" 2>&1 || { grep -F 'FAIL' "$out/$test.log" || true; tail -50 "$out/$test.log"; exit 1; }
+            tail -3 "$out/$test.log"
+          done
       - name: Open the replacement catalog in a fresh OBS frontend
         if: always() && hashFiles('build-ports/tests/stagekit-replacement-probe.so') != ''
         run: bash tests/check-replacement-frontend.sh build-ports
@@ -77,6 +100,47 @@ jobs:
             build-ports/filter-results/filter-replacements.png
             build-ports/filter-results/native-scene-effects.png
             build-ports/filter-results/render.log
+      - name: Compare scene collection frame times
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          QT_QPA_PLATFORM: offscreen
+          SCENES: Live
+          FRAMES: '450'
+          WARMUP: '5'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/after" "$RUNNER_TEMP/before"
+          cp build-ports/stagekit.so "$RUNNER_TEMP/after/stagekit.so"
+          git fetch --depth=1 origin 0ab8c2f744bda1c2ce00b2d7038f4c8792ed2c9e
+          for path in src/ambient/ambient-background.cpp src/dock/arrange.cpp src/placement/fit-engine.cpp; do
+            git show "FETCH_HEAD:$path" > "$path"
+          done
+          cmake --build build-ports --target stagekit --parallel 4
+          cp build-ports/stagekit.so "$RUNNER_TEMP/before/stagekit.so"
+          perf="$RUNNER_TEMP/measure"
+          mkdir -p "$perf"
+          python3 tests/make-perf-collection.py "$perf/scene.json" --scale 0.25 --scene-fit
+          python3 - "$perf/scene.json" <<'PY'
+          import json, sys
+          from pathlib import Path
+          p=Path(sys.argv[1]); scene=json.loads(p.read_text())
+          for source in scene["sources"]:
+              if source["id"] == "stagekit_ambient_background":
+                  source["settings"].update(base_type=3, pattern=7, pattern_speed=97.0, pattern_scale=400.0, blur=500.0, pixel_style=2, pixel_size=50.0, darkest_level=50.0, darkest_fill=0, bloom=0.0)
+          p.write_text(json.dumps(scene))
+          PY
+          for label in before1 after1 after2 before2; do
+            plugin="$RUNNER_TEMP/${label%?}/stagekit.so"
+            OUT="$perf" PLUGIN="$plugin" bash tests/run-perf.sh build-ports "$label=$perf/scene.json" > "$perf/$label.txt"
+            test -s "$perf/$label.json"
+          done
+          python3 tests/perf-compare.py "before1=$perf/before1.json" "after1=$perf/after1.json" "after2=$perf/after2.json" "before2=$perf/before2.json"
+          python3 - "$perf" <<'PY'
+          import json,sys,pathlib
+          for name in ["before1","after1","after2","before2"]:
+              data=json.loads((pathlib.Path(sys.argv[1])/(name+".json")).read_text())
+              print("PERF_RESULT",name,json.dumps(data,separators=(",",":")))
+          PY
   windows:
     name: Windows OBS 32.2.2 frontend
     runs-on: windows-2022
