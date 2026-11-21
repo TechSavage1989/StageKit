@@ -61,6 +61,10 @@ def adapt_file(text, key, filename, settings):
             '    settingsFilePath = QString::fromUtf8(file);\n'
             '    bfree(file);\n'
             '    QString moduleDir = QFileInfo(settingsFilePath).absolutePath();\n\n') + text[end:]
+    if key == "ndi" and filename == "plugin-main.cpp":
+        # Missing runtimes are reported in the OBS log. Loading StageKit must never open a vendor error dialog.
+        text = text.replace("showCriticalUnloadingMessageBoxDelayed(", "sk_optional_ndi_message(")
+        text = re.sub(r'(void sk_optional_ndi_message\([^{};]*\)\s*\{)', r'\1\n\treturn;', text)
     if key == "ndi":
         # Use the StageKit updater. Never enable an output saved by a different NDI module.
         text = text.replace('#define SECTION_NAME "NDIPlugin"', '#define SECTION_NAME "StageKitPortsNDI"')

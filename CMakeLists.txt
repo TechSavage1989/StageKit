@@ -196,7 +196,7 @@ target_sources(
     src/third-party/obs-websocket-api.h
 )
 
-target_sources(stagekit PRIVATE src/components/components.cpp src/components/components.hpp)
+target_sources(stagekit PRIVATE src/components/components.cpp src/components/components.hpp src/components/classic-filters.cpp src/components/classic-filters.hpp)
 include(cmake/common/stagekit-ports.cmake)
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})

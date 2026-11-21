@@ -1,0 +1,101 @@
+uniform float4x4 ViewProj;
+uniform texture2d image;
+uniform texture2d original;
+uniform texture2d mask_image;
+uniform float2 pixel_size;
+uniform float2 uv_scale;
+uniform float2 image_origin;
+uniform float2 shadow_offset;
+uniform float2 steps;
+uniform float4 ink;
+uniform float4 weights0;
+uniform float4 weights1;
+uniform float4 weights2;
+uniform float4 weights3;
+uniform int radius;
+uniform float threshold;
+uniform bool hide_image;
+uniform bool hide_shadow;
+uniform bool use_mask;
+uniform bool invert_mask;
+
+sampler_state linear_sampler { Filter = Linear; AddressU = Clamp; AddressV = Clamp; };
+struct Vertex { float4 pos : POSITION; float2 uv : TEXCOORD0; };
+Vertex vertex_main(Vertex v) { v.pos = mul(float4(v.pos.xyz, 1.0), ViewProj); return v; }
+
+float4 sample_inside(float2 uv)
+{
+	if (min(uv.x, uv.y) < 0.0 || max(uv.x, uv.y) > 1.0)
+		return float4(0.0, 0.0, 0.0, 0.0);
+	return image.Sample(linear_sampler, uv);
+}
+
+float4 shadow_ps(Vertex v) : TARGET
+{
+	float2 base_uv = v.uv * uv_scale - image_origin;
+	float4 front = sample_inside(base_uv);
+	if (hide_image) front = float4(0.0, 0.0, 0.0, 0.0);
+	float opacity = hide_shadow ? 0.0 : ink.a * sample_inside(base_uv - shadow_offset).a;
+	return front + (1.0 - front.a) * float4(ink.rgb * opacity, opacity);
+}
+
+float4 edge_ps(Vertex v) : TARGET
+{
+	float2 dx = float2(pixel_size.x, 0.0);
+	float2 dy = float2(0.0, pixel_size.y);
+	float4 x_grad = image.Sample(linear_sampler, v.uv + dx) - image.Sample(linear_sampler, v.uv - dx);
+	float4 y_grad = image.Sample(linear_sampler, v.uv + dy) - image.Sample(linear_sampler, v.uv - dy);
+	float4 base = image.Sample(linear_sampler, v.uv);
+	float alpha = step(threshold, sqrt(length(x_grad) + length(y_grad))) * ink.a;
+	return float4(ink.rgb * alpha + base.rgb * (1.0 - alpha), alpha + base.a * (1.0 - alpha));
+}
+
+float4 toon_ps(Vertex v) : TARGET
+{
+	float4 c = image.Sample(linear_sampler, v.uv);
+	float3 rgb = c.rgb / max(c.a, 0.00001);
+	float high = max(rgb.r, max(rgb.g, rgb.b));
+	float low = min(rgb.r, min(rgb.g, rgb.b));
+	float span = high - low;
+	float hue = 0.0;
+	if (span > 0.00001) {
+		if (high == rgb.r) hue = (rgb.g - rgb.b) / span;
+		else if (high == rgb.g) hue = 2.0 + (rgb.b - rgb.r) / span;
+		else hue = 4.0 + (rgb.r - rgb.g) / span;
+	}
+	hue = floor(frac(hue / 6.0 + 1.0) * steps.x + 0.5) / steps.x;
+	float3 wheel = saturate(abs(frac(hue + float3(0.0, 0.6666667, 0.3333333)) * 6.0 - 3.0) - 1.0);
+	float brightness = floor(high * steps.y + 0.5) / steps.y;
+	return float4(brightness * lerp(float3(1.0, 1.0, 1.0), wheel, span / max(high, 0.00001)) * c.a, c.a);
+}
+
+float weight(int i)
+{
+	if (i < 4) return weights0[i];
+	if (i < 8) return weights1[i - 4];
+	if (i < 12) return weights2[i - 8];
+	return weights3[i - 12];
+}
+
+float4 convolve(float2 uv)
+{
+	float4 sum = image.Sample(linear_sampler, uv) * weights0.x;
+	for (int i = 1; i <= radius; ++i) {
+		float2 delta = float(i) * pixel_size;
+		sum += weight(i) * (image.Sample(linear_sampler, uv - delta) + image.Sample(linear_sampler, uv + delta));
+	}
+	return sum;
+}
+float4 blur_ps(Vertex v) : TARGET { return convolve(v.uv); }
+float4 mask_ps(Vertex v) : TARGET
+{
+	float4 blurred = convolve(v.uv);
+	if (!use_mask) return blurred;
+	float mask_value = mask_image.Sample(linear_sampler, v.uv).a;
+	return lerp(original.Sample(linear_sampler, v.uv), blurred, invert_mask ? 1.0 - mask_value : mask_value);
+}
+technique Shadow { pass { vertex_shader = vertex_main(v); pixel_shader = shadow_ps(v); } }
+technique Toon { pass { vertex_shader = vertex_main(v); pixel_shader = toon_ps(v); } }
+technique Edges { pass { vertex_shader = vertex_main(v); pixel_shader = edge_ps(v); } }
+technique Horizontal { pass { vertex_shader = vertex_main(v); pixel_shader = blur_ps(v); } }
+technique Vertical { pass { vertex_shader = vertex_main(v); pixel_shader = mask_ps(v); } }
