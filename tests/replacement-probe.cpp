@@ -222,9 +222,44 @@ static void check_plugin_manager(QStringList &issues)
 		issues.append("Could not inspect the OBS Plugin Manager window");
 }
 
+static void check_ndi_preference(QStringList &issues)
+{
+	const auto phase = qEnvironmentVariable("STAGEKIT_TEST_NDI");
+	const bool previously_used = phase == "upgrade";
+	if ((obs_get_module("stagekit-port-ndi") != nullptr) != previously_used)
+		issues.append("NDI module load did not match the saved preference");
+	auto *action = action_named("OBS filter replacements");
+	if (!action) {issues.append("No replacement catalog for NDI preference"); return;}
+	bool checked = false;
+	QObject owner;
+	QTimer::singleShot(100,&owner,[&] {
+		auto *dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());
+		if (!dialog) return;
+		auto *option=dialog->findChild<QCheckBox *>("stagekitLoadNdi");
+		checked=option && option->isChecked()==previously_used;
+		if (previously_used && option) option->click();
+		dialog->reject();
+	});
+	action->trigger();
+	if(!checked)issues.append("NDI preference in the catalog did not match this installation");
+}
+
+static void finish_probe(const QStringList &issues)
+{
+	QFile report(qEnvironmentVariable("STAGEKIT_TEST_REPORT"));
+	if (report.open(QIODevice::WriteOnly))
+		report.write(issues.isEmpty() ? QByteArray("PASS\n") : issues.join('\n').toUtf8());
+	QTimer::singleShot(50, qApp, &QApplication::quit);
+}
+
 static void exercise()
 {
 	QStringList issues;
+	check_ndi_preference(issues);
+	if (qEnvironmentVariable("STAGEKIT_TEST_NDI") == "restart") {
+		finish_probe(issues);
+		return;
+	}
 	for (QWidget *widget : QApplication::topLevelWidgets()) {
 		const auto *box = qobject_cast<QMessageBox *>(widget);
 		if (box && box->isVisible() && box->text().contains("NDI", Qt::CaseInsensitive))
@@ -303,10 +338,7 @@ static void exercise()
 	check_native_quick(issues);
 	check_plugin_manager(issues);
 	check_blur_output(issues);
-	QFile report(qEnvironmentVariable("STAGEKIT_TEST_REPORT"));
-	if (report.open(QIODevice::WriteOnly))
-		report.write(issues.isEmpty() ? QByteArray("PASS\n") : issues.join('\n').toUtf8());
-	QTimer::singleShot(50, qApp, &QApplication::quit);
+	finish_probe(issues);
 }
 
 bool obs_module_load()

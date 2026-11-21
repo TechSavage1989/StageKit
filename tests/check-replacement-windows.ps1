@@ -44,12 +44,13 @@ $env:STAGEKIT_TEST_MODULE_NAMES = $moduleLabels.Values -join "`n"
 $managerDir = Join-Path $obsRoot 'config/obs-studio/plugin_manager'
 $null = New-Item -ItemType Directory -Path $managerDir -Force
 $moduleFile = Join-Path $managerDir 'modules.json'
-$oldNames = [ordered]@{ stagekit = ''; 'stagekit-port-move' = 'Move Transition'; 'stagekit-port-composite' = '' }
+$oldNames = [ordered]@{ stagekit = ''; 'stagekit-port-move' = 'Move Transition'; 'stagekit-port-composite' = ''; 'stagekit-port-ndi' = 'DistroAV' }
 $oldModules = foreach ($name in $oldNames.Keys) {
     [ordered]@{ module_name = $name; display_name = $oldNames[$name]; id = ''; version = ''; enabled = $true
-        sources = @(); outputs = @(); encoders = @(); services = @() }
+        sources = @(if ($name -ceq 'stagekit-port-ndi') { 'stagekit_port_ndi_source' }); outputs = @(); encoders = @(); services = @() }
 }
 $oldModules | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $moduleFile -Encoding utf8
+$env:STAGEKIT_TEST_NDI = 'upgrade'
 $bin = Join-Path $obsRoot 'bin/64bit'
 $process = Start-Process -FilePath (Join-Path $bin 'obs64.exe') -WorkingDirectory $bin -PassThru -WindowStyle Hidden -ArgumentList @('--portable', '--multi', '--disable-shutdown-check', '--disable-missing-files-check', '--disable-updater', '--verbose')
 try {
@@ -84,6 +85,18 @@ try {
     }
     Write-Output 'PASS: OBS recognizes the native StageKit sources, filters and transition and the bundled Composite Blur filter.'
     Write-Output 'PASS: source and scene filters, six Tools entries, catalog search, three visible Composite Blur modes and clean Windows OBS shutdown.'
+    $env:STAGEKIT_TEST_NDI = 'restart'
+    $env:STAGEKIT_TEST_REPORT = Join-Path $scratch 'ndi-restart.txt'
+    $second = Start-Process -FilePath (Join-Path $bin 'obs64.exe') -WorkingDirectory $bin -PassThru -WindowStyle Hidden -ArgumentList @('--portable', '--multi', '--disable-shutdown-check', '--disable-missing-files-check', '--disable-updater')
+    try {
+        if (!$second.WaitForExit(90000)) { throw 'Portable OBS did not finish the NDI restart check.' }
+        if ($second.ExitCode -ne 0 -or !(Test-Path -LiteralPath $env:STAGEKIT_TEST_REPORT)) { throw 'The NDI restart check did not finish.' }
+        $restartResult = (Get-Content -Raw -LiteralPath $env:STAGEKIT_TEST_REPORT).Trim()
+        if ($restartResult -ne 'PASS') { throw $restartResult }
+        Write-Output 'PASS: StageKit retained prior NDI support on upgrade and skipped the NDI module after turning it off and restarting OBS.'
+    } finally {
+        if (!$second.HasExited) { $second.Kill(); $second.WaitForExit() }
+    }
 } catch {
     $logs = Get-ChildItem -LiteralPath (Join-Path $obsRoot 'config/obs-studio/logs') -Filter '*.txt' -ErrorAction SilentlyContinue
     if ($logs) { Get-Content -LiteralPath ($logs | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName -Tail 160 }

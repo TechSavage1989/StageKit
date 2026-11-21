@@ -16,60 +16,64 @@ namespace replacement_test {
 inline void check_clone_audio(QStringList &issues)
 {
 	obs_audio_info info{};
-	if(!obs_get_audio_info(&info)) {
+	if (!obs_get_audio_info(&info)) {
 		issues.append("The clone test needs the OBS audio mixer");
 		return;
 	}
-	auto *input=obs_source_create("stagekit_port_source_clone_audio_wrapper_source","StageKit tone fixture",nullptr,nullptr);
-	auto *choice=obs_data_create();
-	obs_data_set_string(choice,"clone","StageKit tone fixture");
-	auto *clone=obs_source_create_private("stagekit_port_source-clone","Clone tone",choice);
+	auto *input = obs_source_create("stagekit_port_source_clone_audio_wrapper_source", "StageKit tone fixture",
+					nullptr, nullptr);
+	auto *choice = obs_data_create();
+	obs_data_set_string(choice, "clone", "StageKit tone fixture");
+	auto *clone = obs_source_create_private("stagekit_port_source-clone", "Clone tone", choice);
 	obs_data_release(choice);
-	if(!input || !clone) {
+	if (!input || !clone) {
 		issues.append("Could not create the clone audio fixture");
 		obs_source_release(clone);
 		obs_source_release(input);
 		return;
 	}
-	obs_source_set_audio_mixers(input,0);
-	obs_source_set_audio_mixers(clone,1u<<5);
-	obs_source_t *before=obs_get_output_source(MAX_CHANNELS-1);
-	obs_set_output_source(MAX_CHANNELS-1,clone);
+	obs_source_set_audio_mixers(input, 0);
+	obs_source_set_audio_mixers(clone, 1u << 5);
+	obs_source_t *before = obs_get_output_source(MAX_CHANNELS - 1);
+	obs_set_output_source(MAX_CHANNELS - 1, clone);
 	obs_source_release(clone);
 	std::atomic_bool heard{false};
-	auto tap=[](void *p,size_t,audio_data *data) {
-		auto *samples=reinterpret_cast<const float *>(data->data[0]);
-		for(uint32_t i=0;samples && i<data->frames;++i)
-			if(std::abs(std::abs(samples[i])-.1875f)<.002f) {
+	auto tap = [](void *p, size_t, audio_data *data) {
+		auto *samples = reinterpret_cast<const float *>(data->data[0]);
+		for (uint32_t i = 0; samples && i < data->frames; ++i)
+			if (std::abs(std::abs(samples[i]) - .1875f) < .002f) {
 				static_cast<std::atomic_bool *>(p)->store(true);
 				break;
 			}
 	};
 	audio_convert_info format{};
-	format.samples_per_sec=info.samples_per_sec;
-	format.speakers=info.speakers;
-	format.format=AUDIO_FORMAT_FLOAT_PLANAR;
-	obs_add_raw_audio_callback(5,&format,tap,&heard);
-	const auto frames=info.samples_per_sec/50;
+	format.samples_per_sec = info.samples_per_sec;
+	format.speakers = info.speakers;
+	format.format = AUDIO_FORMAT_FLOAT_PLANAR;
+	obs_add_raw_audio_callback(5, &format, tap, &heard);
+	const auto frames = info.samples_per_sec / 50;
 	std::vector<float> signal(frames);
-	for(size_t i=0;i<signal.size();++i) signal[i]=(i%60<30)?.1875f:-.1875f;
+	for (size_t i = 0; i < signal.size(); ++i)
+		signal[i] = (i % 60 < 30) ? .1875f : -.1875f;
 	obs_source_audio packet{};
-	packet.samples_per_sec=info.samples_per_sec;
-	packet.speakers=info.speakers;
-	packet.format=AUDIO_FORMAT_FLOAT_PLANAR;
-	packet.frames=frames;
-	for(size_t ch=0;ch<get_audio_channels(info.speakers);++ch)packet.data[ch]=reinterpret_cast<const uint8_t *>(signal.data());
-	const auto start=os_gettime_ns();
-	for(int i=0;i<100 && !heard;++i) {
-		packet.timestamp=start+uint64_t(i)*20000000;
-		obs_source_output_audio(input,&packet);
+	packet.samples_per_sec = info.samples_per_sec;
+	packet.speakers = info.speakers;
+	packet.format = AUDIO_FORMAT_FLOAT_PLANAR;
+	packet.frames = frames;
+	for (size_t ch = 0; ch < get_audio_channels(info.speakers); ++ch)
+		packet.data[ch] = reinterpret_cast<const uint8_t *>(signal.data());
+	const auto start = os_gettime_ns();
+	for (int i = 0; i < 100 && !heard; ++i) {
+		packet.timestamp = start + uint64_t(i) * 20000000;
+		obs_source_output_audio(input, &packet);
 		QThread::msleep(20);
 	}
-	obs_remove_raw_audio_callback(5,tap,&heard);
-	obs_set_output_source(MAX_CHANNELS-1,before);
+	obs_remove_raw_audio_callback(5, tap, &heard);
+	obs_set_output_source(MAX_CHANNELS - 1, before);
 	obs_source_release(before);
 	obs_source_release(input);
-	if(!heard) issues.append("Source Clone did not route the input tone to its own OBS audio track");
+	if (!heard)
+		issues.append("Source Clone did not route the input tone to its own OBS audio track");
 }
 
 inline void check_native_filters(const QString &art, QStringList &issues)
@@ -296,21 +300,22 @@ inline void check_native_filters(const QString &art, QStringList &issues)
 	obs_source_release(marker);
 	obs_source_release(model);
 	obs_data_set_string(settings, "file", path.constData());
-	obs_source_update(source,settings);
+	obs_source_update(source, settings);
 	QThread::msleep(100);
-	auto *clone_options=obs_data_create();
-	obs_data_set_string(clone_options,"clone",obs_source_get_name(source));
-	obs_data_set_int(clone_options,"buffer_frame",2);
-	auto *copy=obs_source_create_private("stagekit_port_source-clone","Saved buffered clone",clone_options);
+	auto *clone_options = obs_data_create();
+	obs_data_set_string(clone_options, "clone", obs_source_get_name(source));
+	obs_data_set_int(clone_options, "buffer_frame", 2);
+	auto *copy = obs_source_create_private("stagekit_port_source-clone", "Saved buffered clone", clone_options);
 	obs_data_release(clone_options);
-	if(copy) {
+	if (copy) {
 		obs_source_inc_showing(copy);
 		QThread::msleep(120);
-		if(obs_source_get_width(copy)!=w/2 || obs_source_get_height(copy)!=h/2 ||
-		   !retains_artwork(render(copy,w/2,h/2))) fail("Source Clone did not render the saved half-resolution image");
+		if (obs_source_get_width(copy) != w / 2 || obs_source_get_height(copy) != h / 2 ||
+		    !retains_artwork(render(copy, w / 2, h / 2)))
+			fail("Source Clone did not render the saved half-resolution image");
 		obs_source_dec_showing(copy);
-	}
-	else fail("The saved Source Clone ID did not load");
+	} else
+		fail("The saved Source Clone ID did not load");
 	obs_source_release(copy);
 	check_clone_audio(issues);
 	obs_source_dec_showing(source);

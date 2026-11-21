@@ -4,6 +4,8 @@
 
 #include <obs-module.h>
 #include <QDialog>
+#include <QCheckBox>
+#include <QSignalBlocker>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFile>
@@ -42,6 +44,8 @@ bool registered_source(const std::set<std::string> &types, const std::string &id
 
 QString availability(const std::set<std::string> &types, const std::string &port, const std::string &id)
 {
+	if (port == "ndi" && !component_loaded(port) && !ndi_requested())
+		return tr("Native.NdiOff");
 	if (port == "ndi" && !registered_source(types, "stagekit_port_ndi_filter"))
 		return tr("Ports.NDIRuntime");
 	if (!component_loaded(port))
@@ -195,6 +199,17 @@ void collection_tools_menu(QMenu *menu)
 							!table->item(r, 1)->text().contains(s, Qt::CaseInsensitive) &&
 							!table->item(r, 3)->text().contains(s, Qt::CaseInsensitive));
 			});
+			auto *ndi = new QCheckBox(tr("Native.LoadNdi"), &dialog);
+			ndi->setObjectName("stagekitLoadNdi");
+			ndi->setChecked(ndi_requested());
+			QObject::connect(ndi,&QCheckBox::toggled,&dialog,[ndi,&dialog](bool enabled){
+				if (!set_ndi_requested(enabled)) {
+					QSignalBlocker blocker(ndi);
+					ndi->setChecked(ndi_requested());
+					QMessageBox::warning(&dialog,dialog.windowTitle(),tr("Native.NdiSaveError"));
+				}
+			});
+			layout->addWidget(ndi);
 			auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
 			auto *convert = buttons->addButton(tr("Ports.ConvertCopy"), QDialogButtonBox::ActionRole);
 			QObject::connect(convert, &QPushButton::clicked, &dialog,
