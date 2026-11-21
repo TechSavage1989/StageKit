@@ -4065,8 +4065,10 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   a day old. It never touches `main`, protected branches, or branches with an open pull request, and it
   lists kept branches with unique commits in the run summary.
 - `.github/workflows/repo-checks.yaml` runs `scripts/check-root.sh`.
-- Merging, marking a pull request ready, tagging and releasing each need the owner's explicit approval
-  for that task.
+- For StageKit changes the owner wants released as a beta, their release instruction covers marking
+  the pull request ready, merging after its checks pass and publishing through the release workflow.
+  Proceed without a second approval and notify the owner when the Windows update is available.
+  Follow any explicit hold. Stable releases and changes to repository access require separate approval.
 - Standing approval, given 2026-11-12, for the scene-collection rebuild only: merge each change once
   its checks pass and publish it as the next pre-release without asking, then tell the owner it is
   live. It does not cover a stable (non-beta) release, changes to repository visibility or access, or
