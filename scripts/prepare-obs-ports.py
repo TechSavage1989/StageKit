@@ -72,6 +72,13 @@ def adapt_file(text, key, filename, settings):
         text = re.sub(r'strcmp\((id(?:_a|_b)?), "source-clone"\) == 0',
                       lambda m: '(' + m[0] + ' || strcmp(' + m[1] + ', "stagekit_port_source-clone") == 0)', text)
         text = text.replace('obs_get_module("obs-shaderfilter")', 'obs_get_module("stagekit-port-shader")')
+    if key == "composite" and filename == "obs-composite-blur-filter.c":
+        # The original property dialog selects Gaussian and Area. Filters created by
+        # hotkey or restored with missing settings also need a working renderer.
+        radius = 'obs_data_set_default_double(settings, "radius", 10.0);'
+        text = replace_once(text, radius,
+                            'obs_data_set_default_int(settings, "blur_algorithm", ALGO_GAUSSIAN);\n\t'
+                            'obs_data_set_default_int(settings, "blur_type", TYPE_AREA);\n\t' + radius)
     if key == "quick":
         text = text.replace('"source-clone"', '"stagekit_port_source-clone"')
         text = text.replace('"source_release"', '"source_destroy"')

@@ -23,9 +23,10 @@ if len(sys.argv) == 2:
 else:
     items = [("original","Original"), ("custom","Custom Effect File"), ("shadow","Dropshadow"),
              ("edges","Edge Detection"), ("gaussian","Gaussian Blur"), ("toon","Toon"),
-             ("composite","Composite Blur"), ("saved-shader","Saved drop-shadow shader")]
+             ("composite","Composite Blur: Gaussian"), ("composite-kawase","Composite Blur: Dual Kawase"),
+             ("composite-hex","Composite Blur: Hexagonal pixelation"), ("saved-shader","Saved drop-shadow shader")]
     sw, sh = 322, 208
-    page = Image.new("RGB", (2*sw, 4*sh), "#25272b")
+    page = Image.new("RGB", (2*sw, ((len(items)+1)//2)*sh), "#25272b")
     pen = ImageDraw.Draw(page)
     for i, (file, label) in enumerate(items):
         data = (out / (file+".rgba")).read_bytes()

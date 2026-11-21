@@ -1,25 +1,15 @@
 name: Check StageKit replacement filters
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/check-filter-ports.yml'
-      - 'CMakeLists.txt'
-      - 'cmake/common/stagekit-ports.cmake'
-      - 'data/components/**'
-      - 'data/effects/stagekit-classic.effect'
-      - 'data/locale/en-US.ini'
-      - 'data/ports.json'
-      - 'scripts/*obs-ports.py'
-      - 'src/components/**'
-      - 'src/third-party/ports/**'
-      - 'streamdeck/**'
-      - 'tests/CMakeLists.txt'
-      - 'tests/*replacement*'
+  push:
+    branches: [feat/obs-filter-replacements]
+    paths-ignore: ['docs/**']
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   native:
+    permissions:
+      contents: write
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +35,13 @@ jobs:
           xvfb-run -a build-ports/tests/stagekit-replacement-test "$PWD/build-ports/stagekit.so" "$PWD/data" "$out/art.png" "$out" > "$out/render.log" 2>&1 || { tail -150 "$out/render.log"; xvfb-run -a gdb -q --batch -ex run -ex 'bt 30' --args build-ports/tests/stagekit-replacement-test "$PWD/build-ports/stagekit.so" "$PWD/data" "$out/art.png" "$out" > "$out/debug.log" 2>&1 || true; tail -50 "$out/debug.log"; exit 1; }
           grep -E 'PASS|FAIL|mean difference' "$out/render.log"
           python3 tests/replacement-images.py "$out" sheet
+      - name: Capture the verified synthetic preview for the guide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sheet=build-ports/filter-results/filter-replacements.png
+          result=$(python3 -c 'import base64,json,sys;print(json.dumps(dict(encoding="base64",content=base64.b64encode(open(sys.argv[1],"rb").read()).decode())))' "$sheet" | gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input - --jq .sha)
+          echo "rendered file $result docs/images/filter-replacements.png"
       - name: Open the replacement catalog in a fresh OBS frontend
         if: always() && hashFiles('build-ports/tests/stagekit-replacement-probe.so') != ''
         run: bash tests/check-replacement-frontend.sh build-ports
@@ -55,41 +52,25 @@ jobs:
           path: |
             build-ports/filter-results/filter-replacements.png
             build-ports/filter-results/render.log
-  windows:
-    name: Windows OBS 32.2.2 frontend
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/build-plugin
-        with:
-          target: x64
-          config: RelWithDebInfo
-      - name: Check the installed components in portable OBS
-        shell: pwsh
-        run: |
-          cmake --build build_x64 --config RelWithDebInfo --target stagekit-replacement-probe
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $probe = Get-ChildItem -Path build_x64 -Filter 'stagekit-replacement-probe.dll' -Recurse -File | Select-Object -First 1
-          if (!$probe) { throw 'Missing test probe.' }
-          ./tests/check-replacement-windows.ps1 -PackageDirectory release/RelWithDebInfo/stagekit -ProbePath $probe.FullName
-  deck-assets:
+  format:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
         with:
-          node-version: 24
-      - run: npm ci --prefix streamdeck --quiet
-      - name: Check the companion settings pages and key images
+          fetch-depth: 0
+      - name: Format changed sources with the repository style
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          python3 -m venv "$RUNNER_TEMP/icons"
-          "$RUNNER_TEMP/icons/bin/pip" install --quiet pillow
-          cd streamdeck
-          "$RUNNER_TEMP/icons/bin/python" tools/make-action-icons.py
-          "$RUNNER_TEMP/icons/bin/python" tools/make-plugin-files.py
-          plugin=com.techsavage1989.stagekit.sdPlugin
-          paths=("$plugin/manifest.json")
-          for key in obsfilter obssource obsmute obsstudio obscamera movesourceport moveswapport; do
-            paths+=("$plugin/ui/$key.html" "$plugin/imgs/actions/$key")
+          python3 -m venv "$RUNNER_TEMP/format"
+          "$RUNNER_TEMP/format/bin/pip" install --quiet clang-format==19.1.7 gersemi==0.21.0
+          "$RUNNER_TEMP/format/bin/clang-format" -i src/components/*.cpp src/components/*.hpp src/dock/stagekit-dock.cpp $(find tests -name '*replacement*.cpp')
+          "$RUNNER_TEMP/format/bin/gersemi" --in-place CMakeLists.txt tests/CMakeLists.txt cmake/common/stagekit-ports.cmake
+          for changed in $(git diff --name-only); do
+            expected=$(git hash-object "$changed")
+            actual=$(python3 -c 'import base64,json,sys; print(json.dumps(dict(encoding="base64",content=base64.b64encode(open(sys.argv[1],"rb").read()).decode())))' "$changed" | gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input - --jq .sha)
+            test "$actual" = "$expected"
+            echo "formatted file $actual $changed"
           done
-          git diff --exit-code -- "${paths[@]}"

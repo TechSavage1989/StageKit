@@ -98,6 +98,30 @@ static double mean_abs_diff(const std::vector<uint8_t> &a, const std::vector<uin
 	return sum / double(a.size() / 4 * 3);
 }
 
+// The fixture contains opaque, strongly colored regions and a band of narrow vertical stripes.
+static bool retains_artwork(const std::vector<uint8_t> &frame)
+{
+	size_t colored = 0;
+	for (size_t i = 0; i + 3 < frame.size(); i += 4) {
+		const auto range = std::minmax({frame[i], frame[i + 1], frame[i + 2]});
+		if (frame[i + 3] > 48 && range.second - range.first > 24)
+			++colored;
+	}
+	return !frame.empty() && colored > frame.size() / 4 / 8;
+}
+
+static double stripe_contrast(const std::vector<uint8_t> &frame, uint32_t width)
+{
+	double variation = 0;
+	for (uint32_t y = 58; y < 95; ++y)
+		for (uint32_t x = 61; x < 153; ++x) {
+			const size_t i = (size_t(y) * width + x) * 4;
+			for (size_t c = 0; c < 3; ++c)
+				variation += std::abs(int(frame[i + c]) - int(frame[i + c - 4]));
+		}
+	return variation;
+}
+
 int main(int argc, char **argv)
 {
 	if (argc < 5) {
@@ -228,6 +252,9 @@ int main(int argc, char **argv)
 	if (!w || !h)
 		return 1;
 	const auto base_pixels = render(image_source, w, h);
+	check(w == 320 && h == 180 && retains_artwork(base_pixels), "the original fixture contains visible artwork");
+	if (w != 320 || h != 180)
+		return 1;
 	write_frame(out + "/original.rgba", base_pixels, w, h);
 	struct Example {
 		const char *id;
@@ -239,9 +266,12 @@ int main(int argc, char **argv)
 				    {"stagekit_gaussian_blur", "gaussian"},
 				    {"stagekit_toon", "toon"},
 				    {"stagekit_port_obs_composite_blur", "composite"},
+				    {"stagekit_port_obs_composite_blur", "composite-kawase"},
+				    {"stagekit_port_obs_composite_blur", "composite-hex"},
 				    {"stagekit_port_shader_filter", "saved-shader"}};
 	for (const auto &example : examples) {
 		const std::string name(example.name);
+		const bool composite = name.compare(0, 9, "composite") == 0;
 		auto *settings = obs_data_create();
 		if (name == "custom")
 			obs_data_set_string(settings, "effect_path", (out + "/invert.effect").c_str());
@@ -254,8 +284,19 @@ int main(int argc, char **argv)
 			obs_data_set_int(settings, "kernel_size", 21);
 			obs_data_set_double(settings, "sigma", 5.0);
 		}
-		if (name == "composite")
+		if (composite)
 			obs_data_set_double(settings, "radius", 12.0);
+		if (name == "composite-kawase") {
+			obs_data_set_int(settings, "blur_algorithm", 3);
+			obs_data_set_int(settings, "blur_type", 1);
+			obs_data_set_double(settings, "kawase_passes", 20.0);
+		}
+		if (name == "composite-hex") {
+			obs_data_set_int(settings, "blur_algorithm", 4);
+			obs_data_set_int(settings, "blur_type", 1);
+			obs_data_set_int(settings, "pixelate_type", 1);
+			obs_data_set_double(settings, "radius", 10.0);
+		}
 		if (name == "saved-shader") {
 			obs_data_set_bool(settings, "from_file", true);
 			const std::string file =
@@ -280,6 +321,10 @@ int main(int argc, char **argv)
 			sleep_ms(50);
 			auto frame = render(image_source, fw, fh);
 			write_frame(out + "/" + name + ".rgba", frame, fw, fh);
+			check(retains_artwork(frame), name + " retains visible colored artwork");
+			if (composite && fw == w && fh == h)
+				check(stripe_contrast(frame, w) < 0.85 * stripe_contrast(base_pixels, w),
+				      name + " softens the fine stripes");
 			if (name == "shadow") {
 				check(fw == w + 9 && fh == h + 12, "shadow extends the frame in both directions");
 				bool colour = false;
@@ -320,10 +365,15 @@ int main(int argc, char **argv)
 				check(false, name + " unexpectedly changed the source size");
 			}
 		}
-		if ((name == "composite" || name == "saved-shader") && w == fw && h == fh) {
+		if ((composite || name == "saved-shader") && w == fw && h == fh) {
 			const auto port_frame = render(image_source, w, h);
 			auto *saved = obs_source_get_settings(filter);
-			const char *original_id = name == "composite" ? "obs_composite_blur" : "shader_filter";
+			if (composite) {
+				// The supplier sets these two choices in its property dialog.
+				obs_data_set_int(saved, "blur_algorithm", obs_data_get_int(saved, "blur_algorithm"));
+				obs_data_set_int(saved, "blur_type", obs_data_get_int(saved, "blur_type"));
+			}
+			const char *original_id = composite ? "obs_composite_blur" : "shader_filter";
 			auto *original = obs_source_create(original_id, "Upstream comparison", saved, nullptr);
 			obs_data_release(saved);
 			obs_source_filter_remove(image_source, filter);
@@ -332,7 +382,9 @@ int main(int argc, char **argv)
 				sleep_ms(140);
 				(void)render(image_source, w, h);
 				sleep_ms(60);
-				const double error = mean_abs_diff(port_frame, render(image_source, w, h));
+				const auto original_frame = render(image_source, w, h);
+				check(retains_artwork(original_frame), name + " original renders visible colored artwork");
+				const double error = mean_abs_diff(port_frame, original_frame);
 				printf("Original and replacement %s mean difference %.4f\n", example.name, error);
 				check(error <= 0.10, name + " matches the original plugin on the same OBS source");
 				obs_source_filter_remove(image_source, original);
