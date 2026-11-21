@@ -10,7 +10,7 @@ To add a filter, right-click the source, group or scene in OBS, open **Filters**
 | --- | --- | --- |
 | 3D Effect | Source | **3D Effect** rotates and moves the source in three dimensions. |
 | Advanced Mask | Source | **Advanced Mask** uses a shape, image, source or gradient to mask the input. |
-| Composite Blur | Source | **Composite Blur** keeps the original blur algorithms, masks and saved settings. |
+| Composite Blur | Source | **Composite Blur** starts with Gaussian area blur and supports the original algorithms, masks and saved settings, including Dual Kawase and hexagonal pixelation. |
 | Custom Filter | Source | **Custom Effect File** loads an OBS effect file with a Draw technique. The reload button rereads an edited file. |
 | User-defined shader | Source | **User-defined Shader** accepts ShaderFilter code and its saved uniforms. Its bundled examples include drop shadow, bloom, scan lines, VCR and VHS. |
 | DWM.Name | Source | **Directory Watch Media** watches a folder and updates an image or media source from files in that folder. |
@@ -39,9 +39,9 @@ To add a filter, right-click the source, group or scene in OBS, open **Filters**
 
 OBS supplies **Apply LUT, Chroma Key, Color Correction, Color Key, Compose SDR on HDR (Override), Crop/Pad, HDR Tone Mapping (Override), Image Mask/Blend, Luma Key, Render Delay, Scaling/Aspect Ratio, Scroll** and **Sharpen**. Existing instances continue using OBS's own implementation. [OBS Filters Guide](https://obsproject.com/kb/Filters-Guide)
 
-**Original input and seven filters rendered by OBS**
+**Original input and seven filters rendered by OBS, including three Composite Blur settings**
 
-![OBS render showing the same test image with seven replacement filters](images/filter-replacements.png)
+![OBS render showing the same test image with seven replacement filters, including Gaussian, Dual Kawase and hexagonal pixelation](images/filter-replacements.png)
 
 ## Tools and Stream Deck
 

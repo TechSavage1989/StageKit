@@ -63,7 +63,8 @@ static void check_blur_output(QStringList &issues)
 			const auto pixels = replacement_test::render(source, w, h);
 			if (!replacement_test::retains_artwork(pixels) ||
 			    replacement_test::stripe_contrast(pixels, w) >= 0.85 * contrast)
-				issues.append(QString("%1 did not preserve the image and soften the stripes").arg(mode));
+				issues.append(
+					QString("%1 did not preserve the image and soften the stripes").arg(mode));
 			obs_source_filter_remove(source, filter);
 			obs_source_release(filter);
 		}
