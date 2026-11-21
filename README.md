@@ -1330,13 +1330,21 @@ Use **Start or resume**, **Pause** and **Reset** in the dock or source propertie
 
 **Time display** previews the number layout. Leave **Automatic format** on or select any combination of **Days**, **Hours**, **Minutes** and **Seconds**. Selecting minutes and seconds, for example, shows 90 minutes as **90:00**. The source properties also control the overlay font, size and color.
 
-Under **When the timer finishes**, enter an optional **End message** and select a scene under **Switch Program to scene**. The message replaces the time in the dock and overlay. The scene switch runs once, including in Studio Mode. A blank message holds the final time. A private timer can also switch Program when a destination is selected.
+Under **When the timer finishes**, enter an optional **End message** and select a scene under **Switch Program to scene**. The message replaces the time in the dock and overlay. The scene switch runs once, including in Studio Mode. A blank message holds the final time. A private timer can also switch Program when a destination is selected. Each action has its own checkbox. Turning an action off keeps the saved message or scene.
+
+Enable **Start when streaming starts** for any timer that should start or resume when OBS starts streaming. Date timers can count up to their selected deadline. **Steady second increment** advances a period timer by at most one second after an OBS delay, which can extend its run time.
+
+**Leading zero** selects 04:06 or 4:06. Enable **Format output** and enter a pattern such as **IN %time%**. The dock, overlay and settings preview use the same output. Both the output and end message accept %time%, %days%, %hours%, %minutes% and %seconds%. Add 2 to a unit name for two digits, such as %seconds2%.
+
+The dock fits its readout to the space above the playback buttons. Enlarging the timer source in a scene draws a higher-resolution clock at the same position.
 
 ![Countdown in OBS when ready, paused and finished](docs/images/countdown-timer.png)
 
 ![The private OBS dock controlling a paused scene timer](docs/images/countdown-dock.png)
 
 ![Calendar, time display and finish actions in the timer settings](docs/images/countdown-settings.png)
+
+![Timer glyphs enlarged five times in an OBS scene](docs/images/countdown-scaled.png)
 
 ### Ambient Background
 

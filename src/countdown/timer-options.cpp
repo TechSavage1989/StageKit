@@ -86,9 +86,25 @@ public:
 		auto *options_layout = new QVBoxLayout;
 		body->addLayout(options_layout, 1);
 		layout->addLayout(body);
+		auto option = [this](const char *key, const char *id, bool checked) {
+			auto *box = new QCheckBox(label(key), this);
+			box->setObjectName(QString::fromLatin1(id));
+			box->setChecked(checked);
+			return box;
+		};
+		auto *start_group = new QGroupBox(label("Countdown.StartSettings"), this);
+		auto *start_layout = new QVBoxLayout(start_group);
+		stream_ = option("Countdown.OnStream", "timerOnStream", o.on_stream);
+		start_layout->addWidget(stream_);
 		active_ = new QCheckBox(label("Countdown.Auto"), this);
 		active_->setChecked(o.on_program);
-		options_layout->addWidget(active_);
+		start_layout->addWidget(active_);
+		options_layout->addWidget(start_group);
+		date_up_ = option("Countdown.DateUp", "timerDateUp", o.date_up);
+		timing->addRow(date_up_);
+		steady_ = option("Countdown.Steady", "timerSteady", o.steady);
+		steady_->setToolTip(label("Countdown.SteadyHelp"));
+		timing->addRow(steady_);
 
 		auto *format = new QGroupBox(label("Countdown.Format"), this);
 		auto *format_layout = new QVBoxLayout(format);
@@ -108,7 +124,21 @@ public:
 			units_row->addWidget(units_[i]);
 		}
 		format_layout->addLayout(units_row);
+		leading_ = option("Countdown.LeadingZero", "timerLeadingZero", o.leading_zero);
+		format_layout->addWidget(leading_);
+		auto *output_row = new QHBoxLayout;
+		format_ = option("Countdown.FormatOutput", "timerFormatOutput", o.format_output);
+		output_ = new QLineEdit(o.output_format, format);
+		output_->setObjectName("timerOutputPattern");
+		output_->setPlaceholderText(QStringLiteral("%time%"));
+		output_->setToolTip(label("Countdown.PatternHelp"));
+		format_->setToolTip(output_->toolTip());
+		output_row->addWidget(format_);
+		output_row->addWidget(output_, 1);
+		format_layout->addLayout(output_row);
 		example_ = new QLabel(format);
+		example_->setTextFormat(Qt::PlainText);
+		example_->setWordWrap(true);
 		example_->setObjectName("timerExample");
 		format_layout->addWidget(example_);
 		options_layout->addWidget(format);
@@ -118,7 +148,9 @@ public:
 		message_ = new QLineEdit(o.message, end_);
 		message_->setObjectName("timerMessage");
 		message_->setPlaceholderText(label("Countdown.KeepTime"));
-		end_layout->addRow(label("Countdown.Message"), message_);
+		message_on_ = option("Countdown.Message", "timerMessageEnabled", o.use_message);
+		message_->setToolTip(label("Countdown.PatternHelp"));
+		end_layout->addRow(message_on_, message_);
 		scene_ = new QComboBox(end_);
 		scene_->setObjectName("timerEndScene");
 		scene_->addItem(label("Countdown.KeepScene"), QString());
@@ -131,7 +163,8 @@ public:
 		}
 		obs_frontend_source_list_free(&scenes);
 		scene_->setCurrentIndex(std::max(0, scene_->findData(o.scene)));
-		end_layout->addRow(label("Countdown.SwitchScene"), scene_);
+		scene_on_ = option("Countdown.SwitchScene", "timerSceneEnabled", o.switch_scene);
+		end_layout->addRow(scene_on_, scene_);
 		options_layout->addWidget(end_);
 		options_layout->addStretch();
 
@@ -146,6 +179,11 @@ public:
 			clock_->set_wall_time(target_mode);
 			clock_->setVisible(!options.unlimited());
 			date_->setVisible(target_mode);
+			date_up_->setVisible(target_mode);
+			steady_->setVisible(!target_mode);
+			output_->setEnabled(format_->isChecked());
+			message_->setEnabled(message_on_->isChecked());
+			scene_->setEnabled(scene_on_->isChecked());
 			timing->labelForField(date_)->setVisible(target_mode);
 			end_->setVisible(!options.unlimited());
 			for (auto *unit : units_)
@@ -154,11 +192,8 @@ public:
 				target_mode
 					? std::max<int64_t>(0, options.deadline - QDateTime::currentMSecsSinceEpoch())
 					: options.duration;
-			const auto value = options.mode == TimerMode::CountUp ? 0 : remaining;
-			example_->setText(
-				label("Countdown.Example")
-					.arg(timer_text(value, options.units, options.mode != TimerMode::CountUp,
-							options.unlimited() ? 0 : remaining)));
+			const auto value = options.counts_up() ? 0 : remaining;
+			example_->setText(label("Countdown.Example").arg(options.display_text(value, options.unlimited() ? 0 : remaining)));
 			const bool some_unit =
 				automatic_->isChecked() ||
 				std::any_of(units_.begin(), units_.end(), [](const auto *u) { return u->isChecked(); });
@@ -168,8 +203,9 @@ public:
 		connect(mode_, &QComboBox::currentIndexChanged, this, refresh);
 		for (auto *box : units_)
 			connect(box, &QCheckBox::toggled, this, refresh);
-		for (auto *box : {limit_, automatic_})
+		for (auto *box : {limit_, automatic_, date_up_, leading_, format_, message_on_, scene_on_})
 			connect(box, &QCheckBox::toggled, this, refresh);
+		connect(output_, &QLineEdit::textChanged, this, refresh);
 		clock_->changed = refresh;
 		connect(date_, &QDateEdit::dateChanged, this, refresh);
 		refresh();
@@ -187,6 +223,14 @@ public:
 		o.deadline = chosen.isValid() ? chosen.toMSecsSinceEpoch() : 0;
 		o.limit = limit_->isChecked();
 		o.on_program = active_->isChecked();
+		o.on_stream = stream_->isChecked();
+		o.steady = steady_->isChecked();
+		o.date_up = date_up_->isChecked();
+		o.leading_zero = leading_->isChecked();
+		o.format_output = format_->isChecked();
+		o.output_format = output_->text();
+		o.use_message = message_on_->isChecked();
+		o.switch_scene = scene_on_->isChecked();
 		o.message = message_->text();
 		o.scene = scene_->currentData().toString();
 		return o;
@@ -198,8 +242,9 @@ private:
 	QComboBox *mode_, *scene_;
 	QDateEdit *date_;
 	ClockPicker *clock_;
-	QLineEdit *message_;
-	QCheckBox *limit_, *active_, *automatic_;
+	QLineEdit *message_, *output_;
+	QCheckBox *limit_, *active_, *automatic_, *stream_, *steady_, *date_up_;
+	QCheckBox *leading_, *format_, *message_on_, *scene_on_;
 	QGroupBox *end_;
 	QLabel *example_;
 	QDialogButtonBox *buttons_;
@@ -208,7 +253,7 @@ private:
 
 } // namespace
 
-QString timer_text(int64_t milliseconds, int units, bool round_up, int64_t range)
+QString TimerOptions::display_text(int64_t milliseconds, int64_t range, bool at_end, bool reserve_space) const
 {
 	const int mask = fields_for(units, std::max(range, milliseconds));
 	milliseconds = std::max<int64_t>(0, milliseconds);
@@ -216,16 +261,34 @@ QString timer_text(int64_t milliseconds, int units, bool round_up, int64_t range
 	for (size_t i = 0; i < bits.size(); ++i)
 		if (mask & bits[i])
 			quantum = sizes[i];
+	const bool round_up = !counts_up();
 	const auto quantum_ms = quantum * 1000;
 	int64_t remaining = ((milliseconds + (round_up ? quantum_ms - 1 : 0)) / quantum_ms) * quantum;
 	QStringList fields;
 	for (size_t i = 0; i < sizes.size(); ++i) {
 		if (!(mask & bits[i]))
 			continue;
-		fields << QString::number(remaining / sizes[i]).rightJustified(2, QLatin1Char('0'));
+		const int digits = fields.isEmpty() && !leading_zero && !reserve_space ? 1 : 2;
+		fields << QString::number(remaining / sizes[i]).rightJustified(digits, QLatin1Char('0'));
 		remaining %= sizes[i];
 	}
-	return fields.join(QLatin1Char(':'));
+	const QString time = fields.join(QLatin1Char(':'));
+	if (!at_end && !format_output)
+		return time;
+	QString pattern = at_end ? message : output_format;
+	pattern.replace(QStringLiteral("%time%"), time);
+	if (!pattern.contains(QLatin1Char('%')))
+		return pattern;
+	int64_t parts = (milliseconds + (round_up ? 999 : 0)) / 1000;
+	for (size_t i = 0; i < keys.size(); ++i) {
+		const auto key = QString::fromLatin1(keys[i]);
+		const auto value = QString::number(parts / sizes[i]);
+		const auto padded = value.rightJustified(2, QLatin1Char('0'));
+		pattern.replace(QLatin1Char('%') + key + QLatin1Char('%'), reserve_space ? padded : value);
+		pattern.replace(QLatin1Char('%') + key + QStringLiteral("2%"), padded);
+		parts %= sizes[i];
+	}
+	return pattern;
 }
 
 TimerOptions TimerOptions::read(obs_data_t *s)
@@ -238,9 +301,19 @@ TimerOptions TimerOptions::read(obs_data_t *s)
 	o.deadline = obs_data_get_int(s, "deadline_ms");
 	o.limit = obs_data_get_bool(s, "limit_up");
 	o.on_program = obs_data_get_bool(s, "restart_when_active");
+	o.on_stream = obs_data_get_bool(s, "start_on_stream");
+	o.steady = obs_data_get_bool(s, "steady_seconds");
+	o.date_up = obs_data_get_bool(s, "count_up_to_date");
+	o.leading_zero = !obs_data_has_user_value(s, "leading_zero") || obs_data_get_bool(s, "leading_zero");
+	o.format_output = obs_data_get_bool(s, "format_output");
+	if (obs_data_has_user_value(s, "output_format"))
+		o.output_format = QString::fromUtf8(obs_data_get_string(s, "output_format"));
 	o.units = int(obs_data_get_int(s, "display_units")) & 15;
 	o.message = QString::fromUtf8(obs_data_get_string(s, "end_message"));
 	o.scene = QString::fromUtf8(obs_data_get_string(s, "end_scene_uuid"));
+	// Older collections enabled an action by giving it a message or scene.
+	o.use_message = obs_data_has_user_value(s, "use_end_message") ? obs_data_get_bool(s, "use_end_message") : !o.message.isEmpty();
+	o.switch_scene = obs_data_has_user_value(s, "switch_end_scene") ? obs_data_get_bool(s, "switch_end_scene") : !o.scene.isEmpty();
 	return o;
 }
 
@@ -255,6 +328,14 @@ void TimerOptions::write(obs_data_t *s) const
 	obs_data_set_int(s, "deadline_ms", deadline);
 	obs_data_set_bool(s, "limit_up", limit);
 	obs_data_set_bool(s, "restart_when_active", on_program);
+	obs_data_set_bool(s, "start_on_stream", on_stream);
+	obs_data_set_bool(s, "steady_seconds", steady);
+	obs_data_set_bool(s, "count_up_to_date", date_up);
+	obs_data_set_bool(s, "leading_zero", leading_zero);
+	obs_data_set_bool(s, "format_output", format_output);
+	obs_data_set_string(s, "output_format", output_format.toUtf8().constData());
+	obs_data_set_bool(s, "use_end_message", use_message);
+	obs_data_set_bool(s, "switch_end_scene", switch_scene);
 	obs_data_set_int(s, "display_units", units);
 	obs_data_set_string(s, "end_message", message.toUtf8().constData());
 	obs_data_set_string(s, "end_scene_uuid", scene.toUtf8().constData());
@@ -287,11 +368,13 @@ void edit_timer(QWidget *parent, obs_source_t *source)
 	obs_frontend_save();
 }
 
-QString timer_readout(obs_source_t *source)
+QString timer_readout(obs_source_t *source, bool *end_message)
 {
 	calldata_t cd{};
 	proc_handler_call(obs_source_get_proc_handler(source), "timer_readout", &cd);
 	const QString value = QString::fromUtf8(calldata_string(&cd, "text"));
+	if (end_message)
+		*end_message = calldata_bool(&cd, "end_message");
 	calldata_free(&cd);
 	return value;
 }

@@ -16,6 +16,7 @@
 #include <QTimer>
 #include <QDockWidget>
 #include <QLabel>
+#include <QImage>
 #include <QLayout>
 #include <QMainWindow>
 #include <QPushButton>
@@ -55,6 +56,25 @@ inline bool clock_pick(QDialog *dialog, const char *field, int tick, int divisio
 	return true;
 }
 
+// Measure the glyphs OBS actually painted, including its current stylesheet.
+inline int ink_height(QLabel *label)
+{
+	const QImage image = label->grab().toImage().convertToFormat(QImage::Format_RGB32);
+	int first = image.height(), last = -1;
+	if (image.width() < 5)
+		return 0;
+	for (int y = 1; y + 1 < image.height(); ++y) {
+		const int background = qGray(image.pixel(1, y));
+		for (int x = 2; x + 2 < image.width(); ++x)
+			if (std::abs(qGray(image.pixel(x, y)) - background) > 72) {
+				first = std::min(first, y);
+				last = y;
+				break;
+			}
+	}
+	return last < first ? 0 : int((last - first + 1) / image.devicePixelRatio());
+}
+
 inline void check(QStringList &issues, bool restart)
 {
 	auto *main = static_cast<QMainWindow *>(obs_frontend_get_main_window());
@@ -65,6 +85,8 @@ inline void check(QStringList &issues, bool restart)
 	}
 	for (auto *p = panel->parentWidget(); p; p = p->parentWidget())
 		if (auto *dock = qobject_cast<QDockWidget *>(p)) {
+			dock->setFloating(true);
+			dock->resize(276, 255);
 			dock->show();
 			dock->raise();
 			break;
@@ -116,6 +138,11 @@ inline void check(QStringList &issues, bool restart)
 	if (restart) {
 		expect(until([&] { return targets->currentText() == shared_name && readout->text() == "01:13"; }),
 		       "the selected scene timer and its preset were not restored after restarting OBS");
+		edit([&](QDialog *d) {
+			expect(d->findChild<QCheckBox *>("timerOnStream")->isChecked() &&
+			       !d->findChild<QCheckBox *>("timerFormatOutput")->isChecked() &&
+			       d->findChild<QLineEdit *>("timerOutputPattern")->text() == "IN %time%", "timer options did not survive a restart");
+		});
 		choose(QStringLiteral("Private timer"));
 		expect(until([&] { return readout->text() == "00:07" && status->text() == "Ready"; }),
 		       "the private preset was not restored in a stopped state");
@@ -171,6 +198,11 @@ inline void check(QStringList &issues, bool restart)
 	obs_source_media_set_time(source, 30000);
 	expect(until([&] { return readout->text() == "00:43" && status->text() == "Paused"; }),
 	       "a change from OBS media controls did not appear in the dock");
+	const int rendered = ink_height(readout);
+	const int caption = ink_height(status);
+	blog(LOG_INFO, "StageKit timer dock: %d logical pixels wide, digits %d pixels high, status %d", readout->width(), rendered, caption);
+	expect(readout->width() <= 276 && rendered >= 36 && caption > 0 && rendered >= 3 * caption,
+	       "the narrow dock did not paint substantially larger timer digits");
 	const QString capture = qEnvironmentVariable("STAGEKIT_COUNTDOWN_CAPTURE");
 	if (!capture.isEmpty()) {
 		const int bottom = reset->mapTo(panel, QPoint(0, reset->height())).y() +
@@ -211,6 +243,12 @@ inline void check(QStringList &issues, bool restart)
 			       clock_pick(d, "clockSecond", 0, 60),
 		       "setting the evening deadline on the face");
 		d->findChild<QPushButton *>("clockMinute")->click();
+		d->findChild<QCheckBox *>("timerMessageEnabled")->setChecked(true);
+		d->findChild<QCheckBox *>("timerSceneEnabled")->setChecked(true);
+		d->findChild<QCheckBox *>("timerOnStream")->setChecked(true);
+		d->findChild<QCheckBox *>("timerLeadingZero")->setChecked(false);
+		d->findChild<QCheckBox *>("timerFormatOutput")->setChecked(true);
+		d->findChild<QLineEdit *>("timerOutputPattern")->setText("IN %time%");
 		d->findChild<QLineEdit *>("timerMessage")->setText("Session complete");
 		auto *scene_list = d->findChild<QComboBox *>("timerEndScene");
 		const int index = scene_list->findData(dest_id);
@@ -228,7 +266,21 @@ inline void check(QStringList &issues, bool restart)
 			      readout->text().count(QLatin1Char(':')) >= 2;
 	       }),
 	       "the local date and time did not reach the scene timer");
+	expect(readout->text().startsWith("IN ") && readout->fontMetrics().horizontalAdvance(readout->text()) <= readout->contentsRect().width(),
+	       "formatted multi-day clock was clipped in the narrow dock");
 	edit([&](QDialog *d) {
+		auto *message = d->findChild<QLineEdit *>("timerMessage");
+		auto *use_message = d->findChild<QCheckBox *>("timerMessageEnabled");
+		auto *use_scene = d->findChild<QCheckBox *>("timerSceneEnabled");
+		use_message->setChecked(false);
+		use_scene->setChecked(false);
+		expect(!message->isEnabled() && message->text() == "Session complete" && !d->findChild<QComboBox *>("timerEndScene")->isEnabled(),
+		       "disabling finish actions discarded a saved choice");
+		use_message->setChecked(true);
+		use_scene->setChecked(true);
+		d->findChild<QCheckBox *>("timerLeadingZero")->setChecked(true);
+		d->findChild<QCheckBox *>("timerFormatOutput")->setChecked(false);
+		expect(d->findChild<QLineEdit *>("timerOutputPattern")->text() == "IN %time%", "disabling format output discarded its template");
 		d->findChild<QComboBox *>("timerMode")->setCurrentIndex(2);
 		d->findChild<QCheckBox *>("timerLimit")->setChecked(true);
 		expect(clock_pick(d, "clockMinute", 0, 60) && clock_pick(d, "clockSecond", 2, 60),

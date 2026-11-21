@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | perf/scene-fit-ambient-work. Release notes in docs/releases/0.1.0-beta240.md. |
+| Working branch | fix/countdown-dock-readout. Release notes in docs/releases/0.1.0-beta241.md. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -30,6 +30,8 @@ Visible bounds use the existing alpha threshold and fringe handling. Scene Fit t
 Two supplemental headless probes also reproduced their beta239 failures on both builds. FIT_TOOL reported 136 x 76 for its kept-size assertion and exited during cleanup. DOCK_BOUNDS exited during cleanup. The SHADOW_FLICKER probe passed on both.
 
 ## Countdown Timer
+
+Beta241 fits the readout within the operator dock using a local font rule. The OBS fixture measures the pixels actually painted at a 276-pixel dock width. The native source draws glyphs at the observed scene scale, with separate logical dimensions and a bounded texture. A fivefold scene-item test compares its alpha edges with a scaled bitmap. The timer editor shares the output formatter with the dock and scene source. Pre-existing finish actions migrate from their stored message and scene. Stream-start dispatch includes hidden scene sources and the current collection's private timer.
 
 The shared editor uses a clock face for the duration, local deadline and optional count-up limit. Duration and deadline values are kept separately when switching modes. The OBS frontend fixture drives the dial using mouse events and verifies the saved readings.
 

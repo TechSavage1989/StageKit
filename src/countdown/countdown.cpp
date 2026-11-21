@@ -11,6 +11,7 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <obs-module.h>
 #include <obs.hpp>
 #include <util/platform.h>
+#include <graphics/matrix4.h>
 #include <QApplication>
 #include <QColor>
 #include <QDateTime>
@@ -20,6 +21,7 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <algorithm>
 #include <atomic>
 #include <cstring>
+#include <cmath>
 #include <memory>
 #include <mutex>
 
@@ -74,13 +76,15 @@ struct Playback {
 			return position;
 		if (settings.mode == TimerMode::Deadline)
 			return std::clamp<int64_t>(span - until_deadline(), 0, span);
+		if (settings.steady)
+			return position;
 		const int64_t value = position + monotonic_ms() - started;
 		return settings.unlimited() ? value : std::min(span, value);
 	}
 
 	int64_t value() const
 	{
-		if (settings.mode == TimerMode::CountUp)
+		if (settings.counts_up())
 			return elapsed();
 		if (settings.mode == TimerMode::Deadline && state == OBS_MEDIA_STATE_PLAYING)
 			return until_deadline();
@@ -100,13 +104,25 @@ struct Playback {
 				state = OBS_MEDIA_STATE_ENDED;
 				return false;
 			}
-			span = std::max(span, remaining);
+			span = settings.date_up && state == OBS_MEDIA_STATE_STOPPED ? remaining : std::max(span, remaining);
 		} else if (!settings.unlimited() && !span) {
 			return false;
 		}
 		started = monotonic_ms();
 		state = OBS_MEDIA_STATE_PLAYING;
 		return true;
+	}
+
+	// A long OBS stall advances a period timer by at most one second.
+	void advance_steady()
+	{
+		if (state != OBS_MEDIA_STATE_PLAYING || !settings.steady || settings.mode == TimerMode::Deadline)
+			return;
+		const auto now = monotonic_ms();
+		position += std::clamp<int64_t>(now - started, 0, 1000);
+		if (!settings.unlimited())
+			position = std::min(span, position);
+		started = now;
 	}
 
 	bool finished() const
@@ -116,22 +132,20 @@ struct Playback {
 		return settings.mode == TimerMode::Deadline ? until_deadline() == 0 : elapsed() >= span;
 	}
 
-	bool message_visible() const { return state == OBS_MEDIA_STATE_ENDED && !settings.message.isEmpty(); }
+	bool message_visible() const { return state == OBS_MEDIA_STATE_ENDED && settings.use_message && !settings.message.isEmpty(); }
 
 	QString text() const
 	{
-		return message_visible()
-			       ? settings.message
-			       : timer_text(value(), settings.units, settings.mode != TimerMode::CountUp, span);
+		return settings.display_text(value(), span, message_visible());
 	}
 };
 
 struct Display {
 	QFont font;
 	QColor color;
-	int digit = 1, colon = 1, padding = 4, height = 1, message_width = 0;
+	int digit = 1, colon = 1, padding = 4, height = 1;
 
-	void measure(const QString &message)
+	void measure()
 	{
 		const QFontMetrics m(font);
 		digit = 1;
@@ -140,7 +154,6 @@ struct Display {
 		colon = std::max(1, m.horizontalAdvance(QLatin1Char(':')));
 		padding = std::max(3, font.pixelSize() / 6);
 		height = m.height() + 2 * padding;
-		message_width = std::min(4096 - 2 * padding, m.horizontalAdvance(message));
 	}
 
 	int time_width(const QString &s) const
@@ -149,17 +162,28 @@ struct Display {
 		return digit * (int(s.size()) - separators) + colon * separators;
 	}
 
-	QImage paint(const QString &text, bool message, int width) const
+	int line_width(const QString &line) const
 	{
-		QImage frame(width, height, QImage::Format_RGBA8888_Premultiplied);
+		const QFontMetrics metrics(font);
+		int reserve = std::max(metrics.horizontalAdvance(line), metrics.boundingRect(line).width());
+		for (const auto c : line)
+			if (c >= QLatin1Char('0') && c <= QLatin1Char('9'))
+				reserve += digit - metrics.horizontalAdvance(c);
+		return reserve;
+	}
+
+	QImage paint(const QString &text, bool free_text, int width, int density) const
+	{
+		QImage frame(width * density, height * density, QImage::Format_RGBA8888_Premultiplied);
 		if (frame.isNull())
 			return frame;
+		frame.setDevicePixelRatio(density);
 		frame.fill(Qt::transparent);
 		QPainter p(&frame);
 		p.setRenderHint(QPainter::TextAntialiasing);
 		p.setFont(font);
 		p.setPen(color);
-		if (message) {
+		if (free_text) {
 			const int advance = std::max(1, QFontMetrics(font).horizontalAdvance(text));
 			const qreal scale = std::min<qreal>(1, qreal(width - 2 * padding) / advance);
 			p.translate(width / 2.0, height / 2.0);
@@ -208,14 +232,20 @@ public:
 		const auto next = TimerOptions::read(s);
 		std::lock_guard lock(mutex_);
 		const bool reset = !initialized_ || !clock_.settings.same_timing(next);
-		if (reset || next.scene != clock_.settings.scene)
+		if (reset || next.scene != clock_.settings.scene || next.switch_scene != clock_.settings.switch_scene)
 			++*generation_;
+		if (!reset && next.steady != clock_.settings.steady && next.mode != TimerMode::Deadline &&
+		    clock_.state == OBS_MEDIA_STATE_PLAYING) {
+			clock_.advance_steady();
+			clock_.position = clock_.elapsed();
+			clock_.started = monotonic_ms();
+		}
 		clock_.settings = next;
 		if (reset)
 			clock_.reset();
 		display_.font = font;
 		display_.color = color;
-		display_.measure(next.message);
+		display_.measure();
 		initialized_ = true;
 		dirty_ = true;
 		update_width_locked();
@@ -269,11 +299,14 @@ public:
 		uint64_t run;
 		{
 			std::lock_guard lock(mutex_);
+			
+			clock_.advance_steady();
 			if (!clock_.finished())
 				return;
 			clock_.position = clock_.span;
 			clock_.state = OBS_MEDIA_STATE_ENDED;
-			scene = clock_.settings.scene;
+			if (clock_.settings.switch_scene)
+				scene = clock_.settings.scene;
 			run = generation_->load();
 		}
 		obs_source_media_ended(source_);
@@ -313,9 +346,10 @@ public:
 		std::lock_guard lock(mutex_);
 		return clock_.state;
 	}
-	QString text() const
+	QString text(bool &end_message) const
 	{
 		std::lock_guard lock(mutex_);
+		end_message = clock_.message_visible();
 		return clock_.text();
 	}
 	uint32_t width() const
@@ -346,29 +380,50 @@ public:
 
 	void render()
 	{
+		matrix4 transform;
+		gs_matrix_get(&transform);
+		const float scale = std::max(std::hypot(transform.x.x, transform.x.y), std::hypot(transform.y.x, transform.y.y));
+		uint32_t logical_width, logical_height;
 		{
 			std::lock_guard lock(mutex_);
-			const bool down = clock_.settings.mode != TimerMode::CountUp;
+			const bool down = !clock_.settings.counts_up();
 			const int64_t second = (clock_.value() + (down ? 999 : 0)) / 1000;
 			const bool msg = clock_.message_visible();
-			if (!texture_ || second != last_second_ || msg != last_message_ || dirty_) {
+			const bool changed = !texture_ || second != last_second_ || msg != last_message_ || dirty_;
+			if (changed)
 				update_width_locked();
-				const QString value =
-					msg ? clock_.settings.message
-					    : timer_text(second * 1000, clock_.settings.units, down, clock_.span);
-				const QImage frame = display_.paint(value, msg, int(width_));
+			logical_width = width_;
+			logical_height = static_cast<uint32_t>(display_.height);
+			int wanted = std::isfinite(scale) ? int(std::ceil(std::clamp(scale, 1.0f, 8.0f))) : 1;
+			const uint64_t now = obs_get_video_frame_time();
+			if (wanted >= density_)
+				last_large_draw_ = now;
+			else if (now >= last_large_draw_ && now - last_large_draw_ < 1000000000ULL)
+				wanted = density_; // Program and smaller previews can draw the same source in one frame.
+			while (wanted > 1 && (logical_width * wanted > 8192 || logical_height * wanted > 8192 ||
+				uint64_t(logical_width) * logical_height * wanted * wanted > 4 * 1024 * 1024))
+				--wanted;
+			if (changed || wanted != density_) {
+				const auto &options = clock_.settings;
+				const QString value = options.display_text(second * 1000, clock_.span, msg);
+				const QImage frame = display_.paint(value, msg || options.format_output, int(logical_width), wanted);
 				if (frame.isNull())
 					return;
+				const auto w = static_cast<uint32_t>(frame.width());
 				const auto h = static_cast<uint32_t>(frame.height());
 				const uint8_t *pixels = frame.constBits();
-				if (texture_ && gs_texture_get_width(texture_) == width_ &&
+				if (texture_ && gs_texture_get_width(texture_) == w &&
 				    gs_texture_get_height(texture_) == h)
 					gs_texture_set_image(texture_, pixels,
 							     static_cast<uint32_t>(frame.bytesPerLine()), false);
 				else {
+					auto *next = gs_texture_create(w, h, GS_RGBA, 1, &pixels, GS_DYNAMIC);
+					if (!next)
+						return;
 					gs_texture_destroy(texture_);
-					texture_ = gs_texture_create(width_, h, GS_RGBA, 1, &pixels, GS_DYNAMIC);
+					texture_ = next;
 				}
+				density_ = wanted;
 				last_second_ = second;
 				last_message_ = msg;
 				dirty_ = false;
@@ -386,7 +441,7 @@ public:
 		else
 			gs_effect_set_texture(image, texture_);
 		while (gs_effect_loop(effect, "Draw"))
-			gs_draw_sprite(texture_, 0, 0, 0);
+			gs_draw_sprite(texture_, 0, logical_width, logical_height);
 		gs_enable_framebuffer_srgb(previous);
 	}
 
@@ -394,9 +449,14 @@ private:
 	void update_width_locked()
 	{
 		const int64_t range = std::max(clock_.span, clock_.value());
-		const QString maximum = timer_text(range, clock_.settings.units, true, range);
-		width_ = static_cast<uint32_t>(std::min(
-			4096, std::max(display_.time_width(maximum), display_.message_width) + 2 * display_.padding));
+		const auto &options = clock_.settings;
+		const QString maximum = options.display_text(range, range, false, true);
+		int width = options.format_output ? display_.line_width(maximum) : display_.time_width(maximum);
+		if (options.use_message && !options.message.isEmpty()) {
+			const QString end = options.display_text(options.counts_up() ? range : 0, range, true, true);
+			width = std::max(width, display_.line_width(end));
+		}
+		width_ = static_cast<uint32_t>(std::min(4096, width + 2 * display_.padding));
 	}
 	obs_source_t *source_;
 	mutable std::mutex mutex_;
@@ -405,6 +465,8 @@ private:
 	gs_texture_t *texture_ = nullptr;
 	uint32_t width_ = 1;
 	int64_t last_second_ = -1;
+	int density_ = 1;
+	uint64_t last_large_draw_ = 0;
 	bool last_message_ = false, dirty_ = true, initialized_ = false;
 	std::shared_ptr<std::atomic<uint64_t>> generation_ = std::make_shared<std::atomic<uint64_t>>(0);
 };
@@ -497,10 +559,12 @@ void register_countdown()
 					},
 					timer);
 		proc_handler_add(
-			obs_source_get_proc_handler(source), "void timer_readout(out string text)",
+			obs_source_get_proc_handler(source), "void timer_readout(out string text, out bool end_message)",
 			[](void *d, calldata_t *cd) {
-				calldata_set_string(cd, "text",
-						    static_cast<Countdown *>(d)->text().toUtf8().constData());
+				bool end_message;
+				const auto value = static_cast<Countdown *>(d)->text(end_message);
+				calldata_set_string(cd, "text", value.toUtf8().constData());
+				calldata_set_bool(cd, "end_message", end_message);
 			},
 			timer);
 		return timer;

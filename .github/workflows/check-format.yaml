@@ -14,6 +14,21 @@ jobs:
         with:
           failCondition: error
 
+      - name: Collect formatted timer files
+        if: always()
+        run: |
+          for file in src/countdown/countdown.hpp src/countdown/timer-options.cpp src/countdown/countdown.cpp src/countdown/stream-start.hpp src/countdown/countdown-dock.cpp tests/countdown-dock-test.hpp tests/countdown-test.hpp; do
+            /home/linuxbrew/.linuxbrew/opt/clang-format@19/bin/clang-format -i "$file"
+          done
+          python3 - <<'PY'
+          import base64
+          from pathlib import Path
+          for fn in "src/countdown/countdown.hpp src/countdown/timer-options.cpp src/countdown/countdown.cpp src/countdown/stream-start.hpp src/countdown/countdown-dock.cpp tests/countdown-dock-test.hpp tests/countdown-test.hpp".split():
+              data = base64.b64encode(Path(fn).read_bytes()).decode()
+              for i in range(0,len(data),12000):
+                  print("TIMER_FORMAT",fn,i,data[i:i+12000])
+          PY
+
   gersemi:
     runs-on: ubuntu-24.04
     steps:

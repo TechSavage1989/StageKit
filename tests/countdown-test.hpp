@@ -1,7 +1,11 @@
 #pragma once
 
 #include "replacement-frame.hpp"
+#include "../src/countdown/stream-start.hpp"
+#include <QFileInfo>
+#include <QDir>
 #include <obs-module.h>
+#include <graphics/vec2.h>
 #include <QDateTime>
 #include <QElapsedTimer>
 #include <obs.hpp>
@@ -128,6 +132,14 @@ inline void modes(QStringList &issues)
 		return wait_for([&] { return readout(timer) == s; });
 	};
 	fail(is("01:02:03:04"), "day/hour/minute/second format");
+	obs_data_set_bool(config, "leading_zero", false);
+	obs_data_set_bool(config, "format_output", true);
+	obs_data_set_string(config, "output_format", "IN %time% (%days%d %hours2%h %minutes%m %seconds2%s)");
+	obs_source_update(timer, config);
+	fail(is("IN 1:02:03:04 (1d 02h 3m 04s)") && visible_digits(frame(timer)), "leading field and custom output tokens");
+	obs_data_set_bool(config, "leading_zero", true);
+	obs_data_set_bool(config, "format_output", false);
+	obs_source_update(timer, config);
 	for (const auto &pair : {std::pair{12, "1563:04"}, {8, "93784"}, {1, "02"}, {5, "01:124"}}) {
 		obs_data_set_int(config, "display_units", pair.first);
 		obs_source_update(timer, config);
@@ -200,6 +212,97 @@ inline void modes(QStringList &issues)
 	fail(wait_for([&] { return ends == 1 && readout(timer) == "Break over"; }),
 	     "overdue resume missed finish actions");
 	signal_handler_disconnect(obs_source_get_signal_handler(timer), "media_ended", ended, &ends);
+	obs_data_set_int(config, "deadline_ms", QDateTime::currentMSecsSinceEpoch() + 1900);
+	obs_data_set_bool(config, "count_up_to_date", true);
+	obs_data_set_bool(config, "steady_seconds", true);
+	obs_data_set_bool(config, "use_end_message", false);
+	obs_source_update(timer, config);
+	fail(is("00:00"), "count up to a date must start at zero");
+	obs_source_media_play_pause(timer, false);
+	fail(is("00:01") && wait_for([&] { return obs_source_media_get_state(timer) == OBS_MEDIA_STATE_ENDED; }) &&
+	     readout(timer) != "Break over", "calendar count-up or disabled legacy end message");
+	obs_data_set_int(config, "timer_mode", 2);
+	obs_data_set_bool(config, "limit_up", false);
+	obs_data_set_bool(config, "start_on_stream", true);
+	obs_source_update(timer, config);
+	OBSDataAutoRelease private_settings = obs_data_create();
+	obs_data_set_bool(private_settings, "start_on_stream", true);
+	OBSSourceAutoRelease hidden = obs_source_create_private("stagekit_countdown", nullptr, private_settings);
+	OBSSourceAutoRelease manual = obs_source_create("stagekit_countdown", "Manual timer fixture", nullptr, nullptr);
+	fail(is("00:00"), "steady preset");
+	stagekit::start_stream_timers(hidden);
+	fail(obs_source_media_get_state(timer) == OBS_MEDIA_STATE_PLAYING && obs_source_media_get_state(hidden) == OBS_MEDIA_STATE_PLAYING &&
+	     obs_source_media_get_state(manual) == OBS_MEDIA_STATE_STOPPED, "stream-start opt-in for scene and private timers");
+	obs_source_media_set_time(timer, 5000);
+	stagekit::start_stream_timers(hidden);
+	fail(obs_source_media_get_time(timer) >= 5000, "a repeated stream-start reset a running timer");
+	const auto start_ms = obs_source_media_get_time(timer);
+	obs_queue_task(OBS_TASK_GRAPHICS, [](void *) { QThread::msleep(2200); }, nullptr, true);
+	fail(wait_for([&] { return obs_source_media_get_time(timer) >= start_ms + 950; }) &&
+	     obs_source_media_get_time(timer) < start_ms + 1600, "a late render skipped multiple steady seconds");
+	obs_source_media_stop(timer);
+}
+
+// Match an OBS scene item enlarged fivefold, and compare its alpha edges
+// with the old operation of enlarging a one-to-one timer bitmap.
+inline bool sharp_scaled_timer(const QString &sheet_path)
+{
+	OBSDataAutoRelease config = obs_data_create();
+	OBSDataAutoRelease font = obs_data_create();
+	obs_data_set_string(font, "face", "Open Sans");
+	obs_data_set_int(font, "size", 100);
+	obs_data_set_int(font, "flags", OBS_FONT_BOLD);
+	obs_data_set_obj(config, "font", font);
+	OBSSourceAutoRelease source = obs_source_create_private("stagekit_countdown", nullptr, config);
+	OBSSceneAutoRelease scene = obs_scene_create_private("Timer at five times size");
+	if (!source || !scene)
+		return false;
+	const QImage original = frame(source);
+	if (original.isNull())
+		return false;
+	auto *item = obs_scene_add(scene, source);
+	if (!item)
+		return false;
+	vec2 scale;
+	vec2_set(&scale, 5.0f, 5.0f);
+	obs_sceneitem_set_scale(item, &scale);
+	obs_sceneitem_force_update_transform(item);
+	const int w = original.width() * 5, h = original.height() * 5;
+	auto pixels = replacement_test::render(obs_scene_get_source(scene), w, h);
+	const QImage sharp(pixels.data(), w, h, w * 4, QImage::Format_RGBA8888_Premultiplied);
+	const QImage enlarged = original.scaled(w, h, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+	auto coverage = [](const QImage &image) {
+		std::pair<int, int> totals{};
+		for (int y = 0; y < image.height(); ++y) {
+			const auto *line = image.constScanLine(y);
+			for (int x = 0; x < image.width(); ++x) {
+				const int a = line[4 * x + 3];
+				totals.first += a >= 224;
+				totals.second += a >= 32 && a < 224;
+			}
+		}
+		return totals;
+	};
+	const auto old = coverage(enlarged), current = coverage(sharp);
+	blog(LOG_INFO, "StageKit timer at 5x: solid pixels %d/%d, soft edge pixels %d/%d (bitmap/native)", old.first, current.first, old.second, current.second);
+	if (!sheet_path.isEmpty()) {
+		const int cell = 270;
+		const QRect crop(w / 2 - cell / 2, h / 2 - cell / 2, cell, cell);
+		QImage sheet(cell * 2, cell + 36, QImage::Format_RGB32);
+		sheet.fill(QColor("#202329"));
+		QPainter painter(&sheet);
+		painter.drawImage(QPoint(0, 0), enlarged, crop);
+		painter.drawImage(QPoint(cell, 0), sharp, crop);
+		painter.setPen(Qt::white);
+		painter.drawText(QRect(0, cell, cell, 32), Qt::AlignCenter, QStringLiteral("Enlarged bitmap"));
+		painter.drawText(QRect(cell, cell, cell, 32), Qt::AlignCenter, QStringLiteral("Rendered at 5x"));
+		painter.end();
+		if (!sheet.save(QFileInfo(sheet_path).dir().filePath("countdown-scaled.png")))
+			return false;
+	}
+	return current.first > old.first * 0.88 && current.first < old.first * 1.12 && old.second > 100 &&
+	       current.second < old.second * 0.68 && int(obs_source_get_width(source)) == original.width() &&
+	       int(obs_source_get_height(source)) == original.height();
 }
 
 inline void check(QStringList &issues, const QString &sheet_path = {})
@@ -304,6 +407,7 @@ inline void check(QStringList &issues, const QString &sheet_path = {})
 	obs_source_dec_showing(source);
 	obs_source_release(source);
 	modes(issues);
+	expect(sharp_scaled_timer(sheet_path), "the fivefold timer lost edge detail or changed its logical dimensions");
 }
 
 } // namespace countdown_test

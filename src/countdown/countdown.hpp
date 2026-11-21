@@ -23,6 +23,14 @@ struct TimerOptions {
 	int64_t deadline = 0;
 	bool limit = false;
 	bool on_program = false;
+	bool on_stream = false;
+	bool steady = false;
+	bool date_up = false;
+	bool leading_zero = true;
+	bool format_output = false;
+	bool use_message = false;
+	bool switch_scene = false;
+	QString output_format = QStringLiteral("%time%");
 	int units = 0; // zero selects the automatic format
 	QString message;
 	QString scene;
@@ -30,11 +38,12 @@ struct TimerOptions {
 	static TimerOptions read(obs_data_t *settings);
 	void write(obs_data_t *settings) const;
 	bool same_timing(const TimerOptions &other) const;
+	bool counts_up() const { return mode == TimerMode::CountUp || (mode == TimerMode::Deadline && date_up); }
+	QString display_text(int64_t ms, int64_t range, bool at_end = false, bool reserve_space = false) const;
 	bool unlimited() const { return mode == TimerMode::CountUp && !limit; }
 };
 
-QString timer_text(int64_t milliseconds, int units, bool round_up, int64_t range);
-QString timer_readout(obs_source_t *source);
+QString timer_readout(obs_source_t *source, bool *end_message = nullptr);
 void edit_timer(QWidget *parent, obs_source_t *source);
 void register_countdown();
 void register_countdown_dock();

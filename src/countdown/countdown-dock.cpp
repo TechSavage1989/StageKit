@@ -5,17 +5,20 @@ SPDX-License-Identifier: GPL-2.0-or-later
 */
 
 #include "countdown.hpp"
+#include "stream-start.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
 #include <obs.hpp>
 #include <QComboBox>
 #include <QFontDatabase>
+#include <QFontMetrics>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPointer>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QSignalBlocker>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -32,6 +35,81 @@ QString text(const char *key)
 {
 	return QString::fromUtf8(obs_module_text(key));
 }
+
+// OBS themes can override setFont() on a QLabel. Give this label its own
+// font rule and fit the actual output to the space above the playback buttons.
+class TimerReadout final : public QLabel {
+public:
+	explicit TimerReadout(QWidget *parent) : QLabel(parent), face_(QFontDatabase::systemFont(QFontDatabase::FixedFont))
+	{
+		setObjectName("countdownReadout");
+		setTextFormat(Qt::PlainText);
+		setAlignment(Qt::AlignCenter);
+		setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+		face_.setBold(true);
+	}
+
+	void display(const QString &value, bool message)
+	{
+		if (value == text() && message == message_)
+			return;
+		const bool changed_mode = message_ != message;
+		message_ = message;
+		if (changed_mode) {
+			setWordWrap(message);
+			updateGeometry();
+		}
+		setText(value);
+		QString sample = value;
+		for (auto &c : sample)
+			if (c.isDigit())
+				c = QLatin1Char('8');
+		if (changed_mode || sample != sample_) {
+			sample_ = sample;
+			fit();
+		}
+	}
+
+	QSize sizeHint() const override { return message_ ? QLabel::sizeHint() : QSize(220, 92); }
+	QSize minimumSizeHint() const override { return message_ ? QLabel::minimumSizeHint() : QSize(0, 40); }
+
+protected:
+	void resizeEvent(QResizeEvent *e) override
+	{
+		QLabel::resizeEvent(e);
+		fit();
+	}
+
+private:
+	void fit()
+	{
+		int size = 24;
+		if (!message_ && !sample_.isEmpty()) {
+			const QSize room = contentsRect().size() - QSize(8, 4);
+			int low = 1, high = 88;
+			while (low < high) {
+				const int mid = (low + high + 1) / 2;
+				face_.setPixelSize(mid);
+				const QFontMetrics metrics(face_, this);
+				if (metrics.height() <= room.height() && metrics.horizontalAdvance(sample_) <= room.width())
+					low = mid;
+				else
+					high = mid - 1;
+			}
+			size = low;
+		}
+		if (size != pixels_) {
+			pixels_ = size;
+			setStyleSheet(QStringLiteral("QLabel#countdownReadout { font-family: \"%1\"; font-size: %2px; font-weight: bold; }")
+					      .arg(face_.family()).arg(size));
+		}
+	}
+
+	QFont face_;
+	QString sample_;
+	int pixels_ = 0;
+	bool message_ = false;
+};
 
 class TimerDock : public QWidget {
 public:
@@ -59,15 +137,7 @@ public:
 		});
 		layout->addLayout(form);
 
-		readout_ = new QLabel(this);
-		readout_->setObjectName("countdownReadout");
-		readout_->setTextFormat(Qt::PlainText);
-		readout_->setWordWrap(true);
-		readout_->setAlignment(Qt::AlignCenter);
-		auto font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
-		font.setPointSize(24);
-		font.setBold(true);
-		readout_->setFont(font);
+		readout_ = new TimerReadout(this);
 		layout->addWidget(readout_);
 		status_ = new QLabel(this);
 		status_->setObjectName("countdownStatus");
@@ -137,6 +207,12 @@ public:
 			selected_ = QString::fromUtf8(obs_data_get_string(root, "stagekit.countdown.selected"));
 			open_collection();
 		}
+	}
+
+	void stream_started()
+	{
+		if (loaded_ && !closed_)
+			start_stream_timers(private_);
 	}
 
 	void open_collection()
@@ -217,9 +293,9 @@ private:
 		auto source = target();
 		if (!source)
 			return;
-		const QString time = timer_readout(source);
-		if (readout_->text() != time)
-			readout_->setText(time);
+		bool message = false;
+		const QString time = timer_readout(source, &message);
+		readout_->display(time, message);
 		const auto state = obs_source_media_get_state(source);
 		const char *key = "Countdown.Ready";
 		if (state == OBS_MEDIA_STATE_PLAYING)
@@ -234,7 +310,7 @@ private:
 	}
 
 	QComboBox *targets_ = nullptr;
-	QLabel *readout_ = nullptr;
+	TimerReadout *readout_ = nullptr;
 	QLabel *status_ = nullptr;
 	QPushButton *start_ = nullptr;
 	QPushButton *pause_ = nullptr;
@@ -261,6 +337,8 @@ void frontend_event(obs_frontend_event e, void *)
 		return;
 	if (e == OBS_FRONTEND_EVENT_EXIT || e == OBS_FRONTEND_EVENT_SCRIPTING_SHUTDOWN)
 		dock->shutdown();
+	else if (e == OBS_FRONTEND_EVENT_STREAMING_STARTED)
+		dock->stream_started();
 	else if (e == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CLEANUP)
 		dock->clear_collection();
 	else if (e == OBS_FRONTEND_EVENT_FINISHED_LOADING || e == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED)
