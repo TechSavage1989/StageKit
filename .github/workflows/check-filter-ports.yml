@@ -39,9 +39,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          sheet=build-ports/filter-results/filter-replacements.jpg
+          sheet=build-ports/filter-results/filter-replacements.png
           result=$(python3 -c 'import base64,json,sys;print(json.dumps(dict(encoding="base64",content=base64.b64encode(open(sys.argv[1],"rb").read()).decode())))' "$sheet" | gh api --method POST "repos/$GITHUB_REPOSITORY/git/blobs" --input - --jq .sha)
-          echo "rendered file $result docs/images/filter-replacements.jpg"
+          echo "rendered file $result docs/images/filter-replacements.png"
       - name: Open the replacement catalog in a fresh OBS frontend
         if: always() && hashFiles('build-ports/tests/stagekit-replacement-probe.so') != ''
         run: bash tests/check-replacement-frontend.sh build-ports
@@ -50,7 +50,7 @@ jobs:
         with:
           name: stagekit-filter-render
           path: |
-            build-ports/filter-results/filter-replacements.jpg
+            build-ports/filter-results/filter-replacements.png
             build-ports/filter-results/render.log
   format:
     runs-on: ubuntu-24.04

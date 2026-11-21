@@ -45,6 +45,17 @@ static void exercise()
 			auto *table = dialog->findChild<QTableWidget *>();
 			opened = search && table && table->rowCount() > 40;
 			if (opened) {
+				for (int i = 0; i < table->rowCount(); ++i) {
+					const auto original = table->item(i, 0)->text();
+					const auto status = table->item(i, 2)->text();
+					if ((original == "Composite Blur" || original == "Source Copy") &&
+					    status != "Available")
+						issues.append(original + ": " + status);
+#ifdef __linux__
+					if (original == "Move Video Capture Device" && status != "Requires Windows DirectShow")
+						issues.append(original + ": " + status);
+#endif
+				}
 				search->setText("DWM.Name");
 				int visible = 0;
 				for (int i = 0; i < table->rowCount(); ++i)

@@ -35,4 +35,4 @@ else:
         x, y = (i%2)*sw + 4, (i//2)*sh + 4
         page.paste(art, (x,y+22), art)
         pen.text((x+4,y+3), label, fill="white")
-    page.save(out / "filter-replacements.jpg", quality=86)
+    page.save(out / "filter-replacements.png", optimize=True)

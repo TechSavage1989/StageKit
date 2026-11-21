@@ -130,7 +130,4 @@ set(port_extension "${CMAKE_SHARED_MODULE_SUFFIX}")
 if(APPLE)
   set(port_extension "")
 endif()
-target_compile_definitions(
-  stagekit
-  PRIVATE SK_PORT_EXTENSION="${port_extension}" SK_PORT_CONFIG="$<CONFIG>"
-)
+target_compile_definitions(stagekit PRIVATE SK_PORT_EXTENSION="${port_extension}" SK_PORT_CONFIG="$<CONFIG>")

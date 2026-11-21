@@ -5,9 +5,17 @@
 #include <util/platform.h>
 
 #include <algorithm>
-#include <string>
+#include <set>
 
 namespace stagekit {
+namespace {
+std::set<std::string> loaded_components;
+}
+
+bool component_loaded(const std::string &key)
+{
+	return loaded_components.count(key) != 0;
+}
 
 void load_components()
 {
@@ -47,8 +55,11 @@ void load_components()
 		}
 		std::replace(path.begin(), path.end(), '\\', '/');
 		obs_module_t *module = nullptr;
-		if (obs_open_module(&module, path.c_str(), data.c_str()) != MODULE_SUCCESS || !obs_init_module(module))
+		if (obs_open_module(&module, path.c_str(), data.c_str()) != MODULE_SUCCESS || !obs_init_module(module)) {
 			blog(LOG_WARNING, "[stagekit] Could not start component %s", port.key);
+			continue;
+		}
+		loaded_components.insert(port.key);
 	}
 }
 

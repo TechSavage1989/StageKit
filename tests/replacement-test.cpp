@@ -159,10 +159,13 @@ int main(int argc, char **argv)
 		return 1;
 
 	const auto reference = std::filesystem::path(plugin_bin).parent_path() / "tests" / "obs-original";
-	for (auto [name, resources] : {std::pair{"move-transition", "move"}, {"obs-shaderfilter", "shader"}, {"obs-composite-blur", "composite"}}) {
+	for (auto [name, resources] : {std::pair{"move-transition", "move"},
+				       {"obs-shaderfilter", "shader"},
+				       {"obs-composite-blur", "composite"}}) {
 		const std::string binary = (reference / (std::string(name) + ".so")).string();
 		const std::string data = std::string(plugin_data) + "/components/" + resources;
-		if (!load_module(binary.c_str(), data.c_str())) return 1;
+		if (!load_module(binary.c_str(), data.c_str()))
+			return 1;
 	}
 	obs_post_load_modules();
 	auto move_callback = [](const char *proc, const char *filter) {
@@ -173,9 +176,11 @@ int main(int argc, char **argv)
 		calldata_free(&data);
 		return result;
 	};
-	const auto *ported = move_callback("stagekit_port_move_get_transition_filter_function", "stagekit_port_shader_filter");
+	const auto *ported =
+		move_callback("stagekit_port_move_get_transition_filter_function", "stagekit_port_shader_filter");
 	const auto *original_move = move_callback("move_get_transition_filter_function", "shader_filter");
-	check(ported && original_move && ported != original_move, "the original Move module and the StageKit component keep independent callbacks");
+	check(ported && original_move && ported != original_move,
+	      "the original Move module and the StageKit component keep independent callbacks");
 	const auto has_label = [](const char *id, const char *prefix) {
 		const char *version = obs_get_latest_input_type_id(id);
 		const char *name = version ? obs_source_get_display_name(version) : nullptr;
@@ -377,7 +382,8 @@ int main(int argc, char **argv)
 	sleep_ms(300);
 	vec2 actual{};
 	obs_sceneitem_get_pos(item, &actual);
-	check(std::fabs(actual.x - 104.0f) < 0.05f && std::fabs(actual.y - 71.0f) < 0.05f, "Move Source reaches the configured scene coordinates");
+	check(std::fabs(actual.x - 104.0f) < 0.05f && std::fabs(actual.y - 71.0f) < 0.05f,
+	      "Move Source reaches the configured scene coordinates");
 
 	auto *edge = obs_source_create("stagekit_edge_detection", "Edges for Move", nullptr, nullptr);
 	obs_source_filter_add(image_source, edge);
@@ -387,7 +393,8 @@ int main(int argc, char **argv)
 	obs_data_set_int(value_settings, "value_type", 2);
 	obs_data_set_double(value_settings, "setting_float", 0.76);
 	obs_data_set_int(value_settings, "duration", 50);
-	auto *value_filter = obs_source_create("stagekit_port_move_value_filter", "Animate threshold", value_settings, nullptr);
+	auto *value_filter =
+		obs_source_create("stagekit_port_move_value_filter", "Animate threshold", value_settings, nullptr);
 	obs_source_filter_add(image_source, value_filter);
 	obs_source_update(value_filter, value_settings);
 	obs_data_release(value_settings);
@@ -395,7 +402,8 @@ int main(int argc, char **argv)
 	start_filter(value_filter);
 	sleep_ms(300);
 	auto *updated = obs_source_get_settings(edge);
-	check(std::fabs(obs_data_get_double(updated, "threshold") - 0.76) < 0.001, "Move Value changes a named filter setting");
+	check(std::fabs(obs_data_get_double(updated, "threshold") - 0.76) < 0.001,
+	      "Move Value changes a named filter setting");
 	obs_data_release(updated);
 
 	auto *action_settings = obs_data_create();

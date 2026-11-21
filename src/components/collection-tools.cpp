@@ -1,5 +1,6 @@
 #include "collection-tools.hpp"
 #include "collection-convert.hpp"
+#include "components.hpp"
 
 #include <obs-module.h>
 #include <QDialog>
@@ -28,14 +29,31 @@ QString tr(const char *key)
 	return QString::fromUtf8(obs_module_text(key));
 }
 
+bool registered_source(const std::string &id)
+{
+	const std::string version = id + "_v";
+	const char *type = nullptr;
+	for (size_t i = 0; obs_enum_source_types(i, &type); ++i) {
+		const std::string name(type);
+		if (name == id || (name.compare(0, version.size(), version) == 0 && name.size() > version.size() &&
+				   name.find_first_not_of("0123456789", version.size()) == std::string::npos))
+			return true;
+	}
+	return false;
+}
+
 QString availability(const std::string &port, const std::string &id)
 {
-	if (port == "ndi" && !obs_get_latest_input_type_id("stagekit_port_ndi_filter"))
+	if (port == "ndi" && !registered_source("stagekit_port_ndi_filter"))
 		return tr("Ports.NDIRuntime");
+	if (!component_loaded(port))
+		return tr("Ports.NotLoaded");
+	if (id == "ndi_output" && !obs_get_output_flags("stagekit_port_ndi_output"))
+		return tr("Ports.NotLoaded");
 	if (id.empty() || id == "ndi_output")
 		return tr("Ports.Available");
 	const std::string replacement = "stagekit_port_" + id;
-	if (obs_get_latest_input_type_id(replacement.c_str()))
+	if (registered_source(replacement))
 		return tr("Ports.Available");
 	if (id == "move_directshow_filter")
 		return tr("Ports.Windows");
@@ -119,7 +137,8 @@ void collection_tools_menu(QMenu *menu)
 			search->setPlaceholderText(tr("Ports.Find"));
 			layout->addWidget(search);
 			auto *table = new QTableWidget(0, 3, &dialog);
-			table->setHorizontalHeaderLabels({tr("Ports.Original"), tr("Ports.StageKitControl"), tr("Ports.Availability")});
+			table->setHorizontalHeaderLabels(
+				{tr("Ports.Original"), tr("Ports.StageKitControl"), tr("Ports.Availability")});
 			table->setEditTriggers(QAbstractItemView::NoEditTriggers);
 			table->verticalHeader()->hide();
 			table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
@@ -129,18 +148,23 @@ void collection_tools_menu(QMenu *menu)
 			for (const auto &[port, spec] : catalog.definitions.items()) {
 				if (spec.contains("types"))
 					for (const auto &type : spec.at("types")) {
-						if (type.size() >= 4 && type.at(0) != "source_clone_audio_wrapper_source")
+						if (type.size() >= 4 &&
+						    type.at(0) != "source_clone_audio_wrapper_source")
 							rows.emplace(
 								QString::fromStdString(type.at(3).get<std::string>()),
-								tr(type.at(2).get<std::string>().c_str()), availability(port, type.at(0).get<std::string>()));
+								tr(type.at(2).get<std::string>().c_str()),
+								availability(port, type.at(0).get<std::string>()));
 					}
 				if (spec.contains("tool") && spec.contains("originalTool"))
 					rows.emplace(QString::fromStdString(spec.at("originalTool").get<std::string>()),
-						     tr(spec.at("tool").get<std::string>().c_str()), availability(port, ""));
+						     tr(spec.at("tool").get<std::string>().c_str()),
+						     availability(port, ""));
 				if (spec.contains("controls"))
 					for (const auto &item : spec.at("controls"))
 						rows.emplace(QString::fromStdString(item.at(0).get<std::string>()),
-							     tr(item.at(1).get<std::string>().c_str()), tr(item.at(1) == "Ports.Deck" ? "Ports.Companion" : "Ports.Available"));
+							     tr(item.at(1).get<std::string>().c_str()),
+							     tr(item.at(1) == "Ports.Deck" ? "Ports.Companion"
+											   : "Ports.Available"));
 			}
 			for (const auto &[old, next, status] : rows) {
 				const int row = table->rowCount();

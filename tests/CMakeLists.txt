@@ -30,8 +30,12 @@ target_link_libraries(stagekit-replacement-probe PRIVATE OBS::libobs OBS::obs-fr
 set_target_properties(stagekit-replacement-probe PROPERTIES PREFIX "" CXX_STANDARD 17)
 
 # Load supplier and StageKit IDs in the same libobs process. These modules belong to the test build only.
-execute_process(COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/prepare-obs-ports.py"
-  "${PROJECT_SOURCE_DIR}" "${port_build}" --reference COMMAND_ERROR_IS_FATAL ANY)
+execute_process(
+  COMMAND
+    "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/scripts/prepare-obs-ports.py" "${PROJECT_SOURCE_DIR}" "${port_build}"
+    --reference
+  COMMAND_ERROR_IS_FATAL ANY
+)
 foreach(key IN ITEMS move shader composite)
   set(ref_dir "${port_build}/reference/${key}")
   file(GLOB_RECURSE ref_files "${ref_dir}/*.c" "${ref_dir}/*.cpp")
@@ -48,6 +52,9 @@ foreach(key IN ITEMS move shader composite)
   else()
     set(orig_name "obs-composite-blur")
   endif()
-  set_target_properties(${target} PROPERTIES PREFIX "" OUTPUT_NAME "${orig_name}" LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/obs-original")
+  set_target_properties(
+    ${target}
+    PROPERTIES PREFIX "" OUTPUT_NAME "${orig_name}" LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/obs-original"
+  )
   add_dependencies(stagekit-replacement-test ${target})
 endforeach()
