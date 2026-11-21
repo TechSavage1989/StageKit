@@ -10,7 +10,8 @@ public:
 	void bind(obs_source_t *parent, const char *on, const char *off, const char *on_text, const char *off_text)
 	{
 		clear();
-		id = obs_hotkey_pair_register_source(parent, on, text(on_text), off, text(off_text), press<true>, press<false>, source, source);
+		id = obs_hotkey_pair_register_source(parent, on, text(on_text), off, text(off_text), press<true>,
+						     press<false>, source, source);
 	}
 	void clear()
 	{
@@ -19,6 +20,7 @@ public:
 			id = OBS_INVALID_HOTKEY_PAIR_ID;
 		}
 	}
+
 private:
 	obs_source_t *source;
 	obs_hotkey_pair_id id = OBS_INVALID_HOTKEY_PAIR_ID;

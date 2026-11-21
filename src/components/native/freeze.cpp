@@ -38,10 +38,7 @@ struct Freeze {
 		signal_handler_disconnect(obs_source_get_signal_handler(source), "enable", on_enable, this);
 		unbind();
 	}
-	static void on_enable(void *data, calldata_t *)
-	{
-		static_cast<Freeze *>(data)->reset.store(true);
-	}
+	static void on_enable(void *data, calldata_t *) { static_cast<Freeze *>(data)->reset.store(true); }
 	static void defaults(obs_data_t *) {}
 	void update(obs_data_t *s)
 	{
@@ -73,7 +70,8 @@ struct Freeze {
 		for (size_t i = 0; i < 4; ++i) {
 			auto *side = obs_properties_add_float_slider(m, margins[i], text(sides[i]), 0, 100, .01);
 			obs_property_float_set_suffix(side, "%");
-			auto *rule = obs_properties_add_list(a, triggers[i], text(events[i]), OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+			auto *rule = obs_properties_add_list(a, triggers[i], text(events[i]), OBS_COMBO_TYPE_LIST,
+							     OBS_COMBO_FORMAT_INT);
 			obs_property_list_add_int(rule, text("Native.None"), 0);
 			obs_property_list_add_int(rule, text("Native.Hold"), 1);
 			obs_property_list_add_int(rule, text("Native.Release"), 2);
@@ -93,12 +91,15 @@ struct Freeze {
 	void bind(obs_source_t *parent)
 	{
 		unbind();
-		pair = obs_hotkey_pair_register_source(parent, "Freeze.Enable", text("Native.Hold"), "Freeze.Disable", text("Native.Release"), key<1>, key<2>, this, this);
-		screenshot = obs_hotkey_register_source(parent, "Freeze.Screenshot", text("Native.FreezeScreenshot"),
+		pair = obs_hotkey_pair_register_source(parent, "Freeze.Enable", text("Native.Hold"), "Freeze.Disable",
+						       text("Native.Release"), key<1>, key<2>, this, this);
+		screenshot = obs_hotkey_register_source(
+			parent, "Freeze.Screenshot", text("Native.FreezeScreenshot"),
 			[](void *data, obs_hotkey_id, obs_hotkey_t *, bool pressed) {
 				if (pressed)
 					obs_frontend_take_source_screenshot(static_cast<Freeze *>(data)->source);
-			}, this);
+			},
+			this);
 	}
 	void unbind()
 	{
@@ -148,12 +149,14 @@ struct Freeze {
 			held_space = space;
 			since_capture = 0;
 			if (valid && logging)
-				blog(LOG_INFO, "[stagekit] Captured a freeze frame for %s", obs_source_get_name(source));
+				blog(LOG_INFO, "[stagekit] Captured a freeze frame for %s",
+				     obs_source_get_name(source));
 		}
 		if (!valid) {
 			obs_source_skip_video_filter(source);
 		} else if (mask && mask_shader.value) {
-			if (!obs_source_process_filter_begin_with_color_space(source, gs_get_format_from_space(space), space, OBS_NO_DIRECT_RENDERING))
+			if (!obs_source_process_filter_begin_with_color_space(source, gs_get_format_from_space(space),
+									      space, OBS_NO_DIRECT_RENDERING))
 				return;
 			mask_shader.four("edges", edges[0], edges[1], edges[2], edges[3]);
 			gs_effect_set_texture(mask_shader.parameter("held"), frame.texture());
@@ -172,13 +175,27 @@ void load()
 {
 	auto info = video_filter<Freeze>("stagekit_port_freeze_filter", "Ports.Freeze");
 	info.output_flags |= OBS_SOURCE_SRGB;
-	info.filter_add = [](void *p, obs_source_t *parent) { static_cast<Freeze *>(p)->bind(parent); };
-	info.filter_remove = [](void *p, obs_source_t *) { static_cast<Freeze *>(p)->unbind(); };
-	info.activate = [](void *p) { static_cast<Freeze *>(p)->event(0); };
-	info.deactivate = [](void *p) { static_cast<Freeze *>(p)->event(1); };
-	info.show = [](void *p) { static_cast<Freeze *>(p)->event(2); };
-	info.hide = [](void *p) { static_cast<Freeze *>(p)->event(3); };
-	info.video_tick = [](void *p, float seconds) { static_cast<Freeze *>(p)->tick(seconds); };
+	info.filter_add = [](void *p, obs_source_t *parent) {
+		static_cast<Freeze *>(p)->bind(parent);
+	};
+	info.filter_remove = [](void *p, obs_source_t *) {
+		static_cast<Freeze *>(p)->unbind();
+	};
+	info.activate = [](void *p) {
+		static_cast<Freeze *>(p)->event(0);
+	};
+	info.deactivate = [](void *p) {
+		static_cast<Freeze *>(p)->event(1);
+	};
+	info.show = [](void *p) {
+		static_cast<Freeze *>(p)->event(2);
+	};
+	info.hide = [](void *p) {
+		static_cast<Freeze *>(p)->event(3);
+	};
+	info.video_tick = [](void *p, float seconds) {
+		static_cast<Freeze *>(p)->tick(seconds);
+	};
 	obs_register_source(&info);
 }
 } // namespace

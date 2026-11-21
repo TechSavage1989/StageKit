@@ -46,7 +46,8 @@ struct Scan {
 	}
 	void update(obs_data_t *s)
 	{
-		duration = uint64_t(std::clamp<long long>(obs_data_get_int(s, "scan_duration"), 0, 100000)) * 1000000ULL;
+		duration =
+			uint64_t(std::clamp<long long>(obs_data_get_int(s, "scan_duration"), 0, 100000)) * 1000000ULL;
 		line = float(std::clamp<long long>(obs_data_get_int(s, "line_width"), 0, 100));
 		vec4_from_rgba(&color, uint32_t(obs_data_get_int(s, "line_color")) | 0xff000000U);
 		follow_alpha = obs_data_get_bool(s, "dst_line_opacity");
@@ -75,14 +76,17 @@ struct Scan {
 	static obs_properties_t *properties(void *)
 	{
 		auto *p = obs_properties_create();
-		obs_property_int_set_suffix(obs_properties_add_int(p, "scan_duration", text("Native.ScanTime"), 0, 100000, 10), " ms");
-		obs_property_int_set_suffix(obs_properties_add_int(p, "line_width", text("Native.ScanWidth"), 0, 100, 1), " px");
+		obs_property_int_set_suffix(
+			obs_properties_add_int(p, "scan_duration", text("Native.ScanTime"), 0, 100000, 10), " ms");
+		obs_property_int_set_suffix(
+			obs_properties_add_int(p, "line_width", text("Native.ScanWidth"), 0, 100, 1), " px");
 		obs_properties_add_color(p, "line_color", text("Native.ScanColor"));
 		obs_properties_add_bool(p, "dst_line_opacity", text("Native.ScanAlpha"));
 		obs_properties_add_float_slider(p, "line_opacity", text("Native.ScanOpacity"), 0, 100, 1);
 		obs_properties_add_float_slider(p, "rotation", text("Native.Rotation"), 0, 360, 1);
 		obs_properties_add_bool(p, "transparent", text("Native.ScanLive"));
-		obs_properties_add_path(p, "image", text("Native.ScanBackground"), OBS_PATH_FILE, "Images (*.png *.jpg *.jpeg *.bmp *.webp *.gif);;All files (*)", nullptr);
+		obs_properties_add_path(p, "image", text("Native.ScanBackground"), OBS_PATH_FILE,
+					"Images (*.png *.jpg *.jpeg *.bmp *.webp *.gif);;All files (*)", nullptr);
 		return p;
 	}
 	void render()
@@ -105,7 +109,8 @@ struct Scan {
 		auto *frozen = buffers[previous].texture();
 		if (!ready || (cursor < 1 && rendered != now)) {
 			const int next = 1 - previous;
-			const float position = duration ? float(std::min(1.0, double(now - start) / double(duration))) : 1.0f;
+			const float position = duration ? float(std::min(1.0, double(now - start) / double(duration)))
+							: 1.0f;
 			if (!buffers[next].begin(size)) {
 				obs_source_skip_video_filter(source);
 				return;
@@ -114,7 +119,8 @@ struct Scan {
 			if (ok) {
 				shader.pair("progress", ready ? cursor : -1.f, position);
 				gs_effect_set_texture(shader.parameter("stored"), ready ? frozen : nullptr);
-				obs_source_process_filter_tech_end(source, shader.value, size.width, size.height, "Accumulate");
+				obs_source_process_filter_tech_end(source, shader.value, size.width, size.height,
+								   "Accumulate");
 			}
 			buffers[next].end();
 			if (!ok) {
@@ -141,9 +147,12 @@ void load()
 {
 	auto info = video_filter<Scan>("stagekit_port_time_warp_scan_filter", "Ports.TimeWarpScan");
 	info.filter_add = [](void *p, obs_source_t *parent) {
-		static_cast<Scan *>(p)->keys.bind(parent, "tws.Enable", "tws.Disable", "Native.ScanOn", "Native.ScanOff");
+		static_cast<Scan *>(p)->keys.bind(parent, "tws.Enable", "tws.Disable", "Native.ScanOn",
+						  "Native.ScanOff");
 	};
-	info.filter_remove = [](void *p, obs_source_t *) { static_cast<Scan *>(p)->keys.clear(); };
+	info.filter_remove = [](void *p, obs_source_t *) {
+		static_cast<Scan *>(p)->keys.clear();
+	};
 	obs_register_source(&info);
 }
 } // namespace

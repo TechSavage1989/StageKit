@@ -14,9 +14,11 @@ struct Pose {
 	std::array<double, 9> values{90, 0, 0, 0, 0, 0, 0, 100, 100};
 	bool flat = false;
 };
-constexpr std::array<const char *, 9> keys{"fov", "rot_x", "rot_y", "rot_z", "pos_x", "pos_y", "pos_z", "scale_x", "scale_y"};
-constexpr std::array<const char *, 9> captions{"Native.Fov", "Native.RotateX", "Native.RotateY", "Native.RotateZ", "Native.PositionX",
-					      "Native.PositionY", "Native.PositionZ", "Native.ScaleX", "Native.ScaleY"};
+constexpr std::array<const char *, 9> keys{"fov",   "rot_x", "rot_y",   "rot_z",  "pos_x",
+					   "pos_y", "pos_z", "scale_x", "scale_y"};
+constexpr std::array<const char *, 9> captions{"Native.Fov",       "Native.RotateX",   "Native.RotateY",
+					       "Native.RotateZ",   "Native.PositionX", "Native.PositionY",
+					       "Native.PositionZ", "Native.ScaleX",    "Native.ScaleY"};
 Pose read_pose(obs_data_t *s)
 {
 	Pose pose;
@@ -40,7 +42,8 @@ struct Plane {
 	static obs_properties_t *properties(void *)
 	{
 		auto *p = obs_properties_create();
-		auto *mode = obs_properties_add_list(p, "mode", text("Native.Projection"), OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+		auto *mode = obs_properties_add_list(p, "mode", text("Native.Projection"), OBS_COMBO_TYPE_LIST,
+						     OBS_COMBO_FORMAT_INT);
 		obs_property_list_add_int(mode, text("Native.Perspective"), 0);
 		obs_property_list_add_int(mode, text("Native.Orthographic"), 1);
 		for (size_t i = 0; i < keys.size(); ++i) {
@@ -76,19 +79,22 @@ struct Plane {
 				p[i] += blend * (end.values[i] - p[i]);
 		}
 		const auto space = gs_get_color_space();
-		if (!obs_source_process_filter_begin_with_color_space(source, gs_get_format_from_space(space), space, OBS_NO_DIRECT_RENDERING))
+		if (!obs_source_process_filter_begin_with_color_space(source, gs_get_format_from_space(space), space,
+								      OBS_NO_DIRECT_RENDERING))
 			return;
 		constexpr double radians = 0.017453292519943295;
 		const double sx = std::sin(p[1] * radians), cx = std::cos(p[1] * radians);
 		const double sy = std::sin(p[2] * radians), cy = std::cos(p[2] * radians);
 		const double sz = std::sin(p[3] * radians), cz = std::cos(p[3] * radians);
 		const double aspect = double(size.width) / size.height;
-		shader.four("right_axis", float(cy * cz), float(cx * sz + sx * sy * cz), float(sx * sz - cx * sy * cz), float(aspect));
-		shader.four("down_axis", float(-cy * sz), float(cx * cz - sx * sy * sz), float(sx * cz + cx * sy * sz), 1);
+		shader.four("right_axis", float(cy * cz), float(cx * sz + sx * sy * cz), float(sx * sz - cx * sy * cz),
+			    float(aspect));
+		shader.four("down_axis", float(-cy * sz), float(cx * cz - sx * sy * sz), float(sx * cz + cx * sy * sz),
+			    1);
 		shader.four("placement", float(2 * p[4] / size.height), float(2 * p[5] / size.height),
 			    float(p[6] / (double(size.width) + size.height) - 1.0), float(aspect));
-		shader.four("lens", float(std::tan(std::clamp(p[0], .1, 179.99) * radians / 2)), pose.flat ? 1.0f : 0.0f,
-			    float(p[7] / 100), float(p[8] / 100));
+		shader.four("lens", float(std::tan(std::clamp(p[0], .1, 179.99) * radians / 2)),
+			    pose.flat ? 1.0f : 0.0f, float(p[7] / 100), float(p[8] / 100));
 		obs_source_process_filter_end(source, shader.value, size.width, size.height);
 	}
 };

@@ -38,7 +38,11 @@ struct Feedback {
 		if (calldata_bool(cd, "enabled"))
 			static_cast<Feedback *>(ptr)->event(5);
 	}
-	void event(int which) { if (trigger.load() == which) reset.store(true); }
+	void event(int which)
+	{
+		if (trigger.load() == which)
+			reset.store(true);
+	}
 	void update(obs_data_t *s)
 	{
 		delay = uint64_t(std::clamp<long long>(obs_data_get_int(s, "delay_ms"), 0, 1000)) * 1000000ULL;
@@ -59,7 +63,8 @@ struct Feedback {
 	static obs_properties_t *properties(void *)
 	{
 		auto *p = obs_properties_create();
-		obs_property_int_set_suffix(obs_properties_add_int(p, "delay_ms", text("Native.FeedbackDelay"), 1, 1000, 1), " ms");
+		obs_property_int_set_suffix(
+			obs_properties_add_int(p, "delay_ms", text("Native.FeedbackDelay"), 1, 1000, 1), " ms");
 		obs_properties_add_float_slider(p, "offset_x", text("Native.PositionX"), -1000, 1000, 1);
 		obs_properties_add_float_slider(p, "offset_y", text("Native.PositionY"), -1000, 1000, 1);
 		obs_properties_add_float_slider(p, "scale_x", text("Native.HorizontalScale"), .01, 10, .01);
@@ -67,9 +72,11 @@ struct Feedback {
 		obs_properties_add_float_slider(p, "rotation", text("Native.Rotation"), -360, 360, 1);
 		obs_properties_add_float_slider(p, "alpha", text("Native.FeedbackOpacity"), .001, 1, .001);
 		obs_properties_add_bool(p, "inversed", text("Native.FeedbackFront"));
-		auto *choice = obs_properties_add_list(p, "reset_trigger", text("Native.ResetHistory"), OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+		auto *choice = obs_properties_add_list(p, "reset_trigger", text("Native.ResetHistory"),
+						       OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
 		int value = 0;
-		for (const char *label : {"Native.None", "Native.Show", "Native.Hide", "Native.Activate", "Native.Deactivate", "Native.WhenEnabled"})
+		for (const char *label : {"Native.None", "Native.Show", "Native.Hide", "Native.Activate",
+					  "Native.Deactivate", "Native.WhenEnabled"})
 			obs_property_list_add_int(choice, text(label), value++);
 		return p;
 	}
@@ -82,7 +89,8 @@ struct Feedback {
 		}
 		const auto now = obs_get_video_frame_time();
 		const auto current_space = gs_get_color_space();
-		if (reset.exchange(false) || size.width != canvas.width || size.height != canvas.height || current_space != space) {
+		if (reset.exchange(false) || size.width != canvas.width || size.height != canvas.height ||
+		    current_space != space) {
 			last = nullptr;
 			history.clear();
 			canvas = size;
@@ -102,7 +110,8 @@ struct Feedback {
 		if (history.empty() || history.front().time > cutoff) {
 			ok = work->capture(source, size, space);
 		} else if (work->begin(size, space)) {
-			ok = obs_source_process_filter_begin_with_color_space(source, gs_get_format_from_space(space), space, OBS_NO_DIRECT_RENDERING);
+			ok = obs_source_process_filter_begin_with_color_space(source, gs_get_format_from_space(space),
+									      space, OBS_NO_DIRECT_RENDERING);
 			if (ok) {
 				shader.pair("canvas", float(size.width), float(size.height));
 				shader.four("motion", x, y, std::cos(angle), std::sin(angle));
@@ -119,7 +128,8 @@ struct Feedback {
 		}
 		last = work.get();
 		rendered = now;
-		const uint64_t frame_bytes = uint64_t(size.width) * size.height * (gs_get_format_from_space(space) == GS_RGBA16F ? 8 : 4);
+		const uint64_t frame_bytes =
+			uint64_t(size.width) * size.height * (gs_get_format_from_space(space) == GS_RGBA16F ? 8 : 4);
 		const uint64_t slots = std::clamp<uint64_t>((128ULL << 20) / frame_bytes, 2, 120);
 		if (history.empty() || now - history.back().time >= (delay + slots - 2) / (slots - 1)) {
 			history.push_back({now, std::move(work)});
@@ -133,13 +143,24 @@ void load()
 	auto info = video_filter<Feedback>("stagekit_port_recursion_effect_filter", "Ports.RecursionEffect");
 	info.output_flags |= OBS_SOURCE_SRGB;
 	info.filter_add = [](void *p, obs_source_t *parent) {
-		static_cast<Feedback *>(p)->keys.bind(parent, "RecursionEffect.Enable", "RecursionEffect.Disable", "Native.FeedbackOn", "Native.FeedbackOff");
+		static_cast<Feedback *>(p)->keys.bind(parent, "RecursionEffect.Enable", "RecursionEffect.Disable",
+						      "Native.FeedbackOn", "Native.FeedbackOff");
 	};
-	info.filter_remove = [](void *p, obs_source_t *) { static_cast<Feedback *>(p)->keys.clear(); };
-	info.show = [](void *p) { static_cast<Feedback *>(p)->event(1); };
-	info.hide = [](void *p) { static_cast<Feedback *>(p)->event(2); };
-	info.activate = [](void *p) { static_cast<Feedback *>(p)->event(3); };
-	info.deactivate = [](void *p) { static_cast<Feedback *>(p)->event(4); };
+	info.filter_remove = [](void *p, obs_source_t *) {
+		static_cast<Feedback *>(p)->keys.clear();
+	};
+	info.show = [](void *p) {
+		static_cast<Feedback *>(p)->event(1);
+	};
+	info.hide = [](void *p) {
+		static_cast<Feedback *>(p)->event(2);
+	};
+	info.activate = [](void *p) {
+		static_cast<Feedback *>(p)->event(3);
+	};
+	info.deactivate = [](void *p) {
+		static_cast<Feedback *>(p)->event(4);
+	};
 	obs_register_source(&info);
 }
 } // namespace

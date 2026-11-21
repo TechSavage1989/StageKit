@@ -25,9 +25,9 @@ QString settings_path()
 	bfree(path);
 	return file;
 }
-QMainWindow *window()
+QMainWindow *obs_window()
 {
-	return static_cast<QMainWindow *>(obs_frontend_get_main_window());
+	return static_cast<QMainWindow *>(obs_frontend_get_main_obs_window());
 }
 constexpr auto default_key = "Settings/DefaultLayout";
 QString state_key(const QString &name)
@@ -37,7 +37,9 @@ QString state_key(const QString &name)
 
 class Layouts : public QDialog {
 public:
-	explicit Layouts(QMainWindow *parent, const QString &file) : QDialog(parent), settings(file, QSettings::IniFormat)
+	explicit Layouts(QMainWindow *parent, const QString &file)
+		: QDialog(parent),
+		  settings(file, QSettings::IniFormat)
 	{
 		setWindowTitle(text("Ports.Tool.layouts"));
 		auto *layout = new QVBoxLayout(this);
@@ -65,7 +67,8 @@ public:
 		});
 		auto *remove = button("Native.Remove", [this] {
 			const auto name = current();
-			if (QMessageBox::question(this, windowTitle(), QString(text("Native.RemoveLayout")).arg(name)) != QMessageBox::Yes)
+			if (QMessageBox::question(this, windowTitle(),
+						  QString(text("Native.RemoveLayout")).arg(name)) != QMessageBox::Yes)
 				return;
 			settings.remove(name);
 			if (settings.value(default_key).toString() == name)
@@ -109,30 +112,34 @@ private:
 				list->setCurrentItem(item);
 		}
 		const auto def = settings.value(default_key).toString();
-		status->setText(def.isEmpty() ? text("Native.NoStartupLayout") : QString(text("Native.CurrentStartup")).arg(def));
+		status->setText(def.isEmpty() ? text("Native.NoStartupLayout")
+					      : QString(text("Native.CurrentStartup")).arg(def));
 	}
 	void store_state(const QString &name)
 	{
 		if (name.isEmpty())
 			return;
-		settings.setValue(state_key(name), window()->saveState());
+		settings.setValue(state_key(name), obs_window()->saveState());
 		sync();
 		refresh(name);
 	}
 	void restore()
 	{
 		const auto bytes = settings.value(state_key(current())).toByteArray();
-		if (bytes.isEmpty() || !window()->restoreState(bytes))
+		if (bytes.isEmpty() || !obs_window()->restoreState(bytes))
 			QMessageBox::warning(this, windowTitle(), text("Native.LayoutRestoreError"));
 	}
 	void name_layout(bool rename)
 	{
 		const auto old = current();
 		bool accepted = false;
-		const auto name = QInputDialog::getText(this, windowTitle(), text("Native.LayoutName"), QLineEdit::Normal, rename ? old : QString(), &accepted).trimmed();
+		const auto name = QInputDialog::getText(this, windowTitle(), text("Native.LayoutName"),
+							QLineEdit::Normal, rename ? old : QString(), &accepted)
+					  .trimmed();
 		if (!accepted || name.isEmpty() || (rename && name == old))
 			return;
-		if (name.contains('/') || name.contains('\\') || name.compare("Settings", Qt::CaseInsensitive) == 0 || settings.childGroups().contains(name, Qt::CaseInsensitive)) {
+		if (name.contains('/') || name.contains('\\') || name.compare("Settings", Qt::CaseInsensitive) == 0 ||
+		    settings.childGroups().contains(name, Qt::CaseInsensitive)) {
 			QMessageBox::warning(this, windowTitle(), text("Native.LayoutNameTaken"));
 			return;
 		}
@@ -152,21 +159,21 @@ private:
 QMetaObject::Connection menu_connection;
 void event(enum obs_frontend_event which, void *)
 {
-	if (which != OBS_FRONTEND_EVENT_FINISHED_LOADING || !window())
+	if (which != OBS_FRONTEND_EVENT_FINISHED_LOADING || !obs_window())
 		return;
 	QSettings settings(settings_path(), QSettings::IniFormat);
 	const auto name = settings.value(default_key).toString();
 	const auto state = settings.value(state_key(name)).toByteArray();
 	if (!name.isEmpty() && !state.isEmpty())
-		window()->restoreState(state);
+		obs_window()->restoreState(state);
 }
 void load()
 {
 	auto *action = static_cast<QAction *>(obs_frontend_add_tools_menu_qaction(text("Ports.Tool.layouts")));
-	menu_connection = QObject::connect(action, &QAction::triggered, window(), [] {
+	menu_connection = QObject::connect(action, &QAction::triggered, obs_window(), [] {
 		const auto path = settings_path();
 		if (!path.isEmpty() && QDir().mkpath(QFileInfo(path).absolutePath())) {
-			Layouts dialog(window(), path);
+			Layouts dialog(obs_window(), path);
 			dialog.exec();
 		}
 	});

@@ -94,9 +94,11 @@ public:
 	{
 		if (!begin(size, space))
 			return false;
-		const bool ok = obs_source_process_filter_begin_with_color_space(source, format, space, OBS_NO_DIRECT_RENDERING);
+		const bool ok = obs_source_process_filter_begin_with_color_space(source, format, space,
+										 OBS_NO_DIRECT_RENDERING);
 		if (ok)
-			obs_source_process_filter_end(source, obs_get_base_effect(OBS_EFFECT_DEFAULT), size.width, size.height);
+			obs_source_process_filter_end(source, obs_get_base_effect(OBS_EFFECT_DEFAULT), size.width,
+						      size.height);
 		end();
 		return ok;
 	}

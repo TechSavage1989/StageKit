@@ -134,7 +134,8 @@ int main(int argc, char **argv)
 
 	QStringList native_issues;
 	replacement_test::check_native_filters(QString::fromUtf8(image), native_issues);
-	check(native_issues.isEmpty(), "native component renders and saved IDs: " + native_issues.join(", ").toStdString());
+	check(native_issues.isEmpty(),
+	      "native component renders and saved IDs: " + native_issues.join(", ").toStdString());
 
 	const auto reference = std::filesystem::path(plugin_bin).parent_path() / "tests" / "obs-original";
 	for (auto [name, resources] : {std::pair{"move-transition", "move"},
