@@ -86,7 +86,7 @@ try {
     }
     Write-Output 'PASS: OBS recognizes the native StageKit sources, filters and transition and the bundled Composite Blur filter.'
     $testLog = Get-ChildItem -LiteralPath (Join-Path $obsRoot 'config/obs-studio/logs') -Filter '*.txt' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    Select-String -LiteralPath $testLog.FullName -SimpleMatch -Pattern '[camera transition test]', '[Quick Access test]', 'StageKit timer at 5x', 'StageKit timer dock:' | ForEach-Object { Write-Output $_.Line }
+    Select-String -LiteralPath $testLog.FullName -SimpleMatch -Pattern '[camera transition test]', '[Quick Access test]', 'StageKit timer at ', 'StageKit timer dock:' | ForEach-Object { Write-Output $_.Line }
     Write-Output 'PASS: source and scene filters, six Tools entries, catalog search, three visible Composite Blur modes and clean Windows OBS shutdown.'
     $env:STAGEKIT_TEST_NDI = 'restart'
     $env:STAGEKIT_TEST_REPORT = Join-Path $scratch 'ndi-restart.txt'

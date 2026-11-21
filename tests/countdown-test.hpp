@@ -253,12 +253,12 @@ inline void modes(QStringList &issues)
 
 // Match an OBS scene item enlarged fivefold, and compare its alpha edges
 // with the old operation of enlarging a one-to-one timer bitmap.
-inline bool sharp_scaled_timer(const QString &sheet_path)
+inline bool sharp_scaled_timer(const QString &sheet_path, int font_size, int zoom)
 {
 	OBSDataAutoRelease config = obs_data_create();
 	OBSDataAutoRelease font = obs_data_create();
 	obs_data_set_string(font, "face", "Open Sans");
-	obs_data_set_int(font, "size", 100);
+	obs_data_set_int(font, "size", font_size);
 	obs_data_set_int(font, "flags", OBS_FONT_BOLD);
 	obs_data_set_obj(config, "font", font);
 	OBSSourceAutoRelease source = obs_source_create_private("stagekit_countdown", nullptr, config);
@@ -272,10 +272,10 @@ inline bool sharp_scaled_timer(const QString &sheet_path)
 	if (!item)
 		return false;
 	vec2 scale;
-	vec2_set(&scale, 5.0f, 5.0f);
+	vec2_set(&scale, float(zoom), float(zoom));
 	obs_sceneitem_set_scale(item, &scale);
 	obs_sceneitem_force_update_transform(item);
-	const int w = original.width() * 5, h = original.height() * 5;
+	const int w = original.width() * zoom, h = original.height() * zoom;
 	auto pixels = replacement_test::render(obs_scene_get_source(scene), w, h);
 	const QImage sharp(pixels.data(), w, h, w * 4, QImage::Format_RGBA8888_Premultiplied);
 	const QImage enlarged = original.scaled(w, h, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
@@ -292,7 +292,7 @@ inline bool sharp_scaled_timer(const QString &sheet_path)
 		return totals;
 	};
 	const auto old = coverage(enlarged), current = coverage(sharp);
-	blog(LOG_INFO, "StageKit timer at 5x: solid pixels %d/%d, soft edge pixels %d/%d (bitmap/native)", old.first,
+	blog(LOG_INFO, "StageKit timer at %dx: solid pixels %d/%d, soft edge pixels %d/%d (bitmap/native)", zoom, old.first,
 	     current.first, old.second, current.second);
 	if (!sheet_path.isEmpty()) {
 		const int cell = 270;
@@ -304,7 +304,7 @@ inline bool sharp_scaled_timer(const QString &sheet_path)
 		painter.drawImage(QPoint(cell, 0), sharp, crop);
 		painter.setPen(Qt::white);
 		painter.drawText(QRect(0, cell, cell, 32), Qt::AlignCenter, QStringLiteral("Enlarged bitmap"));
-		painter.drawText(QRect(cell, cell, cell, 32), Qt::AlignCenter, QStringLiteral("Rendered at 5x"));
+		painter.drawText(QRect(cell, cell, cell, 32), Qt::AlignCenter, QStringLiteral("Rendered at %1x").arg(zoom));
 		painter.end();
 		if (!sheet.save(QFileInfo(sheet_path).dir().filePath("countdown-scaled.png")))
 			return false;
@@ -416,7 +416,8 @@ inline void check(QStringList &issues, const QString &sheet_path = {})
 	obs_source_dec_showing(source);
 	obs_source_release(source);
 	modes(issues);
-	expect(sharp_scaled_timer(sheet_path), "the fivefold timer lost edge detail or changed its logical dimensions");
+	expect(sharp_scaled_timer(sheet_path, 100, 5), "the fivefold timer lost edge detail or changed its logical dimensions");
+	expect(sharp_scaled_timer({}, 24, 16), "a small timer lost edge detail when enlarged sixteenfold");
 }
 
 } // namespace countdown_test

@@ -396,17 +396,13 @@ public:
 				update_width_locked();
 			logical_width = width_;
 			logical_height = static_cast<uint32_t>(display_.height);
-			int wanted = std::isfinite(scale) ? int(std::ceil(std::clamp(scale, 1.0f, 8.0f))) : 1;
+			const float zoom = std::isfinite(scale) ? std::clamp(scale, 1.0f, float(max_density_)) : 1.0f;
+			int wanted = int(std::ceil(zoom));
 			const uint64_t now = obs_get_video_frame_time();
 			if (wanted >= density_)
 				last_large_draw_ = now;
 			else if (now >= last_large_draw_ && now - last_large_draw_ < 1000000000ULL)
-				wanted =
-					density_; // Program and smaller previews can draw the same source in one frame.
-			while (wanted > 1 &&
-			       (logical_width * wanted > 8192 || logical_height * wanted > 8192 ||
-				uint64_t(logical_width) * logical_height * wanted * wanted > 4 * 1024 * 1024))
-				--wanted;
+				wanted = std::min(density_, max_density_);
 			if (changed || wanted != density_) {
 				const auto &options = clock_.settings;
 				const QString value = options.display_text(second * 1000, clock_.span, msg);
@@ -462,6 +458,10 @@ private:
 			width = std::max(width, display_.line_width(end));
 		}
 		width_ = static_cast<uint32_t>(std::min(4096, width + 2 * display_.padding));
+		// Keep a glyph atlas within 16 MiB even when a small font is enlarged many times.
+		const int side_limit = 8192 / std::max(int(width_), display_.height);
+		const int area_limit = int(std::sqrt((4.0 * 1024 * 1024) / (width_ * display_.height)));
+		max_density_ = std::max(1, std::min(side_limit, area_limit));
 	}
 	obs_source_t *source_;
 	mutable std::mutex mutex_;
@@ -470,7 +470,7 @@ private:
 	gs_texture_t *texture_ = nullptr;
 	uint32_t width_ = 1;
 	int64_t last_second_ = -1;
-	int density_ = 1;
+	int density_ = 1, max_density_ = 1;
 	uint64_t last_large_draw_ = 0;
 	bool last_message_ = false, dirty_ = true, initialized_ = false;
 	std::shared_ptr<std::atomic<uint64_t>> generation_ = std::make_shared<std::atomic<uint64_t>>(0);
