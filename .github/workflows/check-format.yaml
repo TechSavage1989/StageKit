@@ -14,6 +14,13 @@ jobs:
         with:
           failCondition: error
 
+      - name: Read formatted countdown sources for this pull request
+        if: always() && github.head_ref == 'feat/countdown-timer'
+        run: |
+          for f in src/countdown/countdown.cpp src/countdown/countdown.hpp tests/countdown-test.hpp; do
+            echo "COUNTDOWN_FORMAT $f $(clang-format "$f" | base64 -w0)"
+          done
+
   gersemi:
     runs-on: ubuntu-24.04
     steps:

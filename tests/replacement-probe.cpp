@@ -1,5 +1,6 @@
 #include "replacement-frame.hpp"
 #include "replacement-native.hpp"
+#include "countdown-test.hpp"
 #include "replacement-quick.hpp"
 #include "show-in-scenes-camera.hpp"
 #include <obs-module.h>
@@ -319,6 +320,7 @@ static void exercise()
 	check_native_layout(issues);
 	check_native_table(issues);
 	quick_test::check(issues, action_named("Quick Access Utility (StageKit)"));
+	countdown_test::check(issues);
 	check_plugin_manager(issues);
 	check_blur_output(issues);
 	finish_probe(issues);

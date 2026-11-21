@@ -27,6 +27,7 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
 
 - **Blur** (filter): blurs a source in and out smoothly. Seven types: Gaussian, Dual Kawase, Box,
   Pixelate (in seven cell shapes), Radial, Motion and Temporal.
+- **Countdown Timer** (source): show a countdown on a transparent background. Start it manually or when the scene goes live. [Set up a timer](#countdown-timer)
 - **Ambient Background** (source): a soft, drifting backdrop built from an image or another source,
   optionally tinted by whatever capture is live.
 - **Standby image**: one image, chosen once, shown on the start scene and used by the background.
@@ -1312,6 +1313,16 @@ is showing: the other modes' views stay hidden and the switch still reads on. A 
 the camera view shows it even when the camera switch is off; press the switch off again to hide it.
 
 ## Appearance and standby images
+
+### Countdown Timer
+
+In **Sources**, click **+** and choose **Countdown Timer (StageKit)**. Set the hours, minutes and seconds, then position and resize the source like any other overlay. The default is five minutes with white text on a transparent background. The font, size and text color are adjustable.
+
+- **Start or resume** begins counting or continues from the paused time. **Pause** holds the display. **Reset** returns to the full duration and waits for the next start.
+- For a starting-soon or break scene, enable **Restart when the scene goes live**. Opening Studio Preview leaves the timer ready. Taking the scene to Program starts it at the full duration.
+- The display holds at zero. Each timer has its own controls under **Settings > Hotkeys**. OBS media controls can also play, pause, restart and seek the timer.
+
+![A five-minute countdown rendered in OBS when ready, paused and finished](docs/images/countdown-timer.png)
 
 ### Ambient Background
 

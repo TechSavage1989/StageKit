@@ -11,12 +11,14 @@ on:
       - 'data/ports.json'
       - 'scripts/*obs-ports.py'
       - 'src/components/**'
+      - 'src/countdown/**'
       - 'src/common/item-transition.*'
       - 'src/placement/show-in-scenes.*'
       - 'src/placement/scene-transitions.*'
       - 'src/transition/**'
       - 'src/view/cropped-view.*'
       - 'tests/show-in-scenes-camera.hpp'
+      - 'tests/countdown-test.hpp'
       - 'src/plugin-main.cpp'
       - 'src/third-party/ports/**'
       - 'streamdeck/**'
@@ -76,7 +78,14 @@ jobs:
           path: |
             build-ports/filter-results/filter-replacements.png
             build-ports/filter-results/native-scene-effects.png
+            build-ports/filter-results/countdown-timer.png
             build-ports/filter-results/render.log
+      - name: Read the countdown guide capture for this pull request
+        if: always() && github.head_ref == 'feat/countdown-timer'
+        run: |
+          if test -f build-ports/filter-results/countdown-timer.png; then
+            echo "COUNTDOWN_GUIDE=$(base64 -w0 build-ports/filter-results/countdown-timer.png)"
+          fi
   windows:
     name: Windows OBS 32.2.2 frontend
     runs-on: windows-2022

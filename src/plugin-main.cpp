@@ -33,6 +33,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "placement/show-in-scenes.hpp"
 #include "capture/program-trigger.hpp"
 #include "common/start-image.hpp"
+#include "countdown/countdown.hpp"
 #include "dock/stagekit-dock.hpp"
 #include "frame/auto-frame.hpp"
 #include "placement/fit-item.hpp"
@@ -139,6 +140,7 @@ bool obs_module_load(void)
 	stagekit::register_classic_filters();
 	stagekit::register_ramp_blur();
 	stagekit::register_start_image();
+	stagekit::register_countdown();
 	stagekit::register_ambient_background();
 	stagekit::register_shadow_backdrop();
 	stagekit::register_corners();

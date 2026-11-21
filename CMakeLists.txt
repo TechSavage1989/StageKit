@@ -100,6 +100,8 @@ target_sources(
     src/common/shown-scale.hpp
     src/common/start-image.cpp
     src/common/start-image.hpp
+    src/countdown/countdown.cpp
+    src/countdown/countdown.hpp
     src/dock/arrange.cpp
     src/dock/arrange.hpp
     src/dock/arrange-tools.cpp

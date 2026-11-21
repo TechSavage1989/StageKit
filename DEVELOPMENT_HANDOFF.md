@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | fix/quick-access-dock-workflows. Release notes in docs/releases/0.1.0-beta238.md. |
+| Working branch | feat/countdown-timer. Release notes in docs/releases/0.1.0-beta239.md. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -22,6 +22,10 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
+
+## Countdown Timer
+
+The native OBS input stagekit_countdown uses a separate monotonic clock for each source. Its properties, source hotkeys and media controls share the same playback commands. Program activation can restart the timer. The headless and portable Windows fixtures exercise playback, seeking, zero, transparent rendering and independent sources. The headless fixture also captures the guide image.
 
 ## Quick Access docks
 
