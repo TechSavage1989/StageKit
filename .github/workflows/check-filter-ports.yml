@@ -106,27 +106,6 @@ jobs:
             build-ports/filter-results/countdown-dock.png
             build-ports/filter-results/countdown-settings.png
             build-ports/filter-results/render.log
-  clock-guide:
-    runs-on: ubuntu-24.04
-    permissions:
-      actions: read
-      contents: read
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: stagekit-filter-render
-          run-id: 44937445880
-          github-token: ${{ github.token }}
-      - name: Read the tested clock picker image
-        run: |
-          python3 - <<'PY'
-          import base64, pathlib
-          files=list(pathlib.Path('.').rglob('countdown-settings.png'))
-          assert len(files)==1,files
-          data=base64.b64encode(files[0].read_bytes()).decode()
-          for i in range(0,len(data),12000):
-              print("CLOCK_GUIDE",i,data[i:i+12000])
-          PY
   windows:
     name: Windows OBS 32.2.2 frontend
     runs-on: windows-2022

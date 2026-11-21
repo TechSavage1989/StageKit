@@ -25,7 +25,9 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 
 ## Scene rendering performance
 
-Visible bounds use the existing alpha threshold and fringe handling. Scene Fit tracks each owner's claim directly. Scene Shadow can reuse the top layer mask when every contributing source casts and none is fading. Ambient Background can skip its darkest-level pass when the base image is the only input and the lift refers to that image. The scene collection benchmark uses synthetic sources. Individual layout and rendering costs depend on the collection and hardware.
+Visible bounds use the existing alpha threshold and fringe handling. Scene Fit tracks each owner's claim directly. Scene Shadow can reuse the top layer mask when every contributing source casts and none is fading. Ambient Background can skip its darkest-level pass when the base image is the only input and the lift refers to that image. On the 1024 x 576 RGBA fixture with an inset opaque rectangle, the median scan time across five batches went from 0.260 ms to 0.054 ms (GCC -O2). This measures one CPU scan. All 12 Ambient Background and Scene Shadow reference frames matched beta239 byte for byte. Four alternating 450-frame trials of the complete synthetic scene in the software renderer showed variable frame times. Measure a hardware-backed collection separately before attributing a frame-time gain to these changes.
+
+Two supplemental headless probes also reproduced their beta239 failures on both builds. FIT_TOOL reported 136 x 76 for its kept-size assertion and exited during cleanup. DOCK_BOUNDS exited during cleanup. The SHADOW_FLICKER probe passed on both.
 
 ## Countdown Timer
 
