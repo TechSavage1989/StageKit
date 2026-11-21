@@ -11,6 +11,7 @@ the Free Software Foundation; either version 2 of the License, or
 #pragma once
 
 #include "../common/easing.hpp"
+#include "../common/box-alignment.hpp"
 #include "../common/owner-ref.hpp"
 #include "../common/scene-util.hpp"
 #include "../dock/arrange.hpp"
@@ -272,9 +273,6 @@ bool fit_settings_for(obs_source_t *scene, const char *name, FitSettings &settin
 // 8 bottom right), and the same nine laid out as OBS lays out a bounding
 // box's alignment: row by row from the top left (`kTowardGrid[cell]` is the
 // saved number of the cell at row cell / 3, column cell % 3).
-inline constexpr int kTowardX[9] = {0, 0, 0, -1, 1, -1, 1, -1, 1};
-inline constexpr int kTowardY[9] = {0, -1, 1, 0, 0, -1, -1, 1, 1};
-inline constexpr int kTowardGrid[9] = {5, 1, 6, 3, 0, 4, 7, 2, 8};
 // The saved number for a side (-1, 0 or 1 each way).
 inline int toward_number(int x, int y)
 {

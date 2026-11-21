@@ -56,31 +56,28 @@ public:
 		face_.setBold(true);
 	}
 
-	void display(const QString &value, const QString &layout, bool message)
+	void display(const QString &value, const QString &layout, bool message, const TimerDockStyle &style)
 	{
-		if (value == text() && layout == layout_ && message == message_)
+		const QString reference = message ? value : style.reference;
+		if (value == text() && layout == layout_ && message == message_ && reference == sample_ &&
+		    style.alignment == alignment_ && style.pixels == requested_)
 			return;
-		const bool changed_mode = message_ != message;
+		const bool resize_font = message != message_ || reference != sample_ || requested_ != style.pixels;
 		message_ = message;
 		layout_ = layout;
-		if (changed_mode) {
-			setWordWrap(message);
-			updateGeometry();
-		}
+		sample_ = reference;
+		requested_ = style.pixels;
+		alignment_ = style.alignment;
+		const int x = fit::kTowardX[alignment_], y = fit::kTowardY[alignment_];
+		setAlignment((x < 0 ? Qt::AlignLeft : x > 0 ? Qt::AlignRight : Qt::AlignHCenter) |
+			     (y < 0 ? Qt::AlignTop : y > 0 ? Qt::AlignBottom : Qt::AlignVCenter));
+		setWordWrap(message);
 		setText(value);
-		QString sample = layout_;
-		if (!message_) {
-			for (auto &c : sample) {
-				if (TimerLine::is_digit(c) || c == timer_digit_space)
-					c = QLatin1Char('8');
-				else if (c == timer_colon_space)
-					c = QLatin1Char(':');
-			}
-		}
-		if (changed_mode || sample != sample_) {
-			sample_ = sample;
+		if (resize_font)
 			fit();
-		}
+		else if (!message_ && line_)
+			live_bounds_ = line_->layout(layout_);
+		update();
 	}
 
 	QSize sizeHint() const override { return QSize(220, 92); }
@@ -98,7 +95,7 @@ protected:
 		painter.setFont(face_);
 		painter.setPen(palette().color(foregroundRole()));
 		painter.setRenderHint(QPainter::TextAntialiasing);
-		line_->layout(layout_, &painter, QRectF(contentsRect()).center() - live_bounds_.center());
+		line_->layout(layout_, &painter, timer_text_origin(QRectF(contentsRect()).adjusted(4, 2, -4, -2), live_bounds_, alignment_));
 	}
 
 	void resizeEvent(QResizeEvent *e) override
@@ -111,7 +108,9 @@ private:
 	void fit()
 	{
 		int size = 24;
-		if (!sample_.isEmpty()) {
+		if (!message_ && requested_ > 0) {
+			size = requested_;
+		} else if (!sample_.isEmpty()) {
 			const QSize room = contentsRect().size() - QSize(8, 4);
 			int low = 1, high = 88;
 			while (low < high) {
@@ -133,7 +132,7 @@ private:
 		face_.setPixelSize(size);
 		if (!message_) {
 			line_.emplace(face_);
-			live_bounds_ = line_->layout(sample_);
+			live_bounds_ = line_->layout(layout_);
 		}
 		if (size != pixels_) {
 			pixels_ = size;
@@ -149,7 +148,7 @@ private:
 	QString sample_, layout_;
 	std::optional<TimerLine> line_;
 	QRectF live_bounds_;
-	int pixels_ = 0;
+	int pixels_ = 0, alignment_ = 0, requested_ = 0;
 	bool message_ = false;
 };
 
@@ -364,8 +363,9 @@ public:
 			return;
 		bool message = false;
 		QString layout;
-		const QString time = timer_readout(source, &message, &layout);
-		readout_->display(time, layout, message);
+		TimerDockStyle style;
+		const QString time = timer_readout(source, &message, &layout, &style);
+		readout_->display(time, layout, message, style);
 		const auto state = obs_source_media_get_state(source);
 		const char *key = "Countdown.Ready";
 		if (state == OBS_MEDIA_STATE_PLAYING)

@@ -5,6 +5,7 @@ SPDX-License-Identifier: GPL-2.0-or-later
 */
 #pragma once
 
+#include "timer-source.hpp"
 #include <obs.h>
 #include <QString>
 #include <QDateTime>
@@ -13,12 +14,18 @@ class QWidget;
 
 namespace stagekit {
 
-inline constexpr char kCountdownId[] = "stagekit_countdown";
+inline constexpr int kTimerBoxWidth = 800, kTimerBoxHeight = 120;
+inline constexpr int kTimerMaxWidth = 4096, kTimerMaxHeight = 2160;
+
+struct TimerDockStyle {
+	int alignment = 0, pixels = 0;
+	QString reference;
+};
 
 enum class TimerMode { Duration, Deadline, CountUp };
 // These reserve the width of a hidden digit or clock separator in a visual readout.
 inline constexpr QChar timer_digit_space{0x2007}, timer_colon_space{0x2008};
-enum class TimerText { Plain, Layout, EndMessage };
+enum class TimerText { Plain, Layout, EndMessage, LegacyLayout };
 
 enum TimerUnit { Days = 1, Hours = 2, Minutes = 4, Seconds = 8 };
 
@@ -36,6 +43,8 @@ struct TimerOptions {
 	bool use_message = false;
 	bool switch_scene = false;
 	QString output_format = QStringLiteral("%time%");
+	int box_width = kTimerBoxWidth, box_height = kTimerBoxHeight;
+	int alignment = 0, dock_pixels = 0;
 	int units = 0; // zero selects the automatic format
 	QString message;
 	QString scene;
@@ -44,7 +53,7 @@ struct TimerOptions {
 	void write(obs_data_t *settings) const;
 	bool same_timing(const TimerOptions &other) const;
 	bool counts_up() const { return mode == TimerMode::CountUp || (mode == TimerMode::Deadline && date_up); }
-	QString clock_text(int64_t ms, int64_t range, bool layout = false) const;
+	QString clock_text(int64_t ms, int64_t range, bool layout = false, bool reserve_pair = false) const;
 	QString display_text(int64_t ms, int64_t range, TimerText purpose = TimerText::Plain) const;
 	bool unlimited() const { return mode == TimerMode::CountUp && !limit; }
 };
@@ -73,7 +82,7 @@ bool timer_command(obs_source_t *source, const char *operation, int mark = kSave
 void timer_vendor_list(obs_data_t *request, obs_data_t *response, void *);
 void timer_vendor_control(obs_data_t *request, obs_data_t *response, void *);
 
-QString timer_readout(obs_source_t *source, bool *end_message = nullptr, QString *layout = nullptr);
+QString timer_readout(obs_source_t *source, bool *end_message = nullptr, QString *layout = nullptr, TimerDockStyle *style = nullptr);
 void edit_timer(QWidget *parent, obs_source_t *source);
 void register_countdown();
 void register_countdown_dock();

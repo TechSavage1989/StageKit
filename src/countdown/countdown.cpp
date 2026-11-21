@@ -146,20 +146,10 @@ struct Playback {
 struct Display {
 	QFont font;
 	QColor color;
-	QSize canvas{1, 1};
+	QSize canvas{kTimerBoxWidth, kTimerBoxHeight};
 	TimerLine line{font};
 	QRectF live_bounds;
-	qreal live_scale = 1;
-
-	void measure(const QString &clock, const QString &live)
-	{
-		line = TimerLine(font);
-		const auto bounds = line.layout(clock);
-		canvas = QSize(std::clamp(int(std::ceil(bounds.width())) + 2, 3, 4096),
-			       std::clamp(int(std::ceil(bounds.height())) + 2, 3, 2048));
-		live_bounds = line.layout(live);
-		live_scale = fit(live_bounds);
-	}
+	int alignment = 0;
 
 	qreal fit(const QRectF &ink_bounds) const
 	{
@@ -236,21 +226,22 @@ struct Display {
 		p.setRenderHint(QPainter::TextAntialiasing);
 		p.setFont(font);
 		p.setPen(color);
-		p.translate(canvas.width() / 2.0, canvas.height() / 2.0);
+		const QRectF room(1, 1, canvas.width() - 2, canvas.height() - 2);
 		if (end_message) {
 			const Lines lines = fit_lines(text);
 			if (!lines.block.isEmpty()) {
 				const qreal scale = fit(lines.block);
+				const QRectF scaled(lines.block.topLeft() * scale, lines.block.size() * scale);
+				p.translate(timer_text_origin(room, scaled, alignment));
 				p.scale(scale, scale);
-				p.translate(-lines.block.center());
 				const qreal step = QFontMetricsF(font).lineSpacing();
-				for (qsizetype i = 0; i < lines.text.size(); ++i)
-					p.drawText(QPointF(-lines.bounds[i].center().x(), i * step), lines.text[i]);
+				for (qsizetype i = 0; i < lines.text.size(); ++i) {
+					const qreal x = timer_text_origin(lines.block, lines.bounds[i], alignment).x();
+					p.drawText(QPointF(x, i * step), lines.text[i]);
+				}
 			}
 		} else {
-			p.scale(live_scale, live_scale);
-			p.translate(-live_bounds.center());
-			line.layout(text, &p);
+			line.layout(text, &p, timer_text_origin(room, live_bounds, alignment));
 		}
 		p.end();
 		return frame;
@@ -306,17 +297,60 @@ public:
 			clock_.reset();
 			layout_range_ = clock_.span;
 		}
-		const bool font_changed = display_.font != font;
-		display_.font = font;
+		const bool font_changed = !initialized_ || display_.font != font;
+		const QSize box(next.box_width, next.box_height);
+		const bool box_changed = display_.canvas != box;
+		display_.canvas = box;
+		display_.alignment = next.alignment;
+		if (font_changed) {
+			display_.font = font;
+			display_.line = TimerLine(font);
+		}
 		display_.color = color;
 		initialized_ = true;
 		dirty_ = true;
-		if (reset || font_changed || format_changed)
+		if (reset || font_changed || format_changed || box_changed)
 			measure_locked();
 		if (stopped_playback) {
 			lock.unlock();
 			vendor_emit_timer_changed(source_);
 		}
+	}
+
+	// OBS calls load for saved sources after creation. Capture the previous box and actual
+	// running size once so an existing scene keeps its placed timer when it upgrades.
+	void load_box(obs_data_t *s)
+	{
+		if (obs_data_has_user_value(s, "box_width") || obs_data_has_user_value(s, "box_height"))
+			return;
+		int size;
+		{
+			std::lock_guard lock(mutex_);
+			const auto &o = clock_.settings;
+			const auto bare = display_.line.layout(o.clock_text(layout_range_, layout_range_, o.unlimited()));
+			const auto live = display_.line.layout(o.display_text(layout_range_, layout_range_, TimerText::LegacyLayout));
+			const int w = std::clamp(int(std::ceil(bare.width())) + 2, 3, 4096);
+			const int h = std::clamp(int(std::ceil(bare.height())) + 2, 3, 2048);
+			obs_data_set_int(s, "box_width", w);
+			obs_data_set_int(s, "box_height", h);
+			const qreal scale = std::min((w - 2) / std::max<qreal>(1, live.width()), (h - 2) / std::max<qreal>(1, live.height()));
+			size = std::clamp(qRound(display_.font.pixelSize() * scale), 8, 512);
+		}
+		OBSDataAutoRelease old = obs_data_get_obj(s, "font");
+		OBSDataAutoRelease face = obs_data_create();
+		obs_data_apply(face, old);
+		obs_data_set_int(face, "size", size);
+		obs_data_set_obj(s, "font", face);
+		update(s);
+	}
+
+	void save_box(obs_data_t *s)
+	{
+		// Mark even a new, untouched default box as current on its first save.
+		if (!obs_data_has_user_value(s, "box_width"))
+			obs_data_set_int(s, "box_width", kTimerBoxWidth);
+		if (!obs_data_has_user_value(s, "box_height"))
+			obs_data_set_int(s, "box_height", kTimerBoxHeight);
 	}
 
 	void start(bool restart)
@@ -478,9 +512,14 @@ public:
 		std::lock_guard lock(mutex_);
 		return clock_.state;
 	}
-	QString text(bool &end_message, QString *layout) const
+	QString text(bool &end_message, QString *layout, TimerDockStyle *style) const
 	{
 		std::lock_guard lock(mutex_);
+		if (style) {
+			style->alignment = clock_.settings.alignment;
+			style->pixels = clock_.settings.dock_pixels;
+			style->reference = dock_reference_;
+		}
 		end_message = clock_.message_visible();
 		const auto ms = clock_.value();
 		const auto purpose = end_message ? TimerText::EndMessage : TimerText::Plain;
@@ -567,9 +606,12 @@ private:
 	void measure_locked()
 	{
 		const auto &options = clock_.settings;
-		// The running layout is measured once for the whole period, including hidden digit positions.
-		display_.measure(options.clock_text(layout_range_, layout_range_, options.unlimited()),
-				 options.display_text(layout_range_, layout_range_, TimerText::Layout));
+		display_.live_bounds = display_.line.layout(options.display_text(layout_range_, layout_range_, TimerText::Layout));
+		// Automatic dock size follows its dimensions and the chosen format, independent of the preset.
+		TimerOptions sample = options;
+		sample.mode = TimerMode::Duration;
+		const int64_t sample_ms = options.format_output || options.units ? 1125296000 : 3599000;
+		dock_reference_ = sample.display_text(sample_ms, sample_ms, TimerText::Layout);
 		const int width = display_.canvas.width(), height = display_.canvas.height();
 		const int side_limit = 8192 / std::max(width, height);
 		const int area_limit = int(std::sqrt((4.0 * 1024 * 1024) / (width * height)));
@@ -654,7 +696,7 @@ private:
 	gs_texture_t *outgoing_ = nullptr;
 	gs_effect_t *morph_ = nullptr;
 	uint64_t morph_start_ = 0, last_draw_ = 0;
-	QString last_value_, outgoing_value_;
+	QString last_value_, outgoing_value_, dock_reference_;
 	QSize rendered_canvas_;
 	bool tried_morph_ = false;
 	int64_t last_second_ = -1, layout_range_ = 0;
@@ -701,6 +743,12 @@ obs_properties_t *properties(void *data)
 			return false;
 		},
 		data);
+	auto *width = obs_properties_add_int(p, "box_width", label("Countdown.BoxWidth"), 3, kTimerMaxWidth, 1);
+	auto *height = obs_properties_add_int(p, "box_height", label("Countdown.BoxHeight"), 3, kTimerMaxHeight, 1);
+	for (auto *field : {width, height}) {
+		obs_property_int_set_suffix(field, " px");
+		set_tip(field, label("Countdown.BoxHelp"));
+	}
 	obs_properties_add_font(p, "font", label("Countdown.Font"));
 	obs_properties_add_color_alpha(p, "color", label("Countdown.Color"));
 	for (const auto &control : controls)
@@ -718,6 +766,8 @@ obs_properties_t *properties(void *data)
 void defaults(obs_data_t *s)
 {
 	obs_data_set_default_int(s, "minutes", 5);
+	obs_data_set_default_int(s, "box_width", kTimerBoxWidth);
+	obs_data_set_default_int(s, "box_height", kTimerBoxHeight);
 	obs_data_set_default_int(s, "color", 0xffffffffLL);
 	OBSDataAutoRelease font = obs_data_create();
 	obs_data_set_string(font, "face", default_face());
@@ -767,13 +817,19 @@ void register_countdown()
 					timer);
 		proc_handler_add(
 			obs_source_get_proc_handler(source),
-			"void timer_readout(in bool want_layout, out string text, out bool end_message, out string layout)",
+			"void timer_readout(in bool want_layout, in bool want_style, out string text, out bool end_message, out string layout, out int alignment, out int dock_size, out string reference)",
 			[](void *d, calldata_t *cd) {
 				bool end_message;
 				QString layout;
 				const bool wanted = calldata_bool(cd, "want_layout");
-				const auto value =
-					static_cast<Countdown *>(d)->text(end_message, wanted ? &layout : nullptr);
+				TimerDockStyle style;
+				const bool want_style = calldata_bool(cd, "want_style");
+				const auto value = static_cast<Countdown *>(d)->text(end_message, wanted ? &layout : nullptr, want_style ? &style : nullptr);
+				if (want_style) {
+					calldata_set_int(cd, "alignment", style.alignment);
+					calldata_set_int(cd, "dock_size", style.pixels);
+					calldata_set_string(cd, "reference", style.reference.toUtf8().constData());
+				}
 				if (wanted)
 					calldata_set_string(cd, "layout", layout.toUtf8().constData());
 				calldata_set_string(cd, "text", value.toUtf8().constData());
@@ -795,6 +851,8 @@ void register_countdown()
 	info.destroy = [](void *d) {
 		delete static_cast<Countdown *>(d);
 	};
+	info.load = [](void *d, obs_data_t *s) { static_cast<Countdown *>(d)->load_box(s); };
+	info.save = [](void *d, obs_data_t *s) { static_cast<Countdown *>(d)->save_box(s); };
 	info.get_defaults = defaults;
 	info.get_properties = properties;
 	info.update = [](void *d, obs_data_t *s) {
