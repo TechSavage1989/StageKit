@@ -901,7 +901,8 @@ inline void visible_spacing(QStringList &issues)
 		obs_source_filter_add(scene_source, timer_fit);
 		expect(wait_for([&] {
 			       const QRect drawn = colored(capture(), false);
-			       return !drawn.isEmpty() && std::abs(height - drawn.bottom() - 1 - 30) <= 2;
+			       return obs_sceneitem_get_bounds_type(clock) == OBS_BOUNDS_SCALE_INNER &&
+				      !drawn.isEmpty() && std::abs(height - drawn.bottom() - 1 - 30) <= 2;
 		       }),
 		       "the timer's own fit did not use its visible bottom edge");
 		obs_data_set_bool(settings, "no_shadows", true);
@@ -910,8 +911,23 @@ inline void visible_spacing(QStringList &issues)
 		expect(wait_for([&] { return gap_is(); }), "a fitted timer published its full box to the adjacent fit");
 		obs_data_set_bool(settings, "resize", true);
 		obs_source_update(fit, settings);
+		expect(wait_for([&] { return colored(capture(), true).width() > 150; }),
+		       "the adjacent image did not resize beside the fitted timer");
+		const auto smoothed = capture();
+		const QRect smooth_image = colored(smoothed, true), smooth_timer = colored(smoothed, false);
+		// Keep this synthetic hard-edged image sharp while enlarged. At a
+		// 1920 px canvas its 120 px patch grows more than fifteenfold, so
+		// interpolation alone can extend its alpha fringe by several pixels.
+		obs_sceneitem_set_scale_filter(picture, OBS_SCALE_POINT);
 		expect(wait_for([&] { return colored(capture(), true).width() > 150 && gap_is(); }),
 		       "a resizing neighbor used the timer box instead of its held visible claim");
+		const auto sharp = capture();
+		const QRect sharp_image = colored(sharp, true), sharp_timer = colored(sharp, false);
+		blog(LOG_INFO,
+		     "StageKit timer layout: resized neighbor on %dx%d, smooth gap %d px, point gap %d px, image %dx%d, timer %dx%d",
+		     width, height, smooth_timer.top() - smooth_image.bottom() - 1,
+		     sharp_timer.top() - sharp_image.bottom() - 1, sharp_image.width(), sharp_image.height(),
+		     sharp_timer.width(), sharp_timer.height());
 		obs_source_filter_remove(scene_source, fit);
 		obs_source_filter_remove(scene_source, timer_fit);
 	} else {
