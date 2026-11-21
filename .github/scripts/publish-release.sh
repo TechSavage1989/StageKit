@@ -88,6 +88,13 @@ publish_stage() { # <stage>
       files+=("upload/${file##*/}")
     done
   done
+  if [[ "${stage}" == windows ]]; then
+    local installers=(upload/*-windows-x64-Installer.exe) packages=(upload/*-windows-x64.zip)
+    if ((${#installers[@]} != 1 || ${#packages[@]} != 1)); then
+      echo "::error::The first public stage needs the Windows installer and its x64 ZIP."
+      exit 1
+    fi
+  fi
   if ((${#files[@]} == 0)); then
     echo "::error::The ${label[${stage}]} build produced no packaged files."
     exit 1
@@ -134,7 +141,12 @@ while ((${#pending[@]})); do
     for variant in ${needs[${stage}]}; do
       [[ -n "$(artifact_for "${variant}")" ]] || ready=0
     done
-    if ((ready)); then publish_stage "${stage}"; fi
+    if ((ready)); then
+      publish_stage "${stage}"
+    elif [[ "${stage}" == windows ]]; then
+      # The first public release must be usable by the Windows updater.
+      break
+    fi
   done
   ((${#pending[@]})) || break
 

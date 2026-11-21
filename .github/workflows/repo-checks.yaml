@@ -16,3 +16,5 @@ jobs:
         run: bash scripts/check-root.sh
       - name: Check setting names in the guide
         run: python3 scripts/check-guide-settings.py
+      - name: Check public Windows update order
+        run: bash tests/check-release-order.sh
