@@ -210,8 +210,10 @@ inline void check_native_filters(const QString &art, QStringList &issues)
 		exercise_effect("stagekit_port_time_warp_scan_filter",
 				R"({"scan_duration":0,"rotation":90,"line_width":0})",
 				"A completed scan did not hold the scanned image", true);
-		auto *sweep_options = obs_data_create_from_json(R"({"scan_duration":800,"rotation":90,"line_width":0})");
-		auto *sweep = obs_source_create_private("stagekit_port_time_warp_scan_filter", "Moving scan", sweep_options);
+		auto *sweep_options =
+			obs_data_create_from_json(R"({"scan_duration":800,"rotation":90,"line_width":0})");
+		auto *sweep =
+			obs_source_create_private("stagekit_port_time_warp_scan_filter", "Moving scan", sweep_options);
 		obs_data_release(sweep_options);
 		obs_source_filter_add(source, sweep);
 		render(source, w, h);
@@ -228,19 +230,20 @@ inline void check_native_filters(const QString &art, QStringList &issues)
 		const auto alternate_pixels = render(source, w, h);
 		auto difference = [&](const std::vector<uint8_t> &reference, uint32_t x0, uint32_t x1) {
 			long long total = 0;
-			for (uint32_t y=40;y<115;++y) for(uint32_t x=x0;x<x1;++x)
-				for (size_t channel=0;channel<3;++channel) {
-					const auto at=4*(size_t(y)*w+x)+channel;
-					total+=std::abs(int(swept[at])-int(reference[at]));
-				}
+			for (uint32_t y = 40; y < 115; ++y)
+				for (uint32_t x = x0; x < x1; ++x)
+					for (size_t channel = 0; channel < 3; ++channel) {
+						const auto at = 4 * (size_t(y) * w + x) + channel;
+						total += std::abs(int(swept[at]) - int(reference[at]));
+					}
 			return total;
 		};
-		if (difference(original,55,110) >= difference(alternate_pixels,55,110) ||
-		    difference(alternate_pixels,205,265) >= difference(original,205,265))
+		if (difference(original, 55, 110) >= difference(alternate_pixels, 55, 110) ||
+		    difference(alternate_pixels, 205, 265) >= difference(original, 205, 265))
 			fail("The moving scan did not retain early and late slices from two different input frames");
-		save_frame("native-moving-scan",swept,w,h);
-		obs_data_set_string(settings,"file",path.constData());
-		obs_source_update(source,settings);
+		save_frame("native-moving-scan", swept, w, h);
+		obs_data_set_string(settings, "file", path.constData());
+		obs_source_update(source, settings);
 		QThread::msleep(100);
 	}
 	auto *delay_options = obs_data_create_from_json(R"({"duration":1.0,"easing_duration":0.0})");

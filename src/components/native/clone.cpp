@@ -363,7 +363,7 @@ void load()
 {
 	obs_source_info tap{};
 	tap.id = audio_id;
-	tap.type = OBS_SOURCE_TYPE_SCENE;
+	tap.type = OBS_SOURCE_TYPE_INPUT;
 	tap.output_flags = OBS_SOURCE_AUDIO | OBS_SOURCE_CAP_DISABLED;
 	tap.get_name = [](void *) {
 		return text("Ports.CloneAudio");

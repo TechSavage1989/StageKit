@@ -54,7 +54,11 @@ $env:STAGEKIT_TEST_NDI = 'upgrade'
 $bin = Join-Path $obsRoot 'bin/64bit'
 $process = Start-Process -FilePath (Join-Path $bin 'obs64.exe') -WorkingDirectory $bin -PassThru -WindowStyle Hidden -ArgumentList @('--portable', '--multi', '--disable-shutdown-check', '--disable-missing-files-check', '--disable-updater', '--verbose')
 try {
-    if (!$process.WaitForExit(90000)) { throw 'Portable OBS did not exit within 90 seconds.' }
+    if (!$process.WaitForExit(90000)) {
+        $debugger = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/Debuggers/x64/cdb.exe'
+        if (Test-Path -LiteralPath $debugger) { & $debugger -pv -p $process.Id -c '~* k 10; q' }
+        throw 'Portable OBS did not exit within 90 seconds.'
+    }
     if ($process.ExitCode -ne 0) { throw "Portable OBS exited with code $($process.ExitCode)." }
     if (!(Test-Path -LiteralPath $report)) { throw 'The OBS frontend probe did not run.' }
     $result = (Get-Content -Raw -LiteralPath $report).Trim()
