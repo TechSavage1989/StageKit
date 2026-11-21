@@ -100,6 +100,8 @@ target_sources(
     src/common/shown-scale.hpp
     src/common/start-image.cpp
     src/common/start-image.hpp
+    src/countdown/clock-picker.cpp
+    src/countdown/clock-picker.hpp
     src/countdown/countdown.cpp
     src/countdown/countdown.hpp
     src/countdown/countdown-dock.cpp

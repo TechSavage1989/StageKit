@@ -81,6 +81,17 @@ jobs:
       - name: Open the replacement catalog in a fresh OBS frontend
         if: always() && hashFiles('build-ports/tests/stagekit-replacement-probe.so') != ''
         run: bash tests/check-replacement-frontend.sh build-ports
+      - name: Capture clock picker for the guide
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import base64, pathlib
+          p=pathlib.Path('build-ports/filter-results/countdown-settings.png')
+          if p.exists():
+              data=base64.b64encode(p.read_bytes()).decode()
+              for i in range(0,len(data),12000):
+                  print("CLOCK_GUIDE",i,data[i:i+12000])
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -93,6 +104,7 @@ jobs:
             build-ports/filter-results/countdown-settings.png
             build-ports/filter-results/render.log
       - name: Compare scene collection frame times
+        if: always() && hashFiles('build-ports/stagekit.so') != ''
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'
           QT_QPA_PLATFORM: offscreen

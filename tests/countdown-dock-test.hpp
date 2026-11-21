@@ -6,7 +6,9 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QDateEdit>
-#include <QTimeEdit>
+#include <QDial>
+#include <QMouseEvent>
+#include <cmath>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QCheckBox>
@@ -27,6 +29,30 @@ template<typename Predicate> bool until(Predicate predicate)
 		QCoreApplication::processEvents(QEventLoop::AllEvents, 15);
 		return predicate();
 	});
+}
+
+// Drive the actual clock with a press, drag and release between two marks.
+inline bool clock_pick(QDialog *dialog, const char *field, int tick, int divisions, bool inner = false)
+{
+	auto *button = dialog->findChild<QPushButton *>(field);
+	auto *face = dialog->findChild<QDial *>("clockFace");
+	if (!button || !face || !face->isVisible())
+		return false;
+	button->click();
+	const QPointF centre(face->width() / 2.0, face->height() / 2.0);
+	const double radius = std::min(face->width(), face->height()) * (inner ? 0.22 : 0.36);
+	auto point = [&](int n) {
+		const double a = n * 6.283185307179586 / divisions;
+		return centre + QPointF(std::sin(a) * radius, -std::cos(a) * radius);
+	};
+	auto send = [&](QEvent::Type type, QPointF at, Qt::MouseButton b, Qt::MouseButtons held) {
+		QMouseEvent event(type, at, face->mapToGlobal(at), b, held, Qt::NoModifier);
+		QApplication::sendEvent(face, &event);
+	};
+	send(QEvent::MouseButtonPress, point(tick + 1), Qt::LeftButton, Qt::LeftButton);
+	send(QEvent::MouseMove, point(tick), Qt::NoButton, Qt::LeftButton);
+	send(QEvent::MouseButtonRelease, point(tick), Qt::LeftButton, Qt::NoButton);
+	return true;
 }
 
 inline void check(QStringList &issues, bool restart)
@@ -96,9 +122,20 @@ inline void check(QStringList &issues, bool restart)
 		return;
 	}
 	expect(choose(QStringLiteral("Private timer")), "private timer missing from the selector");
-	edit([](QDialog *d) {
-		d->findChild<QSpinBox *>("minutes")->setValue(0);
-		d->findChild<QSpinBox *>("seconds")->setValue(7);
+	edit([&](QDialog *d) {
+		auto *days = d->findChild<QSpinBox *>("clockDays");
+		auto *preset = d->findChild<QPushButton *>("clockPreset15");
+		expect(days && preset, "duration presets or day picker missing");
+		if (!days || !preset)
+			return;
+		days->setValue(2);
+		expect(clock_pick(d, "clockHour", 11, 12, true) && d->findChild<QPushButton *>("clockHour")->text() == "23",
+		       "second hour ring did not select 23 hours");
+		preset->click();
+		expect(days->value() == 0 && d->findChild<QPushButton *>("clockMinute")->text() == "15" &&
+		       d->findChild<QPushButton *>("clockHour")->text() == "00", "duration preset");
+		expect(clock_pick(d, "clockMinute", 0, 60) && clock_pick(d, "clockSecond", 7, 60),
+		       "private timer clock did not accept exact seconds");
 	});
 	expect(until([&] { return readout->text() == "00:07"; }), "the private duration picker was not applied");
 	start->click();
@@ -158,7 +195,18 @@ inline void check(QStringList &issues, bool restart)
 		auto *calendar = d->findChild<QDateEdit *>("timerDate");
 		expect(calendar->calendarPopup() && calendar->isVisible(), "calendar picker missing in date mode");
 		calendar->setDate(date);
-		d->findChild<QTimeEdit *>("timerTime")->setTime(at);
+		auto *am = d->findChild<QPushButton *>("clockAM");
+		auto *pm = d->findChild<QPushButton *>("clockPM");
+		expect(am && pm && pm->isVisible(), "local time has no AM/PM switch");
+		if (!am || !pm)
+			return;
+		am->click();
+		expect(clock_pick(d, "clockHour", 0, 12) && d->findChild<QPushButton *>("clockHour")->text() == "12" &&
+		       d->findChild<QPushButton *>("clockMinute")->isChecked(), "midnight or hour-to-minute selection");
+		pm->click();
+		expect(clock_pick(d, "clockHour", 7, 12) && clock_pick(d, "clockMinute", 30, 60) &&
+		       clock_pick(d, "clockSecond", 0, 60), "setting the evening deadline on the face");
+		d->findChild<QPushButton *>("clockMinute")->click();
 		d->findChild<QLineEdit *>("timerMessage")->setText("Session complete");
 		auto *scene_list = d->findChild<QComboBox *>("timerEndScene");
 		const int index = scene_list->findData(dest_id);
@@ -176,11 +224,10 @@ inline void check(QStringList &issues, bool restart)
 			      readout->text().count(QLatin1Char(':')) >= 2;
 	       }),
 	       "the local date and time did not reach the scene timer");
-	edit([](QDialog *d) {
+	edit([&](QDialog *d) {
 		d->findChild<QComboBox *>("timerMode")->setCurrentIndex(2);
 		d->findChild<QCheckBox *>("timerLimit")->setChecked(true);
-		d->findChild<QSpinBox *>("minutes")->setValue(0);
-		d->findChild<QSpinBox *>("seconds")->setValue(2);
+		expect(clock_pick(d, "clockMinute", 0, 60) && clock_pick(d, "clockSecond", 2, 60), "count-up limit clock");
 		d->findChild<QCheckBox *>("timerAutomatic")->setChecked(false);
 		for (const char *name : {"unit_days", "unit_hours", "unit_minutes"})
 			d->findChild<QCheckBox *>(name)->setChecked(false);
@@ -207,10 +254,9 @@ inline void check(QStringList &issues, bool restart)
 	QCoreApplication::processEvents();
 	OBSSourceAutoRelease still = obs_frontend_get_current_scene();
 	expect(still.Get() == scene.Get(), "a finished timer switched Program more than once");
-	edit([](QDialog *d) {
+	edit([&](QDialog *d) {
 		d->findChild<QComboBox *>("timerMode")->setCurrentIndex(0);
-		d->findChild<QSpinBox *>("minutes")->setValue(1);
-		d->findChild<QSpinBox *>("seconds")->setValue(13);
+		expect(clock_pick(d, "clockMinute", 1, 60) && clock_pick(d, "clockSecond", 13, 60), "saved duration clock");
 		d->findChild<QCheckBox *>("timerAutomatic")->setChecked(true);
 		d->findChild<QLineEdit *>("timerMessage")->clear();
 		d->findChild<QComboBox *>("timerEndScene")->setCurrentIndex(0);
