@@ -72,8 +72,9 @@ inline void check(QStringList &issues)
 	auto press_key = [&](bool expected) {
 		calldata_t call = {};
 		calldata_set_string(&call, "request", "ShowInScenesPress");
-		calldata_set_string(&call, "data",
-				    R"({"sourceName":"Square test view","filterName":"Camera switch","how":"toggle","hideAs":"hide"})");
+		calldata_set_string(
+			&call, "data",
+			R"({"sourceName":"Square test view","filterName":"Camera switch","how":"toggle","hideAs":"hide"})");
 		proc_handler_call(obs_get_proc_handler(), "stagekit_vendor_call", &call);
 		const char *raw = calldata_string(&call, "response");
 		auto *reply = obs_data_create_from_json(raw ? raw : "{}");
@@ -104,12 +105,20 @@ inline void check(QStringList &issues)
 			bottom_present = level(96, 76) > 180;
 		} while (clock.elapsed() < 1350);
 		const bool ok = (top_slides ? moved_top : (!moved_top && top_faded)) && moved_bottom &&
-				top_present == shown && bottom_present == shown && !obs_sceneitem_visible(already_hidden);
+				top_present == shown && bottom_present == shown &&
+				!obs_sceneitem_visible(already_hidden);
 		if (!ok)
-			issues.append(QString("%1 %2: top travel %3, bottom travel %4, top fade %5, final camera pixels %6/%7, previously hidden item %8")
-					      .arg(action, shown ? "show" : "hide").arg(moved_top).arg(moved_bottom)
-					      .arg(top_faded).arg(top_present).arg(bottom_present).arg(obs_sceneitem_visible(already_hidden)));
-		blog(LOG_INFO, "[camera transition test] %s %s: top travel %d, bottom travel %d, top fade %d, final %d/%d",
+			issues.append(
+				QString("%1 %2: top travel %3, bottom travel %4, top fade %5, final camera pixels %6/%7, previously hidden item %8")
+					.arg(action, shown ? "show" : "hide")
+					.arg(moved_top)
+					.arg(moved_bottom)
+					.arg(top_faded)
+					.arg(top_present)
+					.arg(bottom_present)
+					.arg(obs_sceneitem_visible(already_hidden)));
+		blog(LOG_INFO,
+		     "[camera transition test] %s %s: top travel %d, bottom travel %d, top fade %d, final %d/%d",
 		     action, shown ? "show" : "hide", moved_top, moved_bottom, top_faded, top_present, bottom_present);
 	};
 	for (bool show : {false, true}) {

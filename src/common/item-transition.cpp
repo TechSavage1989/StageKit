@@ -112,10 +112,13 @@ constexpr const char *kSwitchFadeMs = "stagekit_show_in_scenes_fallback_ms";
 ItemWay switch_fallback(obs_sceneitem_t *item, bool show, uint32_t ms)
 {
 	if (obs_source_t *current = obs_sceneitem_get_transition(item, show)) {
+		const char *id = obs_source_get_unversioned_id(current);
+		if (!id || strcmp(id, kTransitionFade) != 0)
+			return ItemWay{kTransitionKeep, ms, {}};
+		const uint32_t duration = obs_sceneitem_get_transition_duration(item, show);
 		obs_data_t *settings = obs_source_get_settings(current);
-		const bool fallback = strcmp(obs_source_get_unversioned_id(current), kTransitionFade) == 0 &&
-				      obs_data_has_user_value(settings, kSwitchFadeMs) &&
-				      obs_data_get_int(settings, kSwitchFadeMs) == obs_sceneitem_get_transition_duration(item, show);
+		const bool fallback = obs_data_has_user_value(settings, kSwitchFadeMs) &&
+				      obs_data_get_int(settings, kSwitchFadeMs) == duration;
 		obs_data_release(settings);
 		if (!fallback)
 			return ItemWay{kTransitionKeep, ms, {}};
@@ -817,7 +820,9 @@ void build(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 		add_kinds(kinds, scene_entry);
 		std::string tip = obs_module_text(show ? "Change.ShowWith.Tip" : "Change.HideWith.Tip");
 		if (scene_entry)
-			tip = std::string(obs_module_text(visibility_switch ? "ShowIn.SceneTransition.Tip" : "Change.Scene.Tip")) + " " + tip;
+			tip = std::string(obs_module_text(visibility_switch ? "ShowIn.SceneTransition.Tip"
+									    : "Change.Scene.Tip")) +
+			      " " + tip;
 		set_tip(kinds, tip.c_str());
 		obs_property_set_modified_callback2(kinds, rebuild_cb, owner);
 		const std::string kind = obs_data_get_string(settings, kind_name.c_str());
@@ -831,7 +836,8 @@ void build(obs_properties_t *top, obs_source_t *owner, obs_data_t *settings)
 		obs_property_int_set_suffix(time, " ms");
 		set_tip(time, obs_module_text("Change.Duration.Tip"));
 		if (kind == kTransitionScene) {
-			set_tip(time, obs_module_text(visibility_switch ? "ShowIn.FallbackTime.Tip" : "Change.Time.Tip"));
+			set_tip(time,
+				obs_module_text(visibility_switch ? "ShowIn.FallbackTime.Tip" : "Change.Time.Tip"));
 			continue; // (its own settings are the scene's)
 		}
 		const std::string prefix = own_prefix(scope, show, kind);

@@ -477,7 +477,8 @@ public:
 					  return;
 				  // A listed source's own change, or the usual one.
 				  const auto own = own_change.find(name);
-				  if (!set_item_visible(item, show, own == own_change.end() ? change : own->second, scene))
+				  if (!set_item_visible(item, show, own == own_change.end() ? change : own->second,
+							scene))
 					  return;
 				  changed++;
 				  if (restore && !show) {
