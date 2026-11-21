@@ -38,7 +38,7 @@ bool previous_ndi(config_t *config)
 			if (!module.value("enabled").toBool(true))
 				return false;
 			for (const char *field : {"sources", "outputs"})
-				for (const auto &id : module.value(field).toArray())
+				for (const auto id : module.value(field).toArray())
 					if (id.toString().startsWith("stagekit_port_ndi_") ||
 					    id.toString() == "stagekit_port_ndi_audiofilter")
 						return true;
