@@ -50,12 +50,12 @@ inline void check(QStringList &issues)
 	// One item has a scene rule. The other carries its own OBS show/hide pair.
 	auto *scene_data = obs_data_create_from_json(
 		R"({"cover":1,"sources":[{"value":"Square test view"}],"transition":"stagekit_morph","transition_ms":850,"show|stagekit_morph|unpaired":"morph_make_room","show|stagekit_morph|room_way":1})");
-	auto *rules = obs_source_create_private("stagekit_scene_transitions", "Camera scene rules", scene_data, nullptr);
+	auto *rules = obs_source_create_private("stagekit_scene_transitions", "Camera scene rules", scene_data);
 	obs_data_release(scene_data);
 	obs_source_filter_add(output, rules);
 	auto *make_room = obs_data_create_from_json(R"({"unpaired":"morph_make_room","room_way":1})");
 	for (bool show : {true, false}) {
-		auto *way = obs_source_create_private("stagekit_morph", "Camera item transition", make_room, nullptr);
+		auto *way = obs_source_create_private("stagekit_morph", "Camera item transition", make_room);
 		obs_sceneitem_set_transition(top, show, way);
 		obs_sceneitem_set_transition_duration(top, show, show ? 900 : 750);
 		obs_source_release(way);
@@ -63,7 +63,7 @@ inline void check(QStringList &issues)
 	obs_data_release(make_room);
 	auto *settings = obs_data_create_from_json(
 		R"({"sources":[{"value":"Square test view"},{"value":"Component test view"}],"restore_hidden":true,"follow":true})");
-	auto *sw = obs_source_create_private("stagekit_show_in_scenes", "Camera switch", settings, nullptr);
+	auto *sw = obs_source_create_private("stagekit_show_in_scenes", "Camera switch", settings);
 	obs_source_filter_add(square, sw);
 	for (int i = 0; i < 45; ++i)
 		wait_frame();
