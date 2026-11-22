@@ -21,7 +21,7 @@
 	</head>
 
 	<body>
-		<sdpi-item class="works" label="Works with" title="Switches OBS Studio Mode on or off. One monitor means off; two monitors mean on.">
+		<sdpi-item class="works" label="Works with" title="A short press switches Studio Mode on or off. Holding sends Preview to Program unless Long press is Nothing. One monitor means off; two monitors mean on.">
 			<div id="worksWith" data-follow="">
 				<div class="works-kind">OBS Studio Mode</div>
 				<div class="works-chosen"></div>
@@ -33,6 +33,15 @@
 				<option value="on">Switch on</option>
 				<option value="off">Switch off</option>
 			</sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Long press" title="Preview to Program sends the current Preview using OBS&#x27;s chosen transition and duration. Studio Mode must be on. A short press acts on release. With Nothing selected, On press acts immediately.">
+			<sdpi-select setting="longPress" default="transition">
+				<option value="transition">Preview to Program</option>
+				<option value="none">Nothing</option>
+			</sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Hold time (ms)" title="How long the key must be held for its long press: 300 to 5000 ms, 800 as it comes.">
+			<sdpi-textfield setting="holdMs" placeholder="800" pattern="[0-9]*"></sdpi-textfield>
 		</sdpi-item>
 		<details open>
 			<summary>Image</summary>

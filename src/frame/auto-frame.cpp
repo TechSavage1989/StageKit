@@ -28,14 +28,24 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/scene-util.hpp"
 #include "../common/tooltip.hpp"
 #include "../common/hotkey-rename.hpp"
+#include "../common/ui-task.hpp"
 
 #include <obs-module.h>
+#include <obs.hpp>
 #include <graphics/vec4.h>
 #include <plugin-support.h>
+#include <QApplication>
+#include <QComboBox>
+#include <QDialog>
+#include <QLabel>
+#include <QLineEdit>
+#include <QListWidget>
+#include <QThread>
 
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <map>
@@ -44,9 +54,65 @@ the Free Software Foundation; either version 2 of the License, or
 #include <utility>
 #include <vector>
 
+Q_DECLARE_METATYPE(OBSSource)
+
 namespace stagekit {
 
 namespace {
+
+std::atomic<int64_t> next_frame_request{0};
+
+void write_frame_state(calldata_t *cd, const AutoFrameState &state)
+{
+	calldata_set_bool(cd, "success", state.success);
+	calldata_set_int(cd, "request_id", state.request_id);
+	calldata_set_string(cd, "status", state.status.c_str());
+	calldata_set_bool(cd, "complete", state.complete);
+	calldata_set_string(cd, "program", state.program.c_str());
+	calldata_set_string(cd, "executable", state.executable.c_str());
+	calldata_set_string(cd, "aspect_ratio", state.aspect_ratio.c_str());
+	calldata_set_float(cd, "ratio", state.ratio);
+	calldata_set_int(cd, "width", state.width);
+	calldata_set_int(cd, "height", state.height);
+	calldata_set_bool(cd, "saved", state.saved);
+	calldata_set_string(cd, "error", state.error.c_str());
+}
+
+// OBS rebuilds every control for update_properties. While one of the rule
+// editors has focus, update its nearby information label in place instead.
+bool update_focused_feedback(obs_source_t *source, const std::string &before, const std::string &text,
+			     const std::string &program, const std::string &shape, bool &updated)
+{
+	auto *app = qobject_cast<QApplication *>(QCoreApplication::instance());
+	if (!app || QThread::currentThread() != app->thread())
+		return false;
+	QWidget *focused = QApplication::focusWidget();
+	auto *edit = qobject_cast<QLineEdit *>(focused);
+	auto *combo = qobject_cast<QComboBox *>(edit ? edit->parentWidget() : focused);
+	if (!combo || !combo->isEditable())
+		return false;
+	// OBS stores the actual selected filter in the list item's user data.
+	// Matching text alone could belong to a different source's open dialog.
+	auto *dialog = qobject_cast<QDialog *>(combo->window());
+	auto *filters = dialog ? dialog->findChild<QListWidget *>("effectFilters") : nullptr;
+	auto *selected = filters ? filters->currentItem() : nullptr;
+	if (!selected || selected->data(Qt::UserRole).value<OBSSource>().Get() != source)
+		return false;
+	const std::string value = combo->currentText().toStdString();
+	if (value != program && value != shape)
+		return false;
+	QWidget *container = combo;
+	while (container && container->objectName() != "PropertiesContainer")
+		container = container->parentWidget();
+	if (!container)
+		return false;
+	for (auto *label : container->findChildren<QLabel *>())
+		if (label->text() == QString::fromStdString(before)) {
+			label->setText(QString::fromStdString(text));
+			updated = true;
+		}
+	return true;
+}
 
 enum class FitMode : int {
 	Fit = 0,     // whole picture visible, bars where the shapes differ
@@ -351,6 +417,27 @@ void parse_rules_text(const std::string &text, std::vector<std::pair<std::string
 	flush();
 }
 
+bool write_shape_rule(obs_data_t *settings, std::string program, const std::string &shape)
+{
+	program = lower(program);
+	if (program.size() > 4 && program.compare(program.size() - 4, 4, ".exe") == 0)
+		program.resize(program.size() - 4);
+	program = program.substr(0, program.find_first_of(",;\n\r="));
+	while (!program.empty() && (program.back() == ' ' || program.back() == '\t'))
+		program.pop_back();
+	if (program.empty() || parse_ratio(shape) <= 0.0)
+		return false;
+	std::vector<std::pair<std::string, double>> rules;
+	parse_rules_text(obs_data_get_string(settings, "rules_text"), rules);
+	std::string text;
+	for (const auto &[name, ratio] : rules)
+		if (name != program)
+			text += name + " = " + ratio_name(ratio) + ", ";
+	text += program + " = " + shape;
+	obs_data_set_string(settings, "rules_text", text.c_str());
+	return true;
+}
+
 class AutoFrame {
 public:
 	AutoFrame(obs_data_t *settings, obs_source_t *source) : source_(source)
@@ -402,6 +489,32 @@ public:
 		proc_handler_add(
 			obs_source_get_proc_handler(source_), "void measure_now()",
 			[](void *data, calldata_t *) { static_cast<AutoFrame *>(data)->measure_now(); }, this);
+		proc_handler_add(
+			obs_source_get_proc_handler(source_),
+			"void frame_command(in string action, out bool success, out int request_id, out string status, "
+			"out bool complete, out string program, out string executable, out string aspect_ratio, "
+			"out float ratio, out int width, out int height, out bool saved, out string error)",
+			[](void *data, calldata_t *cd) {
+				AutoFrameState state;
+				const char *action = calldata_string(cd, "action");
+				static_cast<AutoFrame *>(data)->command(action ? action : "", state);
+				write_frame_state(cd, state);
+			},
+			this);
+		proc_handler_add(
+			obs_source_get_proc_handler(source_),
+			"void get_frame_state(in int for_request, out bool success, out int request_id, out string status, "
+			"out bool complete, out string program, out string executable, out string aspect_ratio, "
+			"out float ratio, out int width, out int height, out bool saved, out string error)",
+			[](void *data, calldata_t *cd) {
+				AutoFrameState state;
+				static_cast<AutoFrame *>(data)->command_state(calldata_int(cd, "for_request"), state);
+				write_frame_state(cd, state);
+			},
+			this);
+		proc_handler_add(
+			obs_source_get_proc_handler(source_), "void publish_frame_feedback()",
+			[](void *data, calldata_t *) { static_cast<AutoFrame *>(data)->publish_feedback(); }, this);
 		proc_handler_add(
 			obs_source_get_proc_handler(source_), "void get_trim(out float x, out float y)",
 			[](void *data, calldata_t *cd) {
@@ -473,6 +586,7 @@ public:
 
 	void tick(float seconds)
 	{
+		bool feedback = false;
 		// A few times a second, see which program is being captured and
 		// whether a rule gives its picture shape. A new size often means
 		// another program, so then it is checked before the next picture is
@@ -516,9 +630,12 @@ public:
 		double rule_ratio = -1.0;
 		if (identity_timer_ <= 0.0) {
 			identity_timer_ = 0.25;
-			std::string program, executable;
-			captured(program, executable);
+			std::string program, executable, title;
+			bool live = false;
+			captured(program, executable, &title, &live);
+			live = live && !standby_showing();
 			std::lock_guard lock(mutex_);
+			feedback = observe_capture_locked(executable, title, live) || feedback_deferred_;
 			rule_ratio = 0.0;
 			double usual = 0.0;
 			bool seen_before = false;
@@ -562,10 +679,19 @@ public:
 			usual_seen_before_ = seen_before;
 			program_ = executable;
 		}
-		std::lock_guard lock(mutex_);
-		pending_time_ += seconds;
-		if (rule_ratio >= 0.0)
-			rule_ratio_ = rule_ratio;
+		{
+			std::lock_guard lock(mutex_);
+			pending_time_ += seconds;
+			if (rule_ratio >= 0.0)
+				rule_ratio_ = rule_ratio;
+			feedback = expire_request_locked() || feedback;
+			if (request_.status == "pending" && !obs_source_enabled(source_)) {
+				fail_request_locked("Frame.Detection.Disabled");
+				feedback = true;
+			}
+		}
+		if (feedback)
+			queue_feedback();
 	}
 
 	// The shape a Picture Shape key asked for; 0 goes back to automatic.
@@ -620,10 +746,15 @@ public:
 	// browser shown with Dolphin's 4:3: "says capturing dolphin, but it's a
 	// web browser"). Otherwise what a game or window capture reports it is
 	// attached to, and its "window" setting (title:class:executable).
-	void captured(std::string &program, std::string &executable)
+	void captured(std::string &program, std::string &executable, std::string *window_title = nullptr,
+		      bool *live = nullptr)
 	{
 		program.clear();
 		executable.clear();
+		if (window_title)
+			window_title->clear();
+		if (live)
+			*live = false;
 		obs_source_t *parent = obs_filter_get_parent(source_);
 		if (!parent)
 			return;
@@ -632,43 +763,284 @@ public:
 			if (shown.any) {
 				executable = shown.executable;
 				program = lower(shown.executable + " " + shown.title);
+				if (window_title)
+					*window_title = shown.title;
+				if (live)
+					*live = true;
 			}
 			return;
 		}
-		std::string text;
 		calldata_t cd = {};
 		if (proc_handler_call(obs_source_get_proc_handler(parent), "get_hooked", &cd)) {
-			for (const char *key : {"executable", "title"}) {
-				const char *value = nullptr;
-				if (calldata_get_string(&cd, key, &value) && value)
-					text += std::string(value) + " ";
+			bool hooked = false;
+			if (calldata_get_bool(&cd, "hooked", &hooked) && !hooked) {
+				calldata_free(&cd);
+				return; // An old configured window is not the image being captured.
 			}
 			const char *value = nullptr;
 			if (calldata_get_string(&cd, "executable", &value) && value)
 				executable = value;
+			std::string title;
+			if (calldata_get_string(&cd, "title", &value) && value)
+				title = value;
+			program = lower(executable + " " + title);
+			if (window_title)
+				*window_title = title;
+			if (live)
+				*live = hooked || !executable.empty() || !title.empty();
+			calldata_free(&cd);
+			return;
 		}
 		calldata_free(&cd);
+		if (!obs_source_get_base_width(parent) || !obs_source_get_base_height(parent))
+			return;
 		obs_data_t *settings = obs_source_get_settings(parent);
 		const std::string window = obs_data_get_string(settings, "window");
 		obs_data_release(settings);
-		program = lower(text + window);
-		if (executable.empty()) {
-			// The "window" setting is title:class:executable, with ':' in
-			// a part written "#3A".
-			const size_t colon = window.rfind(':');
-			if (colon != std::string::npos)
-				executable = window.substr(colon + 1);
+		// Sources without get_hooked can name the window in their settings.
+		// Keep the established match text, and decode the displayed title.
+		program = lower(window);
+		const size_t colon = window.rfind(':');
+		if (colon != std::string::npos)
+			executable = window.substr(colon + 1);
+		const std::string encoded = window.substr(0, window.find(':'));
+		std::string title;
+		for (size_t i = 0; i < encoded.size(); ++i) {
+			if (encoded.compare(i, 3, "#3A") == 0) {
+				title += ':';
+				i += 2;
+			} else if (encoded.compare(i, 3, "#22") == 0) {
+				title += '#';
+				i += 2;
+			} else {
+				title += encoded[i];
+			}
+		}
+		program += " " + lower(title);
+		if (window_title)
+			*window_title = title;
+		if (live)
+			*live = true;
+	}
+
+	bool command(const std::string &action, AutoFrameState &out)
+	{
+		if (action != "measure" && action != "remember" && action != "measure_and_remember") {
+			out.success = false;
+			out.status = "failed";
+			out.error = obs_module_text("Frame.Detection.InvalidCommand");
+			return false;
+		}
+		std::string match, executable, title;
+		bool live = false;
+		captured(match, executable, &title, &live);
+		auto *target = obs_filter_get_target(source_);
+		const uint32_t w = target ? obs_source_get_base_width(target) : 0;
+		const uint32_t h = target ? obs_source_get_base_height(target) : 0;
+		const bool standing = standby_showing();
+		{
+			std::lock_guard lock(mutex_);
+			observe_capture_locked(executable, title, live && !standing);
+			request_ = {};
+			request_.request_id = ++next_frame_request;
+			request_.status = "pending";
+			request_.complete = false;
+			request_.program = capture_title_.empty() ? capture_executable_ : capture_title_;
+			request_.executable = capture_executable_;
+			request_generation_ = capture_generation_;
+			request_deadline_ = std::chrono::steady_clock::now() + std::chrono::seconds(4);
+			request_save_ = action != "measure";
+			request_measure_ = action != "remember";
+			request_ready_ = false;
+			measured_w_ = w;
+			measured_h_ = h;
+			measure_once_[0] = measure_once_[1] = false;
+			measured_ready_ = false;
+			if (!obs_source_enabled(source_)) {
+				fail_request_locked("Frame.Detection.Disabled");
+			} else if (!live || !w || !h || standing) {
+				fail_request_locked("Frame.Detection.NoImage");
+			} else if (request_save_ && request_.program.empty()) {
+				fail_request_locked("Frame.Detection.NoProgram");
+			} else if (!request_measure_) {
+				if (detected_.ratio <= 0.0 || detected_generation_ != capture_generation_ ||
+				    detected_source_w_ != w || detected_source_h_ != h) {
+					fail_request_locked("Frame.Detection.NoMeasurement");
+				} else {
+					request_.ratio = detected_.ratio;
+					request_.aspect_ratio = detected_.aspect_ratio;
+					request_.width = detected_.width;
+					request_.height = detected_.height;
+					request_ready_ = true;
+				}
+			} else {
+				rule_editing_ = false;
+				detected_ = {};
+				measure_once_[0] = measure_once_[1] = true;
+				probe_timer_ = 0.0;
+				++probe_generation_;
+			}
+			out = request_;
+		}
+		queue_feedback();
+		return out.success;
+	}
+
+	bool command_state(int64_t request_id, AutoFrameState &out)
+	{
+		std::string match, executable, title;
+		bool live = false;
+		captured(match, executable, &title, &live);
+		live = live && !standby_showing();
+		bool changed;
+		{
+			std::lock_guard lock(mutex_);
+			changed = observe_capture_locked(executable, title, live);
+			changed = expire_request_locked() || changed;
+			if (request_.status == "pending" && !obs_source_enabled(source_)) {
+				fail_request_locked("Frame.Detection.Disabled");
+				changed = true;
+			}
+			out = request_;
+			if (request_id > 0 && request_id != request_.request_id) {
+				out.success = false;
+				out.complete = true;
+				out.status = "failed";
+				out.saved = false;
+				out.error = obs_module_text("Frame.Detection.Replaced");
+			}
+		}
+		if (changed)
+			queue_feedback();
+		return out.success;
+	}
+
+	// Called by the two editable rule controls, including OBS's initial apply.
+	// Only values different from the last automatic draft count as an edit.
+	void rule_edited(obs_data_t *settings)
+	{
+		std::lock_guard lock(mutex_);
+		if (obs_data_get_string(settings, "rule_program") != draft_program_ ||
+		    obs_data_get_string(settings, "rule_shape") != draft_shape_)
+			rule_editing_ = true;
+	}
+
+	std::string detection_status()
+	{
+		std::lock_guard lock(mutex_);
+		return detection_text_locked();
+	}
+
+	void prepare_controls() { publish_feedback(false); }
+
+	void publish_feedback(bool refresh = true)
+	{
+		feedback_queued_.store(false);
+		std::string match, executable, title;
+		bool live = false;
+		captured(match, executable, &title, &live);
+		live = live && !standby_showing();
+		auto *target = obs_filter_get_target(source_);
+		const uint32_t w = target ? obs_source_get_base_width(target) : 0;
+		const uint32_t h = target ? obs_source_get_base_height(target) : 0;
+		obs_data_t *settings = obs_source_get_settings(source_);
+		bool apply = false, changed = false, editing = false;
+		std::string before, text, edited_program, edited_shape;
+		{
+			std::lock_guard lock(mutex_);
+			observe_capture_locked(executable, title, live);
+			expire_request_locked();
+			if (request_.status == "pending" && !obs_source_enabled(source_))
+				fail_request_locked("Frame.Detection.Disabled");
+			if (request_.status == "pending" && request_ready_) {
+				request_ready_ = false;
+				if (!capture_live_ || request_generation_ != capture_generation_) {
+					fail_request_locked("Frame.Detection.Changed");
+				} else if (!w || !h || w != measured_w_ || h != measured_h_) {
+					fail_request_locked("Frame.Detection.Resized");
+				} else {
+					if (request_measure_) {
+						obs_data_set_int(settings, "trim", (int)Trim::Manual);
+						obs_data_set_double(settings, "trim_x", request_x_);
+						obs_data_set_double(settings, "trim_y", request_y_);
+						apply = true;
+					}
+					if (request_save_) {
+						if (write_shape_rule(settings, request_.program,
+								     request_.aspect_ratio)) {
+							obs_data_set_int(settings, "trim", (int)Trim::Automatic);
+							request_.saved = true;
+							rule_editing_ = false;
+							apply = true;
+						} else {
+							fail_request_locked("Frame.Detection.NoProgram");
+						}
+					}
+					if (request_.success) {
+						request_.status = request_.saved ? "saved" : "measured";
+						request_.complete = true;
+						detected_ = request_;
+						detected_generation_ = capture_generation_;
+						detected_source_w_ = w;
+						detected_source_h_ = h;
+					}
+				}
+			}
+			editing = rule_editing_;
+			if (!editing) {
+				const std::string program =
+					capture_live_ ? (capture_title_.empty() ? capture_executable_ : capture_title_)
+						      : std::string();
+				const std::string shape = detected_generation_ == capture_generation_ &&
+									  detected_.ratio > 0.0
+								  ? detected_.aspect_ratio
+								  : std::string();
+				changed = obs_data_get_string(settings, "rule_program") != program ||
+					  obs_data_get_string(settings, "rule_shape") != shape;
+				draft_program_ = program;
+				draft_shape_ = shape;
+				obs_data_set_string(settings, "rule_program", program.c_str());
+				obs_data_set_string(settings, "rule_shape", shape.c_str());
+			}
+			text = detection_text_locked();
+			before = shown_feedback_;
+			changed = changed || text != before || feedback_dirty_;
+			feedback_dirty_ = changed;
+			edited_program = obs_data_get_string(settings, "rule_program");
+			edited_shape = obs_data_get_string(settings, "rule_shape");
+		}
+		if (apply)
+			obs_source_update(source_, settings);
+		obs_data_release(settings);
+		if (refresh && (changed || apply)) {
+			bool updated = false;
+			const bool typing = editing && update_focused_feedback(source_, before, text, edited_program,
+									       edited_shape, updated);
+			{
+				std::lock_guard lock(mutex_);
+				feedback_deferred_ = typing && !updated;
+				feedback_dirty_ = feedback_deferred_;
+				if (!feedback_deferred_)
+					shown_feedback_ = text;
+			}
+			if (!typing)
+				obs_source_update_properties(source_);
 		}
 	}
 
 	// For the controls: what is being captured and which shape applies.
-	void status(std::string &program, double &ratio, bool &built_in, bool &forced, bool &found, bool &seen_before)
+	void status(std::string &program, double &ratio, bool &built_in, bool &forced, bool &found, bool &seen_before,
+		    bool &manual)
 	{
 		std::lock_guard lock(mutex_);
 		seen_before = usual_seen_before_;
 		program = program_;
-		forced = settings_.force_ratio > 0.0;
+		manual = settings_.trim == Trim::Manual;
+		forced = !manual && settings_.force_ratio > 0.0;
 		ratio = forced ? settings_.force_ratio : rule_ratio_ > 0.0 ? rule_ratio_ : held_ratio_;
+		if (manual && last_w_ && last_h_)
+			ratio = (last_w_ - 2.0 * std::clamp(settings_.trim_x, 0.0, last_w_ * 0.45)) /
+				(last_h_ - 2.0 * std::clamp(settings_.trim_y, 0.0, last_h_ * 0.45));
 		// "Usual for this program" while the starting guess still stands.
 		built_in = !forced && rule_ratio_ <= 0.0 && usual_ratio_ > 0.0 &&
 			   std::fabs(held_ratio_ - usual_ratio_) < 0.01;
@@ -683,7 +1055,7 @@ public:
 		const std::string program = obs_data_get_string(settings, "rule_program");
 		const std::string shape = obs_data_get_string(settings, "rule_shape");
 		obs_data_release(settings);
-		return save_shape(program, shape, false);
+		return save_shape(program, shape, true);
 	}
 
 	// Stores the picture as it is trimmed right now (found automatically,
@@ -696,8 +1068,12 @@ public:
 		double ratio = 0.0;
 		{
 			std::lock_guard lock(mutex_);
+			if (request_.status == "pending")
+				return false;
 			program = program_;
-			if (crop_goal_.w > 1.0 && crop_goal_.h > 1.0)
+			if (detected_.ratio > 0.0 && detected_generation_ == capture_generation_)
+				ratio = detected_.ratio;
+			else if (crop_goal_.w > 1.0 && crop_goal_.h > 1.0)
 				ratio = crop_goal_.w / crop_goal_.h;
 		}
 		return ratio > 0.0 && save_shape(program, ratio_name(ratio), true);
@@ -706,29 +1082,16 @@ public:
 	bool save_shape(std::string program, const std::string &shape, bool automatic)
 	{
 		obs_data_t *settings = obs_source_get_settings(source_);
-		program = lower(program);
-		if (program.size() > 4 && program.compare(program.size() - 4, 4, ".exe") == 0)
-			program.resize(program.size() - 4);
-		// A window's title can be given instead of a file name. The list
-		// is kept as "name = shape, name = shape", so a title is used up
-		// to its first comma or equals sign: still enough to find it by.
-		program = program.substr(0, program.find_first_of(",="));
-		while (!program.empty() && (program.back() == ' ' || program.back() == '\t'))
-			program.pop_back();
-		const bool ok = !program.empty() && parse_ratio(shape) > 0.0;
+		const bool ok = write_shape_rule(settings, std::move(program), shape);
 		if (ok) {
-			std::vector<std::pair<std::string, double>> rules;
-			parse_rules_text(obs_data_get_string(settings, "rules_text"), rules);
-			std::string text;
-			for (const auto &[name, ratio] : rules) {
-				if (name != program)
-					text += name + " = " + ratio_name(ratio) + ", ";
-			}
-			text += program + " = " + shape;
-			obs_data_set_string(settings, "rules_text", text.c_str());
 			if (automatic)
 				obs_data_set_int(settings, "trim", (int)Trim::Automatic);
 			obs_source_update(source_, settings);
+			{
+				std::lock_guard lock(mutex_);
+				rule_editing_ = false;
+			}
+			queue_feedback();
 		}
 		obs_data_release(settings);
 		return ok;
@@ -738,9 +1101,8 @@ public:
 	// and stored as a fixed trim.
 	void measure_now()
 	{
-		std::lock_guard lock(mutex_);
-		measure_once_[0] = measure_once_[1] = true;
-		measured_ready_ = false;
+		AutoFrameState state;
+		command("measure", state);
 	}
 
 	uint32_t width()
@@ -781,8 +1143,8 @@ public:
 		Settings s;
 		Rect rect, crop;
 		double dt;
-		bool probe_now = false, publish_measured = false, frozen = false;
-		double measured_x = 0.0, measured_y = 0.0;
+		uint64_t probe_generation = 0;
+		bool probe_now = false, frozen = false, feedback = false;
 		std::string learn_program;
 		double learn_shape = 0.0;
 		{
@@ -804,6 +1166,19 @@ public:
 			}
 			gone_for_ = 0.0;
 			if (w != last_w_ || h != last_h_) {
+				detected_axis_[0] = detected_axis_[1] = false;
+				// A saved rule also resets last_w_ to reapply its shape. Keep
+				// the measurement when the actual capture size is unchanged.
+				if (detected_.ratio > 0.0 && (w != detected_source_w_ || h != detected_source_h_)) {
+					detected_ = {};
+					feedback = true;
+				}
+				++probe_generation_;
+				if (request_.status == "pending" && request_measure_ &&
+				    (w != measured_w_ || h != measured_h_)) {
+					fail_request_locked("Frame.Detection.Resized");
+					feedback = true;
+				}
 				// A new size is looked at often until the picture's shape is settled.
 				eager_ = kEagerLooks;
 				// For the log: a window being dragged to a new size changes
@@ -873,10 +1248,6 @@ public:
 					probe_now = true;
 				}
 			}
-			publish_measured = measured_ready_;
-			measured_ready_ = false;
-			measured_x = measured_[0];
-			measured_y = measured_[1];
 			trim_x = std::clamp(trim_x, 0.0, w * 0.45);
 			trim_y = std::clamp(trim_y, 0.0, h * 0.45);
 			const Rect crop_goal{trim_x, trim_y, w - 2.0 * trim_x, h - 2.0 * trim_y};
@@ -974,20 +1345,14 @@ public:
 			crop = crop_current_;
 			if (s.follow)
 				rect = Rect{0.0, 0.0, (double)s.frame_w, (double)s.frame_h};
+			probe_generation = probe_generation_;
 		}
 
 		if (!learn_program.empty())
 			remember_program_shape(learn_program, learn_shape);
 
-		if (publish_measured) {
-			// Store what was measured as a fixed trim, where the user can see and edit it.
-			obs_data_t *settings = obs_source_get_settings(source_);
-			obs_data_set_int(settings, "trim", (int)Trim::Manual);
-			obs_data_set_double(settings, "trim_x", measured_x);
-			obs_data_set_double(settings, "trim_y", measured_y);
-			obs_source_update(source_, settings);
-			obs_data_release(settings);
-		}
+		if (feedback)
+			queue_feedback();
 
 		// 1. The capture as it is.
 		// (Afresh at each drawing: see filter-input.hpp.)
@@ -1002,8 +1367,11 @@ public:
 		gs_effect_t *effect = obs_get_base_effect(OBS_EFFECT_DEFAULT);
 		gs_eparam_t *image = gs_effect_get_param_by_name(effect, "image");
 
-		if (probe_now)
-			look_for_bars(input, w, h, effect, image, s.trim_wait_s);
+		if (probe_now) {
+			look_for_bars(input, w, h, effect, image, s.trim_wait_s, probe_generation);
+			if (finish_detection(w, h))
+				queue_feedback();
+		}
 
 		// 2. Placed inside the frame. Drawing into a frame-sized target also
 		// crops anything a "fill" fit pushes past the edges.
@@ -1047,6 +1415,134 @@ public:
 	}
 
 private:
+	bool observe_capture_locked(const std::string &executable, const std::string &title, bool live)
+	{
+		if (capture_seen_ && capture_executable_ == executable && capture_title_ == title &&
+		    capture_live_ == live)
+			return false;
+		capture_seen_ = true;
+		capture_executable_ = executable;
+		capture_title_ = title;
+		capture_live_ = live;
+		++capture_generation_;
+		++probe_generation_;
+		detected_ = {};
+		detected_axis_[0] = detected_axis_[1] = false;
+		if (request_.status == "pending")
+			fail_request_locked(live ? "Frame.Detection.Changed" : "Frame.Detection.NoImage");
+		return true;
+	}
+
+	void fail_request_locked(const char *reason)
+	{
+		request_.success = false;
+		request_.complete = true;
+		request_.status = "failed";
+		request_.saved = false;
+		request_.error = obs_module_text(reason);
+		request_ready_ = measured_ready_ = false;
+		measure_once_[0] = measure_once_[1] = false;
+		detected_ = {};
+	}
+
+	bool expire_request_locked()
+	{
+		if (request_.status != "pending" || std::chrono::steady_clock::now() < request_deadline_)
+			return false;
+		fail_request_locked("Frame.Detection.Timeout");
+		return true;
+	}
+
+	bool finish_detection(uint32_t w, uint32_t h)
+	{
+		std::lock_guard lock(mutex_);
+		if (expire_request_locked())
+			return true;
+		if (request_.status == "pending" && measured_ready_) {
+			measured_ready_ = false;
+			if (request_generation_ != capture_generation_ || w != measured_w_ || h != measured_h_) {
+				fail_request_locked("Frame.Detection.Changed");
+				return true;
+			}
+			request_x_ = std::clamp(measured_[0], 0.0, w * 0.45);
+			request_y_ = std::clamp(measured_[1], 0.0, h * 0.45);
+			request_.width = (uint32_t)std::lround(w - 2.0 * request_x_);
+			request_.height = (uint32_t)std::lround(h - 2.0 * request_y_);
+			request_.ratio = (double)request_.width / request_.height;
+			request_.aspect_ratio = ratio_name(request_.ratio);
+			request_ready_ = true;
+			return true;
+		}
+		// Use only a current, confirmed look. A saved/forced ratio, an emulator
+		// starting guess and a black frame are not newly detected image shapes.
+		if (!capture_live_ || request_.status == "pending" || settings_.trim != Trim::Automatic ||
+		    settings_.force_ratio > 0.0 || rule_ratio_ > 0.0 || !detected_axis_[0] || !detected_axis_[1] ||
+		    !bars_[0].confirmed || !bars_[1].confirmed ||
+		    std::fabs(detected_trim_[0] - bars_[0].applied) > 2.0 ||
+		    std::fabs(detected_trim_[1] - bars_[1].applied) > 2.0)
+			return request_.status == "failed" && request_.error != shown_feedback_;
+		AutoFrameState next;
+		next.status = "measured";
+		next.program = capture_title_.empty() ? capture_executable_ : capture_title_;
+		next.executable = capture_executable_;
+		next.width = (uint32_t)std::lround(w - 2.0 * std::clamp(bars_[0].applied, 0.0, w * 0.45));
+		next.height = (uint32_t)std::lround(h - 2.0 * std::clamp(bars_[1].applied, 0.0, h * 0.45));
+		next.ratio = (double)next.width / next.height;
+		next.aspect_ratio = ratio_name(next.ratio);
+		const bool changed = detected_.width != next.width || detected_.height != next.height ||
+				     detected_generation_ != capture_generation_ || detected_.program != next.program;
+		detected_ = std::move(next);
+		detected_generation_ = capture_generation_;
+		detected_source_w_ = w;
+		detected_source_h_ = h;
+		return changed;
+	}
+
+	std::string detection_text_locked() const
+	{
+		if (request_.status == "pending")
+			return obs_module_text("Frame.Detection.Waiting");
+		if (detected_.ratio > 0.0 && detected_generation_ == capture_generation_) {
+			std::string text = obs_module_text("Frame.Detection.Found");
+			for (const auto &[token, value] : std::initializer_list<std::pair<std::string, std::string>>{
+				     {"%1", detected_.aspect_ratio},
+				     {"%2", std::to_string(detected_.width)},
+				     {"%3", std::to_string(detected_.height)}}) {
+				const size_t at = text.find(token);
+				if (at != std::string::npos)
+					text.replace(at, token.size(), value);
+			}
+			return text;
+		}
+		if (request_.status == "failed")
+			return request_.error;
+		return obs_module_text(capture_live_ ? "Frame.Detection.None" : "Frame.Detection.NoImage");
+	}
+
+	void queue_feedback()
+	{
+		if (feedback_queued_.exchange(true))
+			return;
+		auto *weak = obs_source_get_weak_source(source_);
+		if (on_ui_thread_later(
+			    [](void *param) {
+				    auto *weak = static_cast<obs_weak_source_t *>(param);
+				    auto *source = obs_weak_source_get_source(weak);
+				    if (source) {
+					    calldata_t cd = {};
+					    proc_handler_call(obs_source_get_proc_handler(source),
+							      "publish_frame_feedback", &cd);
+					    calldata_free(&cd);
+					    obs_source_release(source);
+				    }
+				    obs_weak_source_release(weak);
+			    },
+			    weak))
+			return;
+		obs_weak_source_release(weak);
+		publish_feedback(false); // Headless fixtures have no UI task queue.
+	}
+
 	// Draws the finished frame kept in tr_frame_.
 	void draw_frame(uint32_t frame_w, uint32_t frame_h)
 	{
@@ -1141,7 +1637,7 @@ private:
 	// lit pixels at each of the four sides show that; artwork or a logo on
 	// black never reaches the ends.
 	void look_for_bars(gs_texture_t *input, uint32_t w, uint32_t h, gs_effect_t *effect, gs_eparam_t *image,
-			   double wait_s)
+			   double wait_s, uint64_t generation)
 	{
 		const int axis = probe_axis_;
 		probe_axis_ = 1 - probe_axis_;
@@ -1230,6 +1726,8 @@ private:
 		}
 
 		std::lock_guard lock(mutex_);
+		if (generation != probe_generation_)
+			return; // The capture or measurement request changed while this frame was read.
 		Bars &bars = bars_[axis];
 		Bars &other = bars_[1 - axis];
 		// Time since this direction was last looked at. A long gap (the
@@ -1241,6 +1739,9 @@ private:
 		last_look_dark_ = dark;
 		eager_ -= dark ? 0.25 : 1.0;
 		if (dark) {
+			detected_axis_[axis] = false;
+			if (measure_once_[axis])
+				fail_request_locked("Frame.Detection.Dark");
 			// Entirely black (a fade, a loading screen): learn nothing from it.
 			bars.candidate = -1.0;
 			bars.agree = 0;
@@ -1253,6 +1754,8 @@ private:
 		// Bars are trimmed evenly, by the smaller side, so a dark edge in the
 		// picture itself is never mistaken for more bar.
 		const double seen = std::min(near_lo, near_hi);
+		detected_axis_[axis] = true;
+		detected_trim_[axis] = seen;
 		int edge_lo = 0, edge_hi = 0, inside = 0;
 		for (uint32_t strip = 0; strip < across; strip++) {
 			if (!strip_hi_[strip])
@@ -1504,6 +2007,20 @@ private:
 	obs_source_t *source_;
 	std::mutex mutex_;
 	Settings settings_;
+	AutoFrameState request_, detected_;
+	std::chrono::steady_clock::time_point request_deadline_;
+	uint64_t capture_generation_ = 0, detected_generation_ = 0, request_generation_ = 0, probe_generation_ = 0;
+	bool capture_seen_ = false, capture_live_ = false;
+	std::string capture_executable_, capture_title_;
+	bool request_save_ = false, request_measure_ = false, request_ready_ = false;
+	double request_x_ = 0.0, request_y_ = 0.0;
+	uint32_t measured_w_ = 0, measured_h_ = 0;
+	uint32_t detected_source_w_ = 0, detected_source_h_ = 0;
+	bool detected_axis_[2] = {false, false};
+	double detected_trim_[2] = {0.0, 0.0};
+	bool rule_editing_ = false, feedback_deferred_ = false, feedback_dirty_ = false;
+	std::string draft_program_, draft_shape_, shown_feedback_;
+	std::atomic_bool feedback_queued_{false};
 	bool have_rect_ = false;
 	Rect current_, from_, goal_;
 	Rect crop_current_, crop_from_, crop_goal_;
@@ -1561,7 +2078,9 @@ bool shape_modified(obs_properties_t *props, obs_property_t *, obs_data_t *setti
 	obs_property_set_visible(obs_properties_get(props, "custom_h"), custom);
 	const auto trim = static_cast<Trim>(obs_data_get_int(settings, "trim"));
 	obs_property_set_visible(obs_properties_get(props, "trim_wait"), trim == Trim::Automatic);
-	obs_property_set_visible(obs_properties_get(props, "programs_group"), trim == Trim::Automatic);
+	obs_property_set_visible(obs_properties_get(props, "programs_group"), true);
+	obs_property_set_visible(obs_properties_get(props, "known_programs"), trim == Trim::Automatic);
+	obs_property_set_visible(obs_properties_get(props, "learned_forget"), trim == Trim::Automatic);
 	// (The saved aspect ratios are only read by the automatic trim.)
 	obs_property_set_visible(obs_properties_get(props, "rules_text|tlist"), trim == Trim::Automatic);
 	obs_property_set_visible(obs_properties_get(props, "trim_x"), trim == Trim::Manual);
@@ -1620,9 +2139,9 @@ void show_status(obs_properties_t *props, AutoFrame *self)
 {
 	std::string program;
 	double ratio = 0.0;
-	bool built_in = false, forced = false, found = false, seen_before = false;
+	bool built_in = false, forced = false, found = false, seen_before = false, manual = false;
 	if (self)
-		self->status(program, ratio, built_in, forced, found, seen_before);
+		self->status(program, ratio, built_in, forced, found, seen_before, manual);
 	auto fill = [](std::string text, const std::string &with) {
 		const size_t at = text.find("%1");
 		if (at != std::string::npos)
@@ -1635,7 +2154,8 @@ void show_status(obs_properties_t *props, AutoFrame *self)
 	if (ratio <= 0.0)
 		text += obs_module_text("Frame.Status.Auto");
 	else
-		text += fill(obs_module_text(forced                    ? "Frame.Status.Key"
+		text += fill(obs_module_text(manual                    ? "Frame.Status.Trim"
+					     : forced                  ? "Frame.Status.Key"
 					     : built_in && seen_before ? "Frame.Status.SeenBefore"
 					     : built_in                ? "Frame.Status.BuiltIn"
 					     : found                   ? "Frame.Status.Found"
@@ -1647,6 +2167,8 @@ void show_status(obs_properties_t *props, AutoFrame *self)
 obs_properties_t *get_properties(void *data)
 {
 	auto *self = static_cast<AutoFrame *>(data);
+	if (self)
+		self->prepare_controls();
 	obs_properties_t *top = obs_properties_create();
 
 	// What it sees right now.
@@ -1737,6 +2259,10 @@ obs_properties_t *get_properties(void *data)
 			return false;
 		},
 		data);
+	obs_property_t *detection = obs_properties_add_text(
+		props, "detection_status",
+		self ? self->detection_status().c_str() : obs_module_text("Frame.Detection.None"), OBS_TEXT_INFO);
+	obs_property_text_set_info_word_wrap(detection, true);
 	obs_property_t *keep = obs_properties_add_button2(
 		props, "trim_keep", obs_module_text("Frame.TrimKeep"),
 		[](obs_properties_t *p, obs_property_t *, void *d) {
@@ -1782,12 +2308,21 @@ obs_properties_t *get_properties(void *data)
 	obs_property_t *program = obs_properties_add_list(props, "rule_program", obs_module_text("Frame.RuleProgram"),
 							  OBS_COMBO_TYPE_EDITABLE, OBS_COMBO_FORMAT_STRING);
 	set_tip(program, obs_module_text("Frame.RuleProgram.Tip"));
+	obs_property_set_modified_callback2(
+		program,
+		[](void *data, obs_properties_t *, obs_property_t *, obs_data_t *settings) {
+			if (data)
+				static_cast<AutoFrame *>(data)->rule_edited(settings);
+			return false;
+		},
+		self);
 	if (self) {
 		std::vector<std::string> names;
 		// (First the program shown: with a window switcher, the window it
 		// shows, not the one the capture itself is aimed at.)
-		std::string text, captured;
-		self->captured(text, captured);
+		std::string text, captured, title;
+		self->captured(text, captured, &title);
+		add_window_title_choices(names, title);
 		if (!captured.empty())
 			names.push_back(captured);
 		for (const std::string &name : open_program_names())
@@ -1802,22 +2337,35 @@ obs_properties_t *get_properties(void *data)
 	}
 	obs_property_t *browse = obs_properties_add_path(props, "rule_browse", obs_module_text("Frame.RuleBrowse"),
 							 OBS_PATH_FILE, "Programs (*.exe);;All files (*.*)", nullptr);
-	obs_property_set_modified_callback(browse, [](obs_properties_t *, obs_property_t *, obs_data_t *settings) {
-		// Choosing a file fills in the program box above.
-		std::string path = obs_data_get_string(settings, "rule_browse");
-		if (path.empty())
-			return false;
-		const size_t slash = path.find_last_of("/\\");
-		if (slash != std::string::npos)
-			path = path.substr(slash + 1);
-		obs_data_set_string(settings, "rule_program", path.c_str());
-		obs_data_set_string(settings, "rule_browse", "");
-		return true;
-	});
+	obs_property_set_modified_callback2(
+		browse,
+		[](void *data, obs_properties_t *, obs_property_t *, obs_data_t *settings) {
+			// Choosing a file fills in the program box above.
+			std::string path = obs_data_get_string(settings, "rule_browse");
+			if (path.empty())
+				return false;
+			const size_t slash = path.find_last_of("/\\");
+			if (slash != std::string::npos)
+				path = path.substr(slash + 1);
+			obs_data_set_string(settings, "rule_program", path.c_str());
+			obs_data_set_string(settings, "rule_browse", "");
+			if (data)
+				static_cast<AutoFrame *>(data)->rule_edited(settings);
+			return true;
+		},
+		self);
 	obs_property_t *rule_shape = obs_properties_add_list(props, "rule_shape", obs_module_text("Frame.RuleShape"),
 							     OBS_COMBO_TYPE_EDITABLE, OBS_COMBO_FORMAT_STRING);
 	for (const RatioChoice &ratio : kRatioChoices)
 		obs_property_list_add_string(rule_shape, ratio_label(ratio), ratio.value);
+	obs_property_set_modified_callback2(
+		rule_shape,
+		[](void *data, obs_properties_t *, obs_property_t *, obs_data_t *settings) {
+			if (data)
+				static_cast<AutoFrame *>(data)->rule_edited(settings);
+			return false;
+		},
+		self);
 	obs_properties_add_button2(
 		props, "rule_add", obs_module_text("Frame.RuleAdd"),
 		[](obs_properties_t *p, obs_property_t *, void *d) {
@@ -2047,6 +2595,58 @@ obs_properties_t *picture_shape_properties(void *)
 }
 
 } // namespace
+
+namespace {
+
+bool frame_call(obs_source_t *filter, const char *method, calldata_t &cd, AutoFrameState &state)
+{
+	state = {};
+	const char *id = filter ? obs_source_get_unversioned_id(filter) : nullptr;
+	if (!id || strcmp(id, kAutoFrameId) != 0 ||
+	    !proc_handler_call(obs_source_get_proc_handler(filter), method, &cd)) {
+		state.success = false;
+		state.status = "failed";
+		state.error = obs_module_text("Frame.Detection.InvalidFilter");
+		return false;
+	}
+	state.success = calldata_bool(&cd, "success");
+	state.request_id = calldata_int(&cd, "request_id");
+	state.complete = calldata_bool(&cd, "complete");
+	state.ratio = calldata_float(&cd, "ratio");
+	state.width = (uint32_t)calldata_int(&cd, "width");
+	state.height = (uint32_t)calldata_int(&cd, "height");
+	state.saved = calldata_bool(&cd, "saved");
+	for (const auto &[key, value] :
+	     std::initializer_list<std::pair<const char *, std::string *>>{{"status", &state.status},
+									   {"program", &state.program},
+									   {"executable", &state.executable},
+									   {"aspect_ratio", &state.aspect_ratio},
+									   {"error", &state.error}}) {
+		const char *text = calldata_string(&cd, key);
+		*value = text ? text : "";
+	}
+	return state.success;
+}
+
+} // namespace
+
+bool auto_frame_command(obs_source_t *filter, const std::string &action, AutoFrameState &state)
+{
+	calldata_t cd = {};
+	calldata_set_string(&cd, "action", action.c_str());
+	const bool success = frame_call(filter, "frame_command", cd, state);
+	calldata_free(&cd);
+	return success;
+}
+
+bool auto_frame_state(obs_source_t *filter, int64_t request_id, AutoFrameState &state)
+{
+	calldata_t cd = {};
+	calldata_set_int(&cd, "for_request", request_id);
+	const bool success = frame_call(filter, "get_frame_state", cd, state);
+	calldata_free(&cd);
+	return success;
+}
 
 bool auto_frame_picture(obs_source_t *source, double &x, double &y, double &width, double &height)
 {

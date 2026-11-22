@@ -93,6 +93,13 @@ def arrow(x0, y0, x1, y1, head=5):
 EYE = [("ring", 32, 18, 11), ("dot", 32, 18, 5)]
 WINDOW = [("frame", 6, 4, 34, 26), ("box", 6, 4, 34, 9)]
 DRAWINGS = {
+    # Auto Frame: inspect letterbox bars, remember the detected ratio, or do both.
+    "measure-bars": [("frame", 4, 4, 42, 32), ("box", 4, 4, 42, 9), ("box", 4, 27, 42, 32),
+                     ("line", 49, 5, 61, 5), ("line", 49, 31, 61, 31)] + arrow(55, 18, 55, 7, 4) + arrow(55, 18, 55, 29, 4),
+    "remember-ratio": [("frame", 3, 4, 33, 27), ("frame", 10, 10, 26, 21), ("frame", 40, 6, 61, 32),
+                       ("box", 44, 6, 55, 14), ("frame", 44, 23, 57, 32)],
+    "measure-and-remember": [("frame", 2, 5, 25, 31), ("box", 2, 5, 25, 10), ("box", 2, 26, 25, 31),
+                             ("frame", 43, 5, 62, 31), ("box", 47, 5, 56, 13), ("frame", 47, 22, 58, 31)] + arrow(29, 18, 39, 18, 4),
     # Manual window / source
     "toggle": arrow(14, 12, 50, 12) + arrow(50, 24, 14, 24),
     "hide": EYE + [("line", 16, 32, 48, 4)],

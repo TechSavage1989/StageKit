@@ -54,7 +54,7 @@ $env:STAGEKIT_TEST_NDI = 'upgrade'
 $bin = Join-Path $obsRoot 'bin/64bit'
 $process = Start-Process -FilePath (Join-Path $bin 'obs64.exe') -WorkingDirectory $bin -PassThru -WindowStyle Hidden -ArgumentList @('--portable', '--multi', '--disable-shutdown-check', '--disable-missing-files-check', '--disable-updater', '--verbose')
 try {
-    if (!$process.WaitForExit(90000)) { throw 'Portable OBS did not exit within 90 seconds.' }
+    if (!$process.WaitForExit(120000)) { throw 'Portable OBS did not exit within 120 seconds.' }
     if ($process.ExitCode -ne 0) { throw "Portable OBS exited with code $($process.ExitCode)." }
     if (!(Test-Path -LiteralPath $report)) { throw 'The OBS frontend probe did not run.' }
     $result = (Get-Content -Raw -LiteralPath $report).Trim()
@@ -86,7 +86,7 @@ try {
     }
     Write-Output 'PASS: OBS recognizes the native StageKit sources, filters and transition and the bundled Composite Blur filter.'
     $testLog = Get-ChildItem -LiteralPath (Join-Path $obsRoot 'config/obs-studio/logs') -Filter '*.txt' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    Select-String -LiteralPath $testLog.FullName -SimpleMatch -Pattern '[camera transition test]', '[Quick Access test]', '[Studio transition test]', 'StageKit timer layout:', 'StageKit timer at ', 'StageKit timer dock:' | ForEach-Object { Write-Output $_.Line }
+    Select-String -LiteralPath $testLog.FullName -SimpleMatch -Pattern '[camera transition test]', '[Quick Access test]', '[Studio transition test]', '[Auto Frame detection test]', 'StageKit timer layout:', 'StageKit timer at ', 'StageKit timer dock:' | ForEach-Object { Write-Output $_.Line }
     Write-Output 'PASS: source and scene filters, six Tools entries, catalog search, three visible Composite Blur modes and clean Windows OBS shutdown.'
     $env:STAGEKIT_TEST_NDI = 'restart'
     $env:STAGEKIT_TEST_REPORT = Join-Path $scratch 'ndi-restart.txt'

@@ -130,6 +130,9 @@ ICONS = {
     "layout": lambda d: (box(d, 0.06, 0.12, 0.56, 0.88, r=0.04, fill=True), box(d, 0.64, 0.12, 0.94, 0.46, r=0.04, fill=True), box(d, 0.64, 0.54, 0.94, 0.88, r=0.04, fill=True)),
     # The other keys.
     "shape": lambda d: (box(d, 0.04, 0.18, 0.96, 0.82), box(d, 0.3, 0.3, 0.7, 0.7, r=0.03, width=W - 4), arrow(d, 0.26, 0.5, 0.12, 0.5, 0.09, W - 4), arrow(d, 0.74, 0.5, 0.88, 0.5, 0.09, W - 4)),
+    "measurebars": lambda d: (box(d, .04, .10, .65, .90, r=.03), box(d, .05, .11, .64, .25, r=.01, fill=True), box(d, .05, .75, .64, .89, r=.01, fill=True), line(d, .76, .12, .96, .12, W-4), line(d, .76, .88, .96, .88, W-4), arrow(d, .86, .5, .86, .2, .10, W-4), arrow(d, .86, .5, .86, .8, .10, W-4)),
+    "rememberratio": lambda d: (box(d, .03, .12, .45, .73, r=.02, width=W-4), box(d, .12, .29, .36, .56, r=.01, width=W-4), box(d, .55, .13, .96, .89, r=.02, width=W-4), box(d, .64, .14, .82, .35, r=.01, fill=True), box(d, .63, .64, .87, .89, r=.01, width=W-4)),
+    "measureandremember": lambda d: (box(d, .02, .13, .37, .88, r=.02, width=W-4), box(d, .03, .14, .36, .27, r=.01, fill=True), box(d, .03, .74, .36, .87, r=.01, fill=True), arrow(d, .43, .50, .59, .50, .09, W-5), box(d, .66, .13, .98, .88, r=.02, width=W-4), box(d, .73, .14, .86, .34, r=.01, fill=True), box(d, .73, .64, .91, .88, r=.01, width=W-4)),
     "hook": lambda d: (box(d, 0.06, 0.38, 0.94, 0.92), line(d, 0.06, 0.52, 0.94, 0.52), arrow(d, 0.5, 0.04, 0.5, 0.36, 0.14)),
     "appswitch": lambda d: (arrow(d, 0.1, 0.32, 0.88, 0.32, 0.15), arrow(d, 0.9, 0.68, 0.12, 0.68, 0.15)),
     "timer": lambda d: (ring(d, 0.5, 0.53, 0.40), line(d, 0.5, 0.53, 0.5, 0.29), line(d, 0.5, 0.53, 0.68, 0.63), line(d, 0.41, 0.05, 0.59, 0.05, W - 4)),

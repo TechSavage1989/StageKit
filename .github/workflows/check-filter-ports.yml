@@ -18,6 +18,8 @@ on:
       - 'src/look/scene-shadow.cpp'
       - 'tests/alpha-bounds-test.cpp'
       - 'src/countdown/**'
+      - 'src/frame/**'
+      - 'src/api/vendor-api.cpp'
       - 'src/common/item-transition.*'
       - 'src/placement/show-in-scenes.*'
       - 'src/placement/scene-transitions.*'
@@ -27,6 +29,7 @@ on:
       - 'tests/countdown*-test.hpp'
       - 'tests/reset-stats-test.hpp'
       - 'tests/studio-transition-test.hpp'
+      - 'tests/auto-frame-detection-test.hpp'
       - 'src/plugin-main.cpp'
       - 'src/third-party/ports/**'
       - 'streamdeck/**'
@@ -111,6 +114,7 @@ jobs:
             build-ports/filter-results/countdown-layout.png
             build-ports/filter-results/countdown-rollover.png
             build-ports/filter-results/countdown-box.png
+            build-ports/filter-results/auto-frame-detection.png
             build-ports/filter-results/render.log
   windows:
     name: Windows OBS 32.2.2 frontend
@@ -129,7 +133,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $probe = Get-ChildItem -Path build_x64 -Filter 'stagekit-replacement-probe.dll' -Recurse -File | Select-Object -First 1
           if (!$probe) { throw 'Missing test probe.' }
+          New-Item -ItemType Directory -Path build_x64/frontend-results -Force | Out-Null
+          $env:STAGEKIT_AUTO_FRAME_CAPTURE = Join-Path $PWD 'build_x64/frontend-results/auto-frame-detection.png'
           ./tests/check-replacement-windows.ps1 -PackageDirectory release/RelWithDebInfo/stagekit -ProbePath $probe.FullName
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stagekit-auto-frame-windows
+          path: build_x64/frontend-results/auto-frame-detection.png
   deck-assets:
     runs-on: ubuntu-24.04
     steps:
@@ -147,7 +158,7 @@ jobs:
           "$RUNNER_TEMP/icons/bin/python" tools/make-plugin-files.py
           plugin=com.techsavage1989.stagekit.sdPlugin
           paths=("$plugin/manifest.json")
-          for key in obsfilter obssource obsmute obsstudio studiotransition obscamera movesourceport moveswapport timer resetstats; do
+          for key in obsfilter obssource obsmute obsstudio studiotransition obscamera movesourceport moveswapport timer resetstats measurebars rememberratio measureandremember; do
             paths+=("$plugin/ui/$key.html" "$plugin/imgs/actions/$key")
           done
           git diff --exit-code -- "${paths[@]}"

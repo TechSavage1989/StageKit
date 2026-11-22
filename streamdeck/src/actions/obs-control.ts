@@ -1,9 +1,11 @@
 import streamDeck, {
-	type DidReceiveSettingsEvent, type KeyAction, type KeyDownEvent, type SendToPluginEvent,
-	SingletonAction, type WillAppearEvent,
+	type DidReceiveSettingsEvent, type KeyAction, type KeyDownEvent, type KeyUpEvent, type SendToPluginEvent,
+	SingletonAction, type WillAppearEvent, type WillDisappearEvent,
 } from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 import { afterPress, targetOf } from "../kinds.ts";
+import { HoldPress } from "../hold.ts";
+import { holdMs } from "../live.ts";
 import { obs } from "../obs.ts";
 import { ordinaryControlPicture, studioModeShown } from "../pictures.ts";
 import { answerLists, imageOf, remembered, showOnOff, type KeySettings } from "./shared.ts";
@@ -12,6 +14,7 @@ export class ObsControl extends SingletonAction<KeySettings> {
 	override readonly manifestId: string;
 	readonly key: string;
 	readonly moveKind: string;
+	private readonly presses = new HoldPress();
 	constructor(key: string, moveKind = "") {
 		super();
 		this.key = key;
@@ -31,9 +34,43 @@ export class ObsControl extends SingletonAction<KeySettings> {
 		return ev.action.isKey() ? this.show(ev.action, ev.payload.settings) : Promise.resolve();
 	}
 
+	override onWillDisappear(ev: WillDisappearEvent<KeySettings>): void {
+		this.presses.cancel(ev.action.id);
+	}
+
 	override async onKeyDown(ev: KeyDownEvent<KeySettings>): Promise<void> {
+		const settings = ev.payload.settings;
+		if (this.key !== "obsstudio") {
+			await this.press(ev.action, settings);
+			return;
+		}
+		if (!ev.action.isKey()) return;
+		const key = ev.action;
+		// A hold must choose the transition before any short-press mode change.
+		const long = settings.longPress === undefined || settings.longPress === "" || settings.longPress === "transition";
+		await this.presses.down(key.id, {
+			holdMs: holdMs(settings.holdMs),
+			long,
+			short: () => this.press(key, settings),
+			longPress: () => this.transition(key),
+		});
+	}
+
+	override onKeyUp(ev: KeyUpEvent<KeySettings>): void {
+		if (this.key === "obsstudio") this.presses.up(ev.action.id);
+	}
+
+	private async transition(key: KeyAction<KeySettings>): Promise<void> {
 		try {
-			const settings = ev.payload.settings;
+			await obs.triggerStudioModeTransition();
+			await key.showOk();
+		} catch {
+			await key.showAlert();
+		}
+	}
+
+	private async press(key: KeyAction<KeySettings>, settings: KeySettings): Promise<void> {
+		try {
 			if (this.moveKind) {
 				const { source, filter } = targetOf(settings);
 				if ((await obs.filter(source, filter))?.kind !== this.moveKind) throw new Error("Choose a Move filter");
@@ -43,11 +80,11 @@ export class ObsControl extends SingletonAction<KeySettings> {
 				const before = await obs.controlState(this.key, target);
 				const result = await obs.controlState(this.key, target, afterPress(settings.press, before));
 				if (this.key === "obsstudio")
-					await remembered(ev.action, settings, this.key, { kind: this.key, enabled: result });
-				await ev.action.setState(result ? 1 : 0);
+					await remembered(key, settings, this.key, { kind: this.key, enabled: result });
+				await key.setState(result ? 1 : 0);
 			}
 		} catch {
-			await ev.action.showAlert();
+			await key.showAlert();
 		}
 	}
 
