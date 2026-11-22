@@ -75,7 +75,7 @@ const OTHERS: Record<string, WorksWith> = {
 	obsfilter: { feature: "A filter on an OBS source or scene", chosen: "target", tip: "Switches any OBS source or scene filter on and off." },
 	obssource: { feature: "A source in an OBS scene or group", tip: "Shows or hides a source in its scene or group." },
 	obsmute: { feature: "An input in the OBS audio mixer", tip: "Mutes or unmutes an OBS audio input." },
-	obsstudio: { feature: "OBS Studio Mode", tip: "Switches OBS Studio Mode on or off. One monitor means off; two monitors mean on." },
+	obsstudio: { feature: "OBS Studio Mode", tip: "A short press switches Studio Mode on or off. Holding sends Preview to Program unless Long press is Nothing. One monitor means off; two monitors mean on." },
 	studiotransition: {
 		feature: "OBS Studio Mode",
 		note: "Same as the Transition button in Studio Mode.",
@@ -159,6 +159,7 @@ const OTHERS: Record<string, WorksWith> = {
 export const WORKS_WITH: Record<string, WorksWith> = (() => {
 	const all: Record<string, WorksWith> = {};
 	for (const f of [...features.switches, ...features.moves]) all[f.key] = { kinds: [f.kind], chosen: "target", tip: filterTip([f.kind]) };
+	for (const f of features.autoFrameCommands) all[f.key] = { kinds: [f.kind], chosen: "target", tip: filterTip([f.kind], f.tip) };
 	for (const f of features.scenes) all[f.key] = { kinds: [f.kind], chosen: "sceneBlur", tip: filterTip([f.kind], "Its Scene list chooses one scene, or every scene with a filter of that name.") };
 	return { ...all, ...OTHERS };
 })();

@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | feat/studio-streamdeck-keys, based on beta245. Release notes in docs/releases/0.1.0-beta246.md. |
+| Working branch | fix/ready-capture-settings, based on beta247. Release notes in docs/releases/0.1.0-beta248.md. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -22,6 +22,22 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
+
+## Auto Frame detection feedback and Stream Deck commands
+
+Auto Frame reports the current measured content ratio beside Measure the bars now and fills the Program or window and Its aspect ratio draft from the actual captured window. Window-switcher identity takes precedence over the parent's configured capture. Titles distinguish windows sharing an executable, with an executable fallback. Manual draft edits survive automatic refresh; filling a draft does not save a rule. The editor remains visible after explicit measurement switches trimming to manual.
+
+Companion 0.40.0.0 adds Measure Bars, Remember Aspect Ratio and Measure and Remember actions targeting an Auto Frame filter. AutoFrameCommand starts a command and GetAutoFrameState reports its request ID, pending/completed state, captured identity and measured ratio. The combined command saves within the native filter only after its own fresh measurement completes for the same capture. Failed, superseded or timed-out operations cannot save a stale ratio. Both the native plugin and the companion must be updated for these keys.
+
+The Studio Mode key also gains a configurable long press, defaulting to Preview to Program after 800 ms. Its normal press preserves the saved toggle/on/off choice. Long press can be disabled and its duration adjusted. The transition uses OBS's existing native request and current transition settings; it requires Studio Mode to be on.
+
+All 118 Stream Deck tests, TypeScript/Rollup build, Elgato validation and package creation passed locally. The tests include the actual WebSocket request shape, blocked initial/status replies, late replies, changed key targets, and Studio short/long press behavior. The frontend fixture exercises the real Auto Frame controls and vendor requests, including changed or missing captures, dark frames, disabled filters, custom ratios and native timeout without a late save. Windows OBS 32.2.2 and Linux frontend execution are required CI gates. The guide includes the actual Linux Filters window showing the measured ratio and captured-window draft. Physical Stream Deck hardware is unavailable in this environment. Preserve the beta246 Studio controls and beta245 Reset Stats action.
+
+## Auto Frame during window Morph
+
+Auto Frame queries the existing Automatic Window Switcher change state before taking its settings lock. During an intentional window transition, including its final size step, it follows the current crop and placement directly. Repeated size changes no longer restart the ordinary 0.2-second settling hold or cause a second Auto Frame glide. Standalone resolution changes keep that hold.
+
+The shared window-morph-test.hpp fixture renders the real switcher and Auto Frame together in both directions, using prepared captures and parent re-aiming, including a longer Auto Frame glide. It checks intermediate blended images, opacity, endpoint dimensions, landmark placement and completion timing, with the normal resolution hold as a control. The Linux native run writes a before/during/after contact sheet. The Linux native renderer recorded 29 to 31 blended intermediate frames per direction, no alpha failures and no completion lag; the ordinary resize control held 10 frames and settled after 224 ms. The guide includes the exact render contact sheet from CI. Windows OBS 32.2.2 and Linux frontend execution are required CI gates.
 
 ## Stream Deck Studio controls
 
@@ -716,7 +732,7 @@ entry). Not seen on Windows.
 
 On branch fix/ready-capture-settings, Automatic Window Switcher refreshes prepared captures when the parent capture source's non-aim settings change. A single snapshot supplies the new pool key and settings. The active capture remains visible while a separate replacement starts with the same selected window. Promotion updates the entry and bridge together, preserving the current manual selection and transition state. Other switchers using the old pool entry keep their own options. Reverted and superseded candidates release their references, and removing an alias does not clear a bridge still owned by another active entry.
 
-The shared capture-settings-test.hpp fixture exercises the actual switcher renderer with two parents sharing a prepared manual window, method and cursor changes, delayed readiness, cancellation, supersession, rejoining the original pool entry, and complete cleanup. Formatting and whitespace checks passed. Native Windows/Linux execution is pending CI. This fixes the confirmed settings propagation defect; it does not establish the cause of missing application panels. Integrate the preceding Auto Frame update and number the release notes from fresh main before release.
+The shared capture-settings-test.hpp fixture exercises the actual switcher renderer with two parents sharing a prepared manual window, method and cursor changes, delayed readiness, cancellation, supersession, rejoining the original pool entry, and complete cleanup. Formatting, whitespace, guide settings and repository checks passed. The native renderer and actual Linux and Windows OBS 32.2.2 frontends passed the settings fixture, including preserved selection, isolation and complete cleanup. Initial replacement frames appeared after 416 to 467 ms and rejoining the shared capture took 62 to 66 ms. The beta247 Auto Frame update is integrated, and the complete combined frontend suite is a required release gate. This fixes the confirmed settings propagation defect; it does not establish the cause of missing application panels.
 
 ## Window switchers share their ready captures (0.1.0-beta203)
 

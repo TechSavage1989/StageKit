@@ -590,6 +590,13 @@ export function resetStatsShown(chosen: string | undefined, sourceType?: unknown
 	return { picture: BY_ID.get(chosen ?? "") ?? BY_ID.get("options/reset-stats")! };
 }
 
+/** An Auto Frame command: the selected source image with its command badge, or the command alone. */
+export function autoFrameCommandShown(chosen: string | undefined, commandImage: string, sourceType?: unknown): Shown {
+	const typed = typedPicture(sourceType);
+	if (typed) return { picture: typed, badge: commandImage };
+	return { picture: BY_ID.get(chosen ?? "") ?? BY_ID.get(`options/${commandImage}`)! };
+}
+
 /** Studio Mode uses different geometry in each state, including with a chosen scene image. */
 export function studioModeShown(on: boolean, sceneType?: unknown): Shown {
 	const state = on ? "studio-on" : "studio-off";

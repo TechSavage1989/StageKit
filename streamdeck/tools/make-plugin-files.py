@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.39.0.0"
+VERSION = "0.40.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -565,6 +565,12 @@ def main():
         key = feature["key"]
         add(key, feature["name"], feature["tip"], key, f"imgs/actions/{key}/icon", one(key), visible=key != "placeitem")
 
+    for feature in features["autoFrameCommands"]:
+        key = feature["key"]
+        key_pictures(key, "options/" + feature["image"], None)
+        page(key, "StageKit " + feature["name"], target_list(key, label="Capture and filter"))
+        add(key, feature["name"], feature["tip"], key, f"imgs/actions/{key}/icon", one(key))
+
     key_pictures("shape", "filters/auto-frame-on", None)
     ratio_labels = {"8:7": "8:7 (SNES / NES, square pixels)", "64:49": "64:49 (SNES / NES on a 4:3 TV)"}
     shapes = [("auto", "Automatic (work it out)")] + [(value, ratio_labels.get(value, value)) for value in
@@ -735,8 +741,14 @@ def main():
     add("obsmute", "Audio Mixer Mute", "Mutes or unmutes an OBS audio input.", "obsmute", "imgs/actions/obsmute/icon", two("obsmute"))
 
     key_pictures("obsstudio", "options/studio-on", "options/studio-off")
-    page("obsstudio", "StageKit Studio Mode", PRESS)
-    add("obsstudio", "Studio Mode", "Switches OBS Studio Mode on or off. One monitor means off; two monitors mean on.", "obsstudio", "imgs/actions/obsstudio/icon", two("obsstudio"))
+    page("obsstudio", "StageKit Studio Mode", PRESS
+         + options("Long press", "longPress", "transition", [("transition", "Preview to Program"), ("none", "Nothing")],
+                   "Preview to Program sends the current Preview using OBS's chosen transition and duration. Studio Mode must be on. "
+                   "A short press acts on release. With Nothing selected, On press acts immediately.")
+         + '\t\t<sdpi-item label="Hold time (ms)" title="How long the key must be held for its long press: 300 to 5000 ms, 800 as it comes.">\n'
+         '\t\t\t<sdpi-textfield setting="holdMs" placeholder="800" pattern="[0-9]*"></sdpi-textfield>\n'
+         '\t\t</sdpi-item>\n')
+    add("obsstudio", "Studio Mode", "A short press switches Studio Mode on or off. Hold to send Preview to Program, or set Long press to Nothing. One monitor means off; two monitors mean on.", "obsstudio", "imgs/actions/obsstudio/icon", two("obsstudio"))
 
     key_pictures("studiotransition", "options/studio-transition", None)
     page("studiotransition", "StageKit Preview to Program", "")
@@ -769,7 +781,7 @@ def main():
 
     groups = [
         ("scene", "mode", "scenetransitions", "showhide", "showinscenes", "visibilitylink"),
-        ("hook", "autocapture", "appcapture", "activeapp", "appswitch", "autoframe", "shape", "standby", "scenestandby", "programtrigger"),
+        ("hook", "autocapture", "appcapture", "activeapp", "appswitch", "autoframe", "measurebars", "rememberratio", "measureandremember", "shape", "standby", "scenestandby", "programtrigger"),
         ("sendto", "placeitem", "matchitem", "layout", "fititem", "scenefit", "fitoverlap", "slide", "tool", "option"),
         ("blur", "sceneblur", "blurall", "shadow", "sceneshadow", "corners", "scenecorners", "zoom"),
         ("stream", "record", "timer"),

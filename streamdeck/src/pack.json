@@ -1843,6 +1843,27 @@
 			"off": "live/record-stopping-7"
 		},
 		{
+			"id": "options/measure-bars",
+			"group": "options",
+			"label": "measure bars",
+			"on": "options/measure-bars",
+			"off": "options/measure-bars"
+		},
+		{
+			"id": "options/remember-ratio",
+			"group": "options",
+			"label": "remember ratio",
+			"on": "options/remember-ratio",
+			"off": "options/remember-ratio"
+		},
+		{
+			"id": "options/measure-and-remember",
+			"group": "options",
+			"label": "measure and remember",
+			"on": "options/measure-and-remember",
+			"off": "options/measure-and-remember"
+		},
+		{
 			"id": "options/toggle",
 			"group": "options",
 			"label": "toggle",

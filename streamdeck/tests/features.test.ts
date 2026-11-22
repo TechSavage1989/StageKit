@@ -9,7 +9,7 @@ const manifest = JSON.parse(readFileSync(new URL("manifest.json", plugin), "utf8
 const base = "com.techsavage1989.stagekit";
 
 test("every feature has its own key in the manifest, with a settings page and pictures that exist", () => {
-	const wanted = [...features.switches, ...features.moves, ...features.scenes, ...features.sceneStarts].map((f) => `${base}.${f.key}`);
+	const wanted = [...features.switches, ...features.moves, ...features.scenes, ...features.sceneStarts, ...features.autoFrameCommands].map((f) => `${base}.${f.key}`);
 	for (const extra of [features.timer.key, "shape", "hook", "appswitch", "fitoverlap", "scene", "mode", "tool", "blurall", "option", "slide", "stream", "record", "obsfilter", "obssource", "obsmute", "obsstudio", "studiotransition", "obscamera", "resetstats", "switch", "move"]) wanted.push(`${base}.${extra}`);
 	const have = manifest.Actions.map((a: { UUID: string }) => a.UUID);
 	assert.deepEqual([...have].sort(), [...wanted].sort());
@@ -40,6 +40,16 @@ test("Studio controls preserve the existing switch and provide a separate moment
 	const studioPage = readFileSync(new URL(studio.PropertyInspectorPath, plugin), "utf8");
 	for (const value of ["toggle", "on", "off"]) assert.ok(studioPage.includes(`value="${value}"`), value);
 	assert.match(studioPage, /setting="sceneType"/);
+	assert.match(studioPage, /setting="longPress" default="transition"/);
+	assert.match(studioPage, /<option value="transition">Preview to Program<\/option>/);
+	assert.match(studioPage, /<option value="none">Nothing<\/option>/);
+	assert.match(studioPage, /setting="holdMs" placeholder="800"/);
+	assert.match(studioPage, /300 to 5000 ms/);
+	assert.match(studioPage, /Studio Mode must be on/);
+	for (const other of ["obsfilter", "obssource", "obsmute", "obscamera", "movesourceport", "moveswapport"]) {
+		const otherPage = readFileSync(new URL(`ui/${other}.html`, plugin), "utf8");
+		assert.doesNotMatch(otherPage, /setting="(?:longPress|holdMs)"/, `${other}: Studio hold settings do not leak to other controls`);
+	}
 	const action = manifest.Actions.find((a: { UUID: string }) => a.UUID === `${base}.studiotransition`);
 	assert.equal(action.Name, "Preview to Program");
 	assert.equal(action.States.length, 1);

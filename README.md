@@ -494,6 +494,15 @@ time, when the image itself keeps showing inside the trimmed part, or when a dif
 captured. A shape carried over to a new size is only a starting point until the image is seen to fit
 it: if the image plainly shows inside it, it is let go within about a second.
 
+**Window switches keep their fade.** When Automatic Window Switcher animates a window change,
+Auto Frame follows the blended image and changing size throughout the transition. It does not
+hold the old image until Morph finishes or add a second resize animation afterward. Ordinary
+resolution changes keep the short settling hold described above.
+
+![Window Morph with and without Auto Frame](docs/images/window-morph.png)
+
+*Actual rendered frames before, during and after a window switch. The middle column shows the fade while the image changes size.*
+
 **If a game's shape is slow to come right**, OBS's log says what Auto Frame saw and when
 (*Help → Log Files → Show Log Files*, the lines with `Auto Frame:` in them).
 
@@ -502,6 +511,14 @@ screens stacked or side by side (DS, 3DS), upright and ultra-wide. For an image 
 press *Measure the bars now* on a bright scene (or set the amounts by hand), then *Keep this trim for
 this program*. That saves the shape for the program being captured and goes back to automatic, so the
 program is right from then on, at any window size, and everything else is still worked out by itself.
+
+**See the measured ratio.** The result beside *Measure the bars now* shows the detected image ratio and dimensions. A measurement reports its progress and any unavailable image instead of presenting an older ratio as a new result. The program-rule editor stays available after measuring.
+
+**Fill a rule from the capture.** *Program or window* and *Its aspect ratio* fill from the currently captured window and its measured image. A window title distinguishes games or windows that use the same executable; the executable is used when a title is unavailable. An Automatic Window Switcher supplies the window it is actually showing. You can edit either field, and automatic updates keep those edits until you save or explicitly measure again. Filling the fields does not save a rule; press *Remember this ratio* to save it.
+
+![Auto Frame measurement and current window](docs/images/auto-frame-detection.png)
+
+*The actual OBS Filters window after measuring a 16:9 image, with the detected ratio and the captured window filled into the rule editor.*
 
 **Image shape for each program.** A program seen before starts from the shape it showed then.
 Otherwise common emulators start from their usual shape (Snes9x 8:7, mGBA
@@ -2163,6 +2180,8 @@ With obs-websocket, send `CallVendorRequest` with `vendorName: "StageKit"`:
 | `BlurAll` | `mode?`: `on`, `off` or `toggle` | `active` |
 | `HookFront` | `sourceName`: a Game Capture or a Window Capture; `transition?`: an OBS transition's kind or `none`; `transitionMs?` | `executable`: the program in front, which the capture now takes. An Auto Capture on the source is switched off |
 | `SetPictureShape` | `sourceName`: a source with an Auto Frame; `shape`: `4:3`, `8:7`, a number, or `auto`; `untilGone?` (true unless given): drop it when that game's capture ends | none |
+| AutoFrameCommand | sourceName and filterName identify an Auto Frame filter; action is measure, remember or measure_and_remember. | Returns a requestId and status. Measurement is pending until a fresh result is ready. Remember saves a valid measured ratio for the same detected window; the combined action measures first and saves internally. |
+| GetAutoFrameState | sourceName, filterName and optional requestId. | Returns success, requestId, status, complete, program, executable, aspectRatio, ratio, width, height and saved. Failed or superseded operations return an error. Poll pending commands until complete. |
 | `GetOptions` | none | The dock's switches: `snap`, `guides`, `limit`, `slide`, `everyScene`, `keepShape` |
 | `SetOption` | `option`: one of those names; `mode?`: `toggle` (unless given), `on` or `off` | `on`: which way it is now. An `OptionsChanged` event with all six follows every change |
 | `Slide` | `direction`: `left`, `right`, `up`, `down`, `up-left`, `up-right`, `down-left`, `down-right` or `centre` | none. Slides the item the dock is on, as its arrows do |
@@ -2340,10 +2359,13 @@ pressed, so it never flashes the wrong one.
 | **Scene Mode** | Choose a Scene Modes filter and the mode you want to control. A new key uses the mode in *Mode settings* or the filter's first mode. *Switch on* shows that mode and lights while it is active. *Toggle* selects it, then clears it if the filter allows no mode, or returns to the previous mode if available. *Switch off* clears the active mode when allowed. *Next mode* cycles through the entries marked *Use in Next*. You can assign a long press and choose its hold time. Under *Mode settings*, each mode keeps its own *Image layout* and *Mode type*. Mode IDs preserve key bindings after a rename. |
 | **Move Source**, **Move Scene Item**, **Apply Layout** | Runs that move. A tick shows on the key when OBS has taken it |
 | **Set Aspect Ratio** | Sets a game's display ratio temporarily or until changed. *8:7 (SNES / NES, square pixels)*, *64:49 (SNES / NES on a 4:3 TV)* and *16:15* are available alongside the other Auto Frame ratios. Automatic returns control to Auto Frame. |
+| **Measure Bars** | Measures the current image on the selected Auto Frame filter. The key reports completion only after a fresh result is available. |
+| **Remember Aspect Ratio** | Saves the latest valid measured ratio for the window currently captured by the selected Auto Frame filter. A missing or changed capture is rejected. |
+| **Measure and Remember** | Measures the current image, waits for completion, then saves that fresh ratio for the same detected window. A failed, timed-out or superseded measurement does not save a rule. |
 | **Capture Active Window** | Aims the chosen Game Capture or Window Capture at the active window. Pick its transition and duration. Cut is instant. A Window Switcher uses its own transition and timing and treats the new window as a manual pick. Otherwise an Auto Capture on the chosen capture switches off until you turn it back on. |
 | **Fit to Space Overlap** | Switches a Fit to Space filter's, or a Scene Fit's, *Overlap only when it fills* on and off, and shows which way it is. On: the fitted window goes under the camera only while it fills its space, and beside it otherwise |
 | **Switch Scene** | Choose the Program or Preview scene. Preview controls Program when Studio Mode is off. The key lights while its selected scene is active on that output. *Transition* uses the current OBS choice by default, and a blank *Duration* keeps the current timing. *After the switch* can keep the selected transition and duration or restore the previous values. Restoration has been tested against a headless WebSocket server. It still needs a visual check in OBS. |
-| **Studio Mode** | Toggles OBS Studio Mode, switches it on, or switches it off. Its image shows one monitor while off and two while on, including changes made directly in OBS. Existing keys keep their settings. A chosen *Scene type* keeps its image and shows the monitor state in a corner badge. |
+| **Studio Mode** | Toggles OBS Studio Mode, switches it on, or switches it off. Hold it to send Preview to Program using OBS's current transition. *Long press* can be disabled, and *Hold time* is adjustable. The image shows one monitor while off and two while on, including changes made directly in OBS. Existing keys keep their short-press settings. A chosen *Scene type* keeps its image and shows the monitor state in a corner badge. |
 | **Preview to Program** | Press once to run the current Studio Mode transition, as with OBS's **Transition** button. It uses the current Preview scene, transition, duration and OBS swap behavior. Studio Mode must be on. A tick confirms OBS accepted the request; a disconnected or rejected request shows an alert. Choose a *Source type*, *Image layout* and *Palette* for its image. |
 | **Manual Window / Source** | Choose the source or scene and its filter. A Window Switcher supports toggle, next, return to automatic, hide/show and clear. A Source Switcher supports toggle, next and return to automatic. Auto Capture supports hide/show. Keys with identically named filters on different captures act on the selected capture. |
 | **Arrange Tool** | One of the dock's arrange tools on a key: line up an edge or centre, space out evenly, snap, make the same width, height or size, or copy a transform to all or to the chosen scenes. It works on the items selected in OBS's preview |
@@ -2366,6 +2388,12 @@ the first versions' *Filter switch* and *Move* keep working; those two are no lo
 **Studio Mode and Preview to Program.** The first two columns show Studio Mode off and on; the third is the momentary transition key. Install Stream Deck companion 0.39.0.0 or later for these changes. Existing Studio Mode keys update in place; add **Preview to Program** from the StageKit actions list.
 
 <p align="center"><img src="docs/images/studio-keys.png" width="480" alt="Studio Mode with one monitor while off and two while on, beside Preview to Program, in all six palettes"></p>
+
+**Hold Studio Mode to transition.** Companion 0.40.0.0 also lets one Studio Mode key do both jobs. A normal press uses its saved *On press* action. Holding for 800 ms sends Preview to Program. Change *Hold time* from 300 to 5000 ms, or set *Long press* to *Nothing* to turn it off. With a hold action enabled, a normal press acts when you release the key; a completed hold runs only the transition. Studio Mode must already be on for the transition.
+
+**Auto Frame measurement keys.** Install Stream Deck companion 0.40.0.0 and the matching StageKit OBS release. Add **Measure Bars**, **Remember Aspect Ratio**, or **Measure and Remember** from the StageKit actions list, then choose the capture source and its Auto Frame filter. Measure Bars reports when the new result is ready; Remember Aspect Ratio saves the valid measured ratio for that captured window; Measure and Remember does both in one press. A missing image, changed capture or failed measurement shows an alert. Each key has the usual Source type, Image layout and Palette controls.
+
+<p align="center"><img src="docs/images/auto-frame-keys.png" width="550" alt="Measure Bars, Remember Aspect Ratio and Measure and Remember key artwork in all six palettes"></p>
 
 **Stream and Record keys.** Both talk to OBS's own WebSocket requests and events, so they work
 with any version of StageKit in OBS. Their images move, in the key's palette, while something is

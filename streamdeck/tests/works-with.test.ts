@@ -86,7 +86,7 @@ test("a key for a filter names its kind exactly as OBS does, and those names are
 			assert.ok(firstLine(works).includes(shownName(kind)), `${key}: ${kind}`);
 		}
 	// One key per feature, for its own kind.
-	for (const f of [...features.switches, ...features.moves, ...features.scenes, ...features.sceneStarts]) assert.deepEqual(WORKS_WITH[f.key].kinds, [f.kind], f.key);
+	for (const f of [...features.switches, ...features.moves, ...features.scenes, ...features.sceneStarts, ...features.autoFrameCommands]) assert.deepEqual(WORKS_WITH[f.key].kinds, [f.kind], f.key);
 	assert.equal(firstLine(WORKS_WITH.showinscenes), "Source Filter: Show in Scenes (StageKit)");
 	assert.equal(firstLine(WORKS_WITH.mode), "Scene Filter: Scene Modes (StageKit)");
 	assert.equal(firstLine(WORKS_WITH.fitoverlap), "Scene Filter: Fit to Space (StageKit) or Scene Filter: Scene Fit (StageKit)");
