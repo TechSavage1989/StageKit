@@ -524,6 +524,10 @@ program is right from then on, at any window size, and everything else is still 
 
 Window name identifies the title, not a temporary window handle. Reopening the same game with the same title reuses its ratio; a different title needs its own rule. Saving an application default leaves its saved window rules intact. An identical title in a different application uses that other application's rules. The key reports an alert if the chosen application or title cannot be identified, instead of saving under another scope. Both the StageKit OBS plugin and companion 0.41.0.0 must be installed for this choice.
 
+![Saved application and window ratios in OBS](docs/images/auto-frame-scopes.png)
+
+*Actual Windows OBS controls with a 4:3 application default and separate 10:9 and 16:9 window rules. Each saved entry has its own remove button.*
+
 **Image shape for each program.** A program seen before starts from the shape it showed then.
 Otherwise common emulators start from their usual shape (Snes9x 8:7, mGBA
 3:2, Project64 4:3 and so on), so the image is right from the first frame. Either is only a starting

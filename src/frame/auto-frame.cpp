@@ -648,7 +648,7 @@ public:
 				AutoFrameState state;
 				const char *action = calldata_string(cd, "action");
 				const char *remember_by = calldata_string(cd, "save_scope");
-				int64_t timeout_ms;
+				long long timeout_ms;
 				if (!calldata_get_int(cd, "timeout_ms", &timeout_ms))
 					timeout_ms = 4000;
 				static_cast<AutoFrame *>(data)->command(action ? action : "", state,
