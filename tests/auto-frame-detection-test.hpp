@@ -339,11 +339,35 @@ inline void check(QStringList &issues)
 			return editor && current_box && current_box->lineEdit() == editor &&
 			       (focused == editor || (editor->focusProxy() && focused == editor->focusProxy()));
 		};
+		auto focus_state = [&] {
+			auto *current_box = choice(dialog, "Its aspect ratio");
+			auto *focused = QApplication::focusWidget();
+			auto *proxy = editor ? editor->focusProxy() : nullptr;
+			auto widget_name = [](QWidget *widget) {
+				return widget ? QString::fromLatin1(widget->metaObject()->className()) + '/' +
+							widget->objectName()
+					      : QStringLiteral("none");
+			};
+			return QStringLiteral("active dialog=%1, editor alive=%2, same editor=%3, focus=%4, proxy=%5, "
+					      "caret=%6")
+				.arg(dialog && QApplication::activeWindow() == dialog ? "yes" : "no",
+				     editor ? "yes" : "no",
+				     editor && current_box && current_box->lineEdit() == editor ? "yes" : "no",
+				     widget_name(focused), widget_name(proxy),
+				     editor ? QString::number(editor->cursorPosition()) : QStringLiteral("none"));
+		};
 		if (editor) {
-			dialog->activateWindow();
+			// CI uses a hidden Windows session or Xvfb without a window manager.
+			// Establish Qt activation and focus events independently of the OS.
+			QT_WARNING_PUSH
+			QT_WARNING_DISABLE_DEPRECATED
+			QApplication::setActiveWindow(dialog);
+			QT_WARNING_POP
 			editor->setFocus(Qt::OtherFocusReason);
 		}
-		expect(until(source, editor_has_focus), "the editable ratio could not receive typing focus");
+		const bool typing_focus = until(source, editor_has_focus);
+		expect(typing_focus,
+		       QStringLiteral("the editable ratio could not receive typing focus (%1)").arg(focus_state()));
 		if (editor)
 			editor->setCursorPosition(2);
 		aim(source, "Wide Demo", 480, 270);
@@ -351,7 +375,8 @@ inline void check(QStringList &issues)
 		       "measurement feedback did not follow the current image while a draft was edited");
 		expect(draft_is("Manual Draft", 13.0 / 7.0), "automatic refresh overwrote the manually edited draft");
 		expect(editor_has_focus() && editor->cursorPosition() == 2,
-		       "live detection rebuilt the active editor or moved its typing caret");
+		       QStringLiteral("live detection rebuilt the active editor or moved its typing caret (%1)")
+			       .arg(focus_state()));
 		expect(measure_button(), "Measure the bars now button was missing");
 		expect(until(source,
 			     [&] {
