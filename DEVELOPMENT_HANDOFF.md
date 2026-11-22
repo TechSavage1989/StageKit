@@ -33,6 +33,12 @@ The Studio Mode key also gains a configurable long press, defaulting to Preview 
 
 All 118 Stream Deck tests, TypeScript/Rollup build, Elgato validation and package creation passed locally. The tests include the actual WebSocket request shape, blocked initial/status replies, late replies, changed key targets, and Studio short/long press behavior. The frontend fixture exercises the real Auto Frame controls and vendor requests, including changed or missing captures, dark frames, disabled filters, custom ratios and native timeout without a late save. Native runtime checks and the filter screenshot are pending CI. Physical Stream Deck hardware is unavailable in this environment. Preserve the beta246 Studio controls and beta245 Reset Stats action.
 
+## Auto Frame during window Morph
+
+Auto Frame queries the existing Automatic Window Switcher change state before taking its settings lock. During an intentional window transition, including its final size step, it follows the current crop and placement directly. Repeated size changes no longer restart the ordinary 0.2-second settling hold or cause a second Auto Frame glide. Standalone resolution changes keep that hold.
+
+The shared window-morph-test.hpp fixture renders the real switcher and Auto Frame together in both directions, using prepared captures and parent re-aiming, including a longer Auto Frame glide. It checks intermediate blended images, opacity, endpoint dimensions, landmark placement and completion timing, with the normal resolution hold as a control. The Linux native run writes a before/during/after contact sheet. Windows OBS 32.2.2 and Linux frontend execution remain pending CI.
+
 ## Stream Deck Studio controls
 
 Companion 0.39.0.0 gives the existing Studio Mode key one monitor while off and two while on, preserving its UUID, saved toggle/on/off values, Scene type, Image layout and palette settings. The actual OBS state controls the displayed image; disconnected keys retain the last confirmed state. A chosen Scene type uses a one-monitor or two-monitor badge. Separate picture records preserve the drawings through the status generator and all layouts.

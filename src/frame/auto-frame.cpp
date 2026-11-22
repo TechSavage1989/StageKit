@@ -1119,9 +1119,10 @@ public:
 	void render()
 	{
 		obs_source_t *target = obs_filter_get_target(source_);
+		obs_source_t *parent = obs_filter_get_parent(source_);
 		const uint32_t w = target ? obs_source_get_base_width(target) : 0;
 		const uint32_t h = target ? obs_source_get_base_height(target) : 0;
-		if (!w || !h || !obs_filter_get_parent(source_)) {
+		if (!w || !h || !parent) {
 			// The capture has gone for a moment (a game re-attaching as it
 			// switches between a window and full-screen): keep the last
 			// picture up briefly instead of blinking to nothing.
@@ -1140,6 +1141,8 @@ public:
 			return;
 		}
 
+		AppCaptureChange change;
+		const bool changing_window = app_capture_change(parent, change);
 		Settings s;
 		Rect rect, crop;
 		double dt;
@@ -1153,6 +1156,13 @@ public:
 			dt = pending_time_;
 			pending_time_ = 0.0;
 			clock_ += dt;
+			// The switcher already blends and resizes its two images. A hold
+			// restarted at each size step would hide that blend until it ends.
+			// Include the final size step after the switcher leaves its Mix phase.
+			const bool live_resize = changing_window || was_changing_window_;
+			was_changing_window_ = changing_window;
+			if (live_resize)
+				settle_ = 0.0;
 
 			if (gone_for_ > kNewSession) {
 				// The capture was away long enough for this to be something
@@ -1192,7 +1202,7 @@ public:
 				}
 				// While the capture settles at its new size the last good
 				// picture stays up, so nothing half-drawn is ever shown.
-				if (have_rect_ && last_w_ && last_h_)
+				if (have_rect_ && last_w_ && last_h_ && !live_resize)
 					settle_ = kSettle;
 				// A new resolution (a window going full-screen, say). The
 				// picture's shape was already established, so keep showing
@@ -1301,8 +1311,9 @@ public:
 			const Rect goal =
 				target_rect(s, (uint32_t)std::lround(crop_goal.w), (uint32_t)std::lround(crop_goal.h));
 
-			if (!have_rect_) {
-				// First picture: no glide, just be in the right place.
+			if (!have_rect_ || live_resize) {
+				// First picture, or a resize already animated by the switcher:
+				// use this frame's crop and placement without a second glide.
 				current_ = from_ = goal_ = goal;
 				crop_current_ = crop_from_ = crop_goal_ = crop_goal;
 				have_rect_ = true;
@@ -2051,6 +2062,7 @@ private:
 	static constexpr double kKeepWhenGone = 1.0;
 	static constexpr double kNewSession = 4.0; // away this long, the next picture starts afresh
 	double settle_ = 0.0;
+	bool was_changing_window_ = false;
 	double gone_for_ = 0.0;
 	uint32_t drawn_w_ = 0, drawn_h_ = 0;
 	int quick_looks_ = 0;

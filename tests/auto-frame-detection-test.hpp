@@ -172,9 +172,16 @@ inline QComboBox *choice(QDialog *dialog, const QString &label)
 		for (int row = 0; row < form->rowCount(); ++row) {
 			auto *label_item = form->itemAt(row, QFormLayout::LabelRole);
 			auto *field_item = form->itemAt(row, QFormLayout::FieldRole);
-			auto *text = label_item ? qobject_cast<QLabel *>(label_item->widget()) : nullptr;
+			auto *label_widget = label_item ? label_item->widget() : nullptr;
+			auto *text = qobject_cast<QLabel *>(label_widget);
+			bool matches = text && text->text().contains(label);
+			// OBS wraps labels with tooltips alongside a help icon. The icon
+			// may be the first QLabel child, so inspect every label in the row.
+			if (label_widget && !matches)
+				for (auto *child : label_widget->findChildren<QLabel *>())
+					matches = matches || child->text().contains(label);
 			auto *combo = field_item ? qobject_cast<QComboBox *>(field_item->widget()) : nullptr;
-			if (text && combo && text->text().contains(label) && combo->isVisible())
+			if (matches && combo && combo->isVisible())
 				return combo;
 		}
 	return nullptr;
@@ -325,7 +332,7 @@ inline void check(QStringList &issues)
 		auto *ratio_box = choice(dialog, "Its aspect ratio");
 		QPointer<QLineEdit> editor = ratio_box ? ratio_box->lineEdit() : nullptr;
 		if (editor) {
-			QApplication::setActiveWindow(dialog);
+			dialog->activateWindow();
 			editor->setFocus(Qt::OtherFocusReason);
 			editor->setCursorPosition(2);
 		}

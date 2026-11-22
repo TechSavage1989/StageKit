@@ -491,6 +491,11 @@ time, when the image itself keeps showing inside the trimmed part, or when a dif
 captured. A shape carried over to a new size is only a starting point until the image is seen to fit
 it: if the image plainly shows inside it, it is let go within about a second.
 
+**Window switches keep their fade.** When Automatic Window Switcher animates a window change,
+Auto Frame follows the blended image and changing size throughout the transition. It does not
+hold the old image until Morph finishes or add a second resize animation afterward. Ordinary
+resolution changes keep the short settling hold described above.
+
 **If a game's shape is slow to come right**, OBS's log says what Auto Frame saw and when
 (*Help → Log Files → Show Log Files*, the lines with `Auto Frame:` in them).
 

@@ -60,6 +60,12 @@ After npm run pack, rerun python3 tools/make-plugin-files.py from streamdeck bef
 
 The Studio Mode UUID remains obsstudio with its existing toggle/on/off settings. Its one-monitor off and two-monitor on drawings are separate picture records selected through showOnOff's optional offPicture argument. Do not combine them into a normal on/off pair: make-state-icons.py intentionally substitutes the on drawing for unique off drawings. Typed scene images use state-specific monitor badges. Preview to Program is the single-state studiotransition action and calls TriggerStudioModeTransition once with no data or transition overrides. OBS rejects it with Studio Mode off; do not enable Studio Mode as a side effect. Exercise the real frontend request and keep the unfinished 10-bit Studio Preview color diagnostic separate from this key implementation.
 
+## Auto Frame and window transitions
+
+Auto Frame must not restart its normal resolution-change hold on every intermediate dimension of an Automatic Window Switcher transition. Query app_capture_change before locking the Auto Frame settings, bypass the settling hold through the last transition size step, and follow the switcher image without a second glide. Keep the ordinary same-window resolution hold. Exercise the shared window-morph-test.hpp fixture on prepared captures and parent re-aiming, in both directions, with blending and final placement assertions.
+
+The OBS properties frontend wraps labels with tooltips inside a widget containing a help icon. UI fixtures must match all QLabel children in the row's LabelRole and select the exact FieldRole control. Use QWidget::activateWindow rather than the deprecated QApplication activation call, which fails the Windows warnings-as-errors build.
+
 ## Additional materials and data patterns
 
 Append new patterns to both the Ambient Background and outline registries. Outline design 34
