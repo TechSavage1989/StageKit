@@ -2340,6 +2340,8 @@ pressed, so it never flashes the wrong one.
 | **Capture Active Window** | Aims the chosen Game Capture or Window Capture at the active window. Pick its transition and duration. Cut is instant. A Window Switcher uses its own transition and timing and treats the new window as a manual pick. Otherwise an Auto Capture on the chosen capture switches off until you turn it back on. |
 | **Fit to Space Overlap** | Switches a Fit to Space filter's, or a Scene Fit's, *Overlap only when it fills* on and off, and shows which way it is. On: the fitted window goes under the camera only while it fills its space, and beside it otherwise |
 | **Switch Scene** | Choose the Program or Preview scene. Preview controls Program when Studio Mode is off. The key lights while its selected scene is active on that output. *Transition* uses the current OBS choice by default, and a blank *Duration* keeps the current timing. *After the switch* can keep the selected transition and duration or restore the previous values. Restoration has been tested against a headless WebSocket server. It still needs a visual check in OBS. |
+| **Studio Mode** | Toggles OBS Studio Mode, switches it on, or switches it off. Its image shows one monitor while off and two while on, including changes made directly in OBS. Existing keys keep their settings. A chosen *Scene type* keeps its image and shows the monitor state in a corner badge. |
+| **Preview to Program** | Press once to run the current Studio Mode transition, as with OBS's **Transition** button. It uses the current Preview scene, transition, duration and OBS swap behavior. Studio Mode must be on. A tick confirms OBS accepted the request; a disconnected or rejected request shows an alert. Choose a *Source type*, *Image layout* and *Palette* for its image. |
 | **Manual Window / Source** | Choose the source or scene and its filter. A Window Switcher supports toggle, next, return to automatic, hide/show and clear. A Source Switcher supports toggle, next and return to automatic. Auto Capture supports hide/show. Keys with identically named filters on different captures act on the selected capture. |
 | **Arrange Tool** | One of the dock's arrange tools on a key: line up an edge or centre, space out evenly, snap, make the same width, height or size, or copy a transform to all or to the chosen scenes. It works on the items selected in OBS's preview |
 | **Dock Option** | The key controls one dock setting. Choose *Snap on release*, *Guides in the preview*, *Stop at Edges*, *Slide to the next edge*, *Move in every scene* or *Keep shape when resizing*. It lights while that setting is on. |
@@ -2357,6 +2359,10 @@ the first versions' *Filter switch* and *Move* keep working; those two are no lo
 **Reset Stats in all six palettes.**
 
 <p align="center"><img src="docs/images/reset-stats-keys.png" width="624" alt="Reset Stats key artwork in Mono, Violet, Ocean, Forest, Ember and Neon palettes"></p>
+
+**Studio Mode and Preview to Program.** The first two columns show Studio Mode off and on; the third is the momentary transition key. Install Stream Deck companion 0.39.0.0 or later for these changes. Existing Studio Mode keys update in place; add **Preview to Program** from the StageKit actions list.
+
+<p align="center"><img src="docs/images/studio-keys.png" width="480" alt="Studio Mode with one monitor while off and two while on, beside Preview to Program, in all six palettes"></p>
 
 **Stream and Record keys.** Both talk to OBS's own WebSocket requests and events, so they work
 with any version of StageKit in OBS. Their images move, in the key's palette, while something is

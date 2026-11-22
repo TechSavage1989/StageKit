@@ -290,6 +290,12 @@ class ObsLink extends EventEmitter {
 		await this.obs.call("TriggerHotkeyByName", contextName ? { hotkeyName, contextName } : { hotkeyName });
 	}
 
+	/** Runs OBS's Studio Mode Transition button; OBS rejects it while Studio Mode is off. */
+	async triggerStudioModeTransition(): Promise<void> {
+		if (!this.connected) throw new Error("OBS is disconnected");
+		await this.obs.call("TriggerStudioModeTransition");
+	}
+
 	/**
 	 * Asks the StageKit plugin in OBS for something (its own requests, see
 	 * "Remote control" in the README). Undefined when it cannot be reached

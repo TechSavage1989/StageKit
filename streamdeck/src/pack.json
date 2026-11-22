@@ -1871,6 +1871,27 @@
 			"off": "options/reset-stats"
 		},
 		{
+			"id": "options/studio-off",
+			"group": "options",
+			"label": "studio off",
+			"on": "options/studio-off",
+			"off": "options/studio-off"
+		},
+		{
+			"id": "options/studio-on",
+			"group": "options",
+			"label": "studio on",
+			"on": "options/studio-on",
+			"off": "options/studio-on"
+		},
+		{
+			"id": "options/studio-transition",
+			"group": "options",
+			"label": "studio transition",
+			"on": "options/studio-transition",
+			"off": "options/studio-transition"
+		},
+		{
 			"id": "options/zoom",
 			"group": "options",
 			"label": "zoom",

@@ -590,6 +590,21 @@ export function resetStatsShown(chosen: string | undefined, sourceType?: unknown
 	return { picture: BY_ID.get(chosen ?? "") ?? BY_ID.get("options/reset-stats")! };
 }
 
+/** Studio Mode uses different geometry in each state, including with a chosen scene image. */
+export function studioModeShown(on: boolean, sceneType?: unknown): Shown {
+	const state = on ? "studio-on" : "studio-off";
+	const typed = BY_ID.get(sceneTypePicture(explicit(sceneType)) ?? "");
+	if (typed) return { picture: typed, badge: state };
+	return { picture: BY_ID.get(`options/${state}`)! };
+}
+
+/** A momentary Studio transition: its chosen type with the transition badge, else its own drawing. */
+export function studioTransitionShown(chosen: string | undefined, sourceType?: unknown): Shown {
+	const typed = typedPicture(sourceType);
+	if (typed) return { picture: typed, badge: "studio-transition" };
+	return { picture: BY_ID.get(chosen ?? "") ?? BY_ID.get("options/studio-transition")! };
+}
+
 /** A Dock Option key: its Source type with its option, else the option. */
 export function optionShown(chosen: string | undefined, option: string | undefined, sourceType?: unknown): Shown {
 	const typed = typedPicture(sourceType);
@@ -706,6 +721,7 @@ export function timerPicture(sourceType?: string): Picture {
 }
 
 export function ordinaryControlPicture(key: string, source: string | undefined, sourceType?: string, sceneType?: string): Picture {
-	if (key === "obsstudio" || key === "movesourceport" || key === "moveswapport") return scenePicture(undefined, source, sceneType);
+	if (key === "obsstudio") return studioModeShown(true, sceneType).picture;
+	if (key === "movesourceport" || key === "moveswapport") return scenePicture(undefined, source, sceneType);
 	return chooseFor(undefined, "", {}, source, undefined, { sourceType }) ?? plain("switch");
 }

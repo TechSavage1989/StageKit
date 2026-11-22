@@ -42,15 +42,18 @@ export function imageOf(shown: Picture | Shown, look: Look | string | undefined,
  * Shows whether a two-state key is on: its marked pictures for both states,
  * then the state. Stream Deck does not flip these keys by itself
  * ("DisableAutomaticStates" in the manifest), so what shows is always what
- * OBS says, never a flash of the other picture. A badge goes on both.
+ * OBS says, never a flash of the other picture. A badge goes on both. A
+ * separate off picture keeps meaningful state geometry, such as one monitor
+ * with Studio Mode off and two with it on, through every image layout.
  */
 export async function showOnOff(
 	key: { setImage(image?: string, options?: { state?: 0 | 1 }): Promise<void>; setState(state: 0 | 1): Promise<void> },
 	picture: Picture | Shown,
 	on: boolean,
 	look: Look | string | undefined,
+	offPicture: Picture | Shown = picture,
 ): Promise<void> {
-	await key.setImage(imageOf(picture, look, false), { state: 0 });
+	await key.setImage(imageOf(offPicture, look, false), { state: 0 });
 	await key.setImage(imageOf(picture, look, true), { state: 1 });
 	await key.setState(on ? 1 : 0);
 }

@@ -23,6 +23,8 @@ import {
 	optionPicture,
 	optionShown,
 	resetStatsShown,
+	studioModeShown,
+	studioTransitionShown,
 	placeBadge,
 	shapePicture,
 	shapeShown,
@@ -54,7 +56,9 @@ const PLACES = typeLists("sendto")[0].groups.flatMap((g) => g.entries.map((e) =>
 
 /** Every key with a function, each function with a type chosen: what it shows. */
 function everyFunction(type = "camera", scene = "gameplay"): Array<[string, Shown]> {
-	const out: Array<[string, Shown]> = [["resetstats", resetStatsShown(undefined, type)]];
+	const out: Array<[string, Shown]> = [["resetstats", resetStatsShown(undefined, type)],
+		["studiotransition", studioTransitionShown(undefined, type)],
+		["obsstudio off", studioModeShown(false, scene)], ["obsstudio on", studioModeShown(true, scene)]];
 	for (const s of STEPS) out.push([`appswitch ${s}`, stepShown(undefined, s, type)]);
 	for (const t of TOOLS) out.push([`tool ${t.value}`, toolShown(undefined, t.value, type)]);
 	for (const o of OPTIONS) out.push([`option ${o}`, optionShown(undefined, o, type)]);

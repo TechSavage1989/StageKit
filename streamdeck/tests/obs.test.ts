@@ -57,6 +57,8 @@ let blurred = false;
 let programScene = "Game Scene";
 let previewScene = "";
 let studioMode = false;
+let refusedStudioTransition = false;
+let answerStudioTransition: ((reply: () => void) => void) | undefined;
 let virtualCamera = false;
 let muted = false;
 let collection = "Test collection";
@@ -206,6 +208,10 @@ function answer(requestType: string, data: Record<string, unknown> = {}): { ok: 
 			return studioMode ? { ok: true, data: { currentPreviewSceneName: previewScene } } : { ok: false };
 		case "GetStudioModeEnabled":
 			return { ok: true, data: { studioModeEnabled: studioMode } };
+		case "TriggerStudioModeTransition":
+			if (!studioMode || refusedStudioTransition) return { ok: false };
+			programScene = previewScene;
+			return { ok: true };
 		case "GetCurrentSceneTransition":
 			return { ok: true, data: { transitionName: selectedTransition, transitionDuration: selectedDuration, transitionKind: selectedTransition === "Cut" ? "cut_transition" : "fade_transition", transitionFixed: selectedTransition === "Cut" } };
 		case "SetCurrentSceneTransition":
@@ -268,12 +274,14 @@ before(async () => {
 			if (op === 1) send(2, { negotiatedRpcVersion: 1 });
 			if (op === 6) {
 				const got = answer(d.requestType, d.requestData);
-				send(7, {
+				const reply = () => send(7, {
 					requestType: d.requestType,
 					requestId: d.requestId,
 					requestStatus: status(got.ok),
 					responseData: got.data,
 				});
+				if (d.requestType === "TriggerStudioModeTransition" && answerStudioTransition) answerStudioTransition(reply);
+				else reply();
 				if (got.ok && d.requestType === "SetSourceFilterEnabled")
 					send(5, { eventType: "SourceFilterEnableStateChanged", eventIntent: 32, eventData: d.requestData });
 				if (got.ok && d.requestType === "SetCurrentProgramScene") {
@@ -343,6 +351,40 @@ test("Reset Stats keeps its image choices offline and alerts without sending a r
 	const raster = decodePng(Buffer.from(image.slice("data:image/png;base64,".length), "base64"));
 	assert.deepEqual([raster.width, raster.height], [144, 144]);
 	assert.equal(title, "Reset\nStats", "the image choice does not change what the key does");
+	await action.onKeyDown({ action: key, payload: { settings: {} } } as never);
+	assert.deepEqual(feedback, ["alert"]);
+	assert.equal(obsRequests.length, before, "appearance and a disconnected press send no OBS requests");
+});
+
+test("Preview to Program keeps its image choices offline and alerts without sending a request", async () => {
+	const { StudioTransition } = await import("../src/actions/studio-transition.ts");
+	const { COLOURS } = await import("../src/pictures.ts");
+	const { decodePng } = await import("../src/compose.ts");
+	const action = new StudioTransition();
+	let image = "", title = "";
+	const feedback: string[] = [];
+	const key = {
+		isKey: () => true,
+		setImage: async (value: string) => { image = value; },
+		setTitle: async (value: string) => { title = value; },
+		showOk: async () => { feedback.push("ok"); },
+		showAlert: async () => { feedback.push("alert"); },
+	};
+	assert.equal(action.manifestId, "com.techsavage1989.stagekit.studiotransition");
+	assert.equal(obs.isConnected, false);
+	const before = obsRequests.length;
+	await action.onWillAppear({ action: key, payload: { settings: {} } } as never);
+	assert.equal(image, "imgs/pack/mono/options/studio-transition.png");
+	assert.equal(title, "Preview to\nProgram");
+	for (const palette of COLOURS) {
+		await action.onDidReceiveSettings({ action: key, payload: { settings: { palette } } } as never);
+		assert.equal(image, `imgs/pack/${palette}/options/studio-transition.png`);
+	}
+	await action.onDidReceiveSettings({ action: key, payload: { settings: { palette: "neon", sourceType: "camera", layout: "chat" } } } as never);
+	assert.match(image, /^data:image\/png;base64,/);
+	const raster = decodePng(Buffer.from(image.slice("data:image/png;base64,".length), "base64"));
+	assert.deepEqual([raster.width, raster.height], [144, 144]);
+	assert.equal(title, "Preview to\nProgram", "image choices do not change the key's command");
 	await action.onKeyDown({ action: key, payload: { settings: {} } } as never);
 	assert.deepEqual(feedback, ["alert"]);
 	assert.equal(obsRequests.length, before, "appearance and a disconnected press send no OBS requests");
@@ -421,6 +463,70 @@ test("Reset Stats sends exactly one global OBS hotkey per press and reports a re
 	assert.deepEqual(obsRequests.slice(before), Array.from({ length: 3 }, () => ({
 		requestType: "TriggerHotkeyByName", requestData: { hotkeyName: "OBSBasic.ResetStats" },
 	})), "one global request per press, with no stream, recording, timer or source commands");
+});
+
+test("Preview to Program sends one native transition request and preserves the current transition and duration", async () => {
+	const { StudioTransition } = await import("../src/actions/studio-transition.ts");
+	const action = new StudioTransition();
+	const feedback: string[] = [];
+	const key = {
+		showOk: async () => { feedback.push("ok"); },
+		showAlert: async () => { feedback.push("alert"); },
+	};
+	const old = { studioMode, programScene, previewScene, selectedTransition, selectedDuration };
+	const before = obsRequests.length;
+	let reply: (() => void) | undefined;
+	const press = () => action.onKeyDown({ action: key, payload: { settings: {
+		scene: "An unrelated scene", transition: "Cut", duration: 1, press: "off",
+	} } } as never);
+	try {
+		studioMode = true;
+		programScene = "Live";
+		previewScene = "Ready in Preview";
+		selectedTransition = "Make Room";
+		selectedDuration = 875;
+		const received = new Promise<void>((resolve) => {
+			answerStudioTransition = (respond) => { reply = respond; resolve(); };
+		});
+		const pendingPress = press();
+		await received;
+		assert.deepEqual(feedback, [], "the key waits for OBS to accept the request before showing success");
+		reply!();
+		reply = undefined;
+		answerStudioTransition = undefined;
+		await pendingPress;
+		assert.equal(programScene, "Ready in Preview");
+		assert.deepEqual(feedback, ["ok"]);
+		assert.equal(studioMode, true);
+		assert.deepEqual([selectedTransition, selectedDuration], ["Make Room", 875]);
+
+		previewScene = "A different Preview";
+		await press();
+		assert.equal(programScene, "A different Preview", "each press uses the Preview currently selected in OBS");
+		assert.deepEqual(feedback, ["ok", "ok"]);
+
+		studioMode = false;
+		previewScene = "Must stay in Preview";
+		await press();
+		assert.deepEqual(feedback, ["ok", "ok", "alert"]);
+		assert.equal(studioMode, false, "the key does not enable Studio Mode");
+		assert.equal(programScene, "A different Preview", "a rejected transition does not switch Program directly");
+
+		studioMode = true;
+		refusedStudioTransition = true;
+		await press();
+		assert.deepEqual(feedback, ["ok", "ok", "alert", "alert"], "a refusal while Studio Mode is active reports no success");
+		assert.equal(programScene, "A different Preview");
+		assert.deepEqual([selectedTransition, selectedDuration], ["Make Room", 875]);
+		assert.deepEqual(obsRequests.slice(before), Array.from({ length: 4 }, () => ({
+			requestType: "TriggerStudioModeTransition", requestData: {},
+		})), "one native request per press, with no mode, scene, transition or duration overrides");
+	} finally {
+		reply?.();
+		answerStudioTransition = undefined;
+		({ studioMode, programScene, previewScene, selectedTransition, selectedDuration } = old);
+		refusedStudioTransition = false;
+	}
 });
 
 test("manual capture addresses the chosen parent and offers only that filter's controls", async () => {
@@ -1096,5 +1202,139 @@ test("OBS control keys use ordinary filters, scene and group identities, mixer, 
 	for (const [key, value] of [["obsmute","camera"], ["obsstudio",""], ["obscamera",""]]) {
 		assert.equal(await obs.controlState(key, value, true), true);
 		assert.equal(await obs.controlState(key, value, false), false);
+	}
+});
+
+test("Studio Mode keeps its saved controls and updates its single and dual monitor states from OBS", { timeout: 5000 }, async () => {
+	const { ObsControl } = await import("../src/actions/obs-control.ts");
+	const { imageOf } = await import("../src/actions/shared.ts");
+	const { studioModeShown } = await import("../src/pictures.ts");
+	const { decodePng } = await import("../src/compose.ts");
+	const watched = ["ordinary", "changed", "connection"];
+	const previous = new Map(watched.map((name) => [name, obs.listeners(name)]));
+	const action = new ObsControl("obsstudio");
+	const oldStudio = studioMode;
+	let settings: Record<string, unknown> = {};
+	let state = -1;
+	let onShown: (() => void) | undefined;
+	const images: string[] = [];
+	const key = {
+		isKey: () => true,
+		getSettings: async () => settings,
+		setSettings: async (next: Record<string, unknown>) => { settings = next; },
+		setImage: async (image: string, options?: { state?: number }) => { images[options?.state ?? state] = image; },
+		setState: async (value: number) => { state = value; onShown?.(); },
+		showAlert: async () => assert.fail("Studio Mode request was refused"),
+	};
+	// The action's visible keys normally come from Stream Deck's action store.
+	Object.defineProperty(action, "actions", { get: () => [key] });
+	try {
+		assert.equal(action.manifestId, "com.techsavage1989.stagekit.obsstudio");
+		studioMode = false;
+		await action.onWillAppear({ action: key, payload: { settings } } as never);
+		assert.equal(state, 0);
+		assert.equal(images[0], "imgs/pack/mono/status/off/options/studio-off.png");
+		assert.equal(images[1], "imgs/pack/mono/status/on/options/studio-on.png");
+		for (const [press, expected] of [[undefined, true], ["on", true], ["on", true], ["off", false], ["toggle", true], ["toggle", false]] as const) {
+			settings = { ...settings, press };
+			await action.onKeyDown({ action: key, payload: { settings } } as never);
+			assert.equal(studioMode, expected);
+			assert.equal(state, expected ? 1 : 0, `saved press ${press ?? "default"}`);
+			assert.equal((settings.seen as { enabled: boolean }).enabled, expected, "a press saves the state OBS returned");
+		}
+
+		settings = { press: "toggle", sceneType: "gameplay", layout: "chat", palette: "ocean" };
+		await action.onDidReceiveSettings({ action: key, payload: { settings } } as never);
+		const expectedImages = [imageOf(studioModeShown(false, "gameplay"), settings, false), imageOf(studioModeShown(true, "gameplay"), settings, true)];
+		assert.deepEqual(images, expectedImages, "saved Scene type, layout and palette apply to both states");
+		assert.notEqual(images[0], images[1], "the states remain distinct with a selected Scene type");
+		for (const image of images) {
+			assert.match(image, /^data:image\/png;base64,/);
+			const raster = decodePng(Buffer.from(image.slice("data:image/png;base64,".length), "base64"));
+			assert.deepEqual([raster.width, raster.height], [144, 144]);
+		}
+		for (const enabled of [true, false]) {
+			const refreshed = new Promise<void>((resolve) => { onShown = resolve; });
+			studioMode = enabled;
+			for (const socket of server.clients) socket.send(JSON.stringify({
+				op: 5, d: { eventType: "StudioModeStateChanged", eventIntent: 1024, eventData: { studioModeEnabled: enabled } },
+			}));
+			await refreshed;
+			onShown = undefined;
+			assert.equal(state, enabled ? 1 : 0, "an OBS-side change refreshes the visible key without a key press");
+			assert.deepEqual(images, expectedImages);
+		}
+	} finally {
+		studioMode = oldStudio;
+		for (const name of watched)
+			for (const listener of obs.listeners(name))
+				if (!previous.get(name)!.includes(listener)) obs.off(name, listener);
+	}
+});
+
+test("Studio Mode keeps its last known state while disconnected and refreshes it after reconnecting", { timeout: 5000 }, async () => {
+	const { ObsControl } = await import("../src/actions/obs-control.ts");
+	const watched = ["ordinary", "changed", "connection"];
+	const previous = new Map(watched.map((name) => [name, obs.listeners(name)]));
+	const action = new ObsControl("obsstudio");
+	const oldStudio = studioMode;
+	let settings: Record<string, unknown> = { palette: "violet", press: "on" };
+	let state = -1, alerts = 0;
+	let onShown: (() => void) | undefined;
+	const images: string[] = [];
+	const key = {
+		isKey: () => true,
+		getSettings: async () => settings,
+		setSettings: async (next: Record<string, unknown>) => { settings = next; },
+		setImage: async (image: string, options?: { state?: number }) => { images[options?.state ?? state] = image; },
+		setState: async (value: number) => { state = value; onShown?.(); },
+		showAlert: async () => { alerts++; },
+	};
+	Object.defineProperty(action, "actions", { get: () => [key] });
+	const nextShown = () => new Promise<void>((resolve) => { onShown = resolve; });
+	try {
+		studioMode = true;
+		await action.onWillAppear({ action: key, payload: { settings } } as never);
+		assert.equal(state, 1);
+		assert.deepEqual(settings.seen, { for: "obsstudio", kind: "obsstudio", enabled: true, settings: {} });
+		const previousImages = [...images];
+		const disconnected = once(obs, "connection");
+		const offlineShown = nextShown();
+		server.clients.forEach((socket) => socket.terminate());
+		assert.deepEqual(await disconnected, [false]);
+		await offlineShown;
+		onShown = undefined;
+		assert.equal(state, 1, "losing OBS does not change the reported Studio Mode state to off");
+		assert.deepEqual(images, previousImages);
+		assert.equal((settings.seen as { enabled: boolean }).enabled, true);
+
+		const before = obsRequests.length;
+		state = -1;
+		await action.onWillAppear({ action: key, payload: { settings } } as never);
+		assert.equal(state, 1, "a key appearing offline uses the saved state");
+		assert.deepEqual(images, previousImages);
+		await action.onKeyDown({ action: key, payload: { settings } } as never);
+		assert.equal(alerts, 1);
+		assert.equal(state, 1);
+		assert.equal(obsRequests.length, before, "an offline appearance or press sends no requests");
+
+		studioMode = false;
+		const connected = once(obs, "connection");
+		const onlineShown = nextShown();
+		obs.use({ host: "127.0.0.1", port });
+		assert.deepEqual(await connected, [true]);
+		await onlineShown;
+		onShown = undefined;
+		assert.equal(state, 0, "reconnecting reads the current OBS state instead of keeping an old on state");
+		assert.equal((settings.seen as { enabled: boolean }).enabled, false);
+		assert.equal(images[0], "imgs/pack/violet/status/off/options/studio-off.png");
+		assert.equal(images[1], "imgs/pack/violet/status/on/options/studio-on.png");
+		assert.equal(settings.palette, "violet");
+		assert.equal(settings.press, "on");
+	} finally {
+		studioMode = oldStudio;
+		for (const name of watched)
+			for (const listener of obs.listeners(name))
+				if (!previous.get(name)!.includes(listener)) obs.off(name, listener);
 	}
 });

@@ -26,6 +26,7 @@ on:
       - 'tests/show-in-scenes-camera.hpp'
       - 'tests/countdown*-test.hpp'
       - 'tests/reset-stats-test.hpp'
+      - 'tests/studio-transition-test.hpp'
       - 'src/plugin-main.cpp'
       - 'src/third-party/ports/**'
       - 'streamdeck/**'
@@ -146,7 +147,7 @@ jobs:
           "$RUNNER_TEMP/icons/bin/python" tools/make-plugin-files.py
           plugin=com.techsavage1989.stagekit.sdPlugin
           paths=("$plugin/manifest.json")
-          for key in obsfilter obssource obsmute obsstudio obscamera movesourceport moveswapport timer resetstats; do
+          for key in obsfilter obssource obsmute obsstudio studiotransition obscamera movesourceport moveswapport timer resetstats; do
             paths+=("$plugin/ui/$key.html" "$plugin/imgs/actions/$key")
           done
           git diff --exit-code -- "${paths[@]}"

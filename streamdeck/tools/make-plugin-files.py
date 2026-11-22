@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.38.0.0"
+VERSION = "0.39.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -734,9 +734,13 @@ def main():
     page("obsmute", "StageKit Audio Mixer Mute", one_list("Audio input", "getOrdinaryTargets", tip="Choose the OBS audio input whose mute button this key controls.") + options("On press", "press", "toggle", [("toggle", "Toggle mute"), ("on", "Mute"), ("off", "Unmute")], "How this key sets the mixer mute button."))
     add("obsmute", "Audio Mixer Mute", "Mutes or unmutes an OBS audio input.", "obsmute", "imgs/actions/obsmute/icon", two("obsmute"))
 
-    key_pictures("obsstudio", "options/scene-fit-on", "options/scene-fit-off")
+    key_pictures("obsstudio", "options/studio-on", "options/studio-off")
     page("obsstudio", "StageKit Studio Mode", PRESS)
-    add("obsstudio", "Studio Mode", "Switches OBS Studio Mode on or off.", "obsstudio", "imgs/actions/obsstudio/icon", two("obsstudio"))
+    add("obsstudio", "Studio Mode", "Switches OBS Studio Mode on or off. One monitor means off; two monitors mean on.", "obsstudio", "imgs/actions/obsstudio/icon", two("obsstudio"))
+
+    key_pictures("studiotransition", "options/studio-transition", None)
+    page("studiotransition", "StageKit Preview to Program", "")
+    add("studiotransition", "Preview to Program", "Sends Preview to Program with OBS's current transition and duration. Requires Studio Mode.", "studiotransition", "imgs/actions/studiotransition/icon", one("studiotransition"))
 
     key_pictures("obscamera", "options/plain-switch-on", "options/plain-switch-off")
     page("obscamera", "StageKit Virtual Camera", PRESS)
@@ -769,7 +773,7 @@ def main():
         ("sendto", "placeitem", "matchitem", "layout", "fititem", "scenefit", "fitoverlap", "slide", "tool", "option"),
         ("blur", "sceneblur", "blurall", "shadow", "sceneshadow", "corners", "scenecorners", "zoom"),
         ("stream", "record", "timer"),
-        ("obsfilter", "obssource", "obsmute", "obsstudio", "obscamera", "resetstats", "movesourceport", "moveswapport"), ("switch", "move"),
+        ("obsfilter", "obssource", "obsmute", "obsstudio", "studiotransition", "obscamera", "resetstats", "movesourceport", "moveswapport"), ("switch", "move"),
     ]
     rank = {key: index for index, key in enumerate(key for group in groups for key in group)}
     actions.sort(key=lambda item: rank[item["UUID"].rsplit(".", 1)[1]])
