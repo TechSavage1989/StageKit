@@ -16,6 +16,7 @@
 #include <QTimer>
 #include <QDockWidget>
 #include <QLabel>
+#include <QLocale>
 #include <QImage>
 #include <QLayout>
 #include <QMainWindow>
@@ -88,6 +89,37 @@ inline OBSDataAutoRelease vendor(const char *name, obs_data_t *request)
 	OBSDataAutoRelease result = json ? obs_data_create_from_json(json) : obs_data_create();
 	calldata_free(&call);
 	return result;
+}
+
+inline QString timer_events()
+{
+	calldata_t call{};
+	proc_handler_call(obs_get_proc_handler(), "stagekit_vendor_events", &call);
+	const char *events = calldata_string(&call, "events");
+	const QString result = QString::fromUtf8(events ? events : "");
+	calldata_free(&call);
+	return result;
+}
+
+inline bool deadline_matches(obs_data_t *response, int64_t expected)
+{
+	if (!obs_data_has_user_value(response, "deadlineMs") || obs_data_get_int(response, "deadlineMs") != expected ||
+	    !obs_data_has_user_value(response, "deadlineTime"))
+		return false;
+	const QLocale locale = QLocale::system();
+	const QString text = QString::fromUtf8(obs_data_get_string(response, "deadlineTime"));
+	QString format = locale.timeFormat(QLocale::ShortFormat);
+	if (format.contains(QLatin1Char('s')))
+		format = format.contains(QStringLiteral("AP"), Qt::CaseInsensitive) ? QStringLiteral("h:mm AP")
+										    : QStringLiteral("HH:mm");
+	const QTime parsed = locale.toTime(text, format);
+	const QTime at = QDateTime::fromMSecsSinceEpoch(expected).time();
+	return parsed.isValid() && parsed == QTime(at.hour(), at.minute());
+}
+
+inline bool no_deadline(obs_data_t *response)
+{
+	return !obs_data_has_user_value(response, "deadlineMs") && !obs_data_has_user_value(response, "deadlineTime");
 }
 
 // Open OBS's own window from the Place dock and apply a position and scale to this timer.
@@ -223,6 +255,12 @@ inline void check(QStringList &issues, bool restart)
 		OBSDataAutoRelease stopped = press("private", "toggle", 45);
 		expect(obs_data_get_bool(stopped, "success") && !obs_data_get_bool(stopped, "running"),
 		       "Stream Deck toggle did not stop the private timer");
+		const auto private_deadline = obs_data_get_int(stopped, "deadlineMs");
+		OBSDataAutoRelease private_state = press("private", "state", -2);
+		expect(private_deadline > 0 && QDateTime::fromMSecsSinceEpoch(private_deadline).time().minute() == 45 &&
+			       deadline_matches(stopped, private_deadline) &&
+			       deadline_matches(private_state, private_deadline),
+		       "the private timer did not report its unchanged saved local target after stopping");
 	} else {
 		expect(false, "dock clock shortcuts missing");
 	}
@@ -256,6 +294,7 @@ inline void check(QStringList &issues, bool restart)
 	OBSDataAutoRelease data = obs_data_create();
 	obs_data_set_int(data, "minutes", 1);
 	obs_data_set_int(data, "seconds", 13);
+	timer_events();
 	OBSSourceAutoRelease source = obs_source_create("stagekit_countdown", "Operator timer", data, nullptr);
 	OBSSourceAutoRelease scene = obs_frontend_get_current_scene();
 	if (!source || !scene || !obs_scene_add(obs_scene_from_source(scene), source)) {
@@ -264,6 +303,8 @@ inline void check(QStringList &issues, bool restart)
 	}
 	expect(choose(QStringLiteral("Operator timer")) && until([&] { return readout->text() == "01:13"; }),
 	       "the scene timer was not available in the dock");
+	expect(!timer_events().contains(QString::fromUtf8(obs_source_get_uuid(source))),
+	       "constructing a timer emitted a timing-change event before an edit");
 	edit([&](QDialog *d) {
 		auto *width = d->findChild<QSpinBox *>("timerBoxWidth");
 		auto *height = d->findChild<QSpinBox *>("timerBoxHeight");
@@ -359,32 +400,89 @@ inline void check(QStringList &issues, bool restart)
 	const char *id = obs_source_get_uuid(source);
 	for (const int minute : {15, 30, 45, 0, 15}) {
 		OBSDataAutoRelease cycled = press(id, "cycle", -2);
+		OBSDataAutoRelease saved = obs_source_get_settings(source);
 		expect(obs_data_get_bool(cycled, "success") && !obs_data_get_bool(cycled, "running") &&
 			       obs_data_get_int(cycled, "mark") == minute,
 		       "Stream Deck cycle order or idle state");
+		expect(deadline_matches(cycled, obs_data_get_int(saved, "deadline_ms")),
+		       "a cycle response did not expose the saved deadline and OBS-local hour");
 	}
 	OBSDataAutoRelease held_start = press(id, "cycleToggle", -2);
+	OBSDataAutoRelease held_settings = obs_source_get_settings(source);
 	expect(obs_data_get_bool(held_start, "running") && obs_data_get_int(held_start, "mark") == 15,
 	       "hold did not start the displayed mark");
+	expect(deadline_matches(held_start, obs_data_get_int(held_settings, "deadline_ms")),
+	       "holding to start did not return the target actually stored by OBS");
 	OBSDataAutoRelease live_cycle = press(id, "cycle", -2);
+	OBSDataAutoRelease live_settings = obs_source_get_settings(source);
 	expect(obs_data_get_bool(live_cycle, "running") && obs_data_get_int(live_cycle, "mark") == 30,
 	       "cycling a running timer stopped it");
+	expect(deadline_matches(live_cycle, obs_data_get_int(live_settings, "deadline_ms")),
+	       "cycling while running did not return the new saved deadline");
 	OBSDataAutoRelease held_stop = press(id, "cycleToggle", -2);
 	expect(obs_data_get_bool(held_stop, "success") && !obs_data_get_bool(held_stop, "running") &&
-		       obs_data_get_int(held_stop, "mark") == 30,
+		       obs_data_get_int(held_stop, "mark") == 30 &&
+		       deadline_matches(held_stop, obs_data_get_int(live_cycle, "deadlineMs")),
 	       "hold did not stop without advancing");
 	OBSDataAutoRelease set = press(id, "set", 30);
 	OBSDataAutoRelease saved = obs_source_get_settings(source);
 	const auto deadline = QDateTime::fromMSecsSinceEpoch(obs_data_get_int(saved, "deadline_ms"));
 	expect(obs_data_get_bool(set, "success") && !obs_data_get_bool(set, "running") &&
-		       deadline.time().minute() == 30 && deadline.time().second() == 0,
+		       deadline.time().minute() == 30 && deadline.time().second() == 0 &&
+		       deadline_matches(set, deadline.toMSecsSinceEpoch()),
 	       "Stream Deck set-only deadline");
 	OBSDataAutoRelease started = press(id, "setStart", 15);
-	expect(obs_data_get_bool(started, "running"), "Stream Deck set-and-start");
+	OBSDataAutoRelease started_settings = obs_source_get_settings(source);
+	const auto started_deadline = obs_data_get_int(started_settings, "deadline_ms");
+	expect(obs_data_get_bool(started, "running") && deadline_matches(started, started_deadline),
+	       "Stream Deck set-and-start");
+	OBSDataAutoRelease paused = press(id, "pause", -2);
+	expect(!obs_data_get_bool(paused, "running") && deadline_matches(paused, started_deadline),
+	       "pausing changed the saved target time");
+	OBSDataAutoRelease resumed = press(id, "start", -2);
+	expect(obs_data_get_bool(resumed, "running") && deadline_matches(resumed, started_deadline),
+	       "resuming recomputed the saved target time");
 	OBSDataAutoRelease stopped = press(id, "stop", -2);
-	expect(obs_data_get_bool(stopped, "success") && !obs_data_get_bool(stopped, "running"),
+	expect(obs_data_get_bool(stopped, "success") && !obs_data_get_bool(stopped, "running") &&
+		       deadline_matches(stopped, started_deadline),
 	       "dedicated Stream Deck stop");
+	const auto set_timing = [&](int mode, int64_t target) {
+		timer_events();
+		OBSDataAutoRelease changes = obs_data_create();
+		obs_data_set_int(changes, "timer_mode", mode);
+		obs_data_set_int(changes, "deadline_ms", target);
+		obs_source_update(source, changes);
+		qsizetype notifications = 0;
+		expect(until([&] {
+			       notifications += timer_events().count(QString::fromUtf8(id));
+			       return notifications > 0;
+		       }) && notifications == 1,
+		       "an idle deadline or mode edit did not emit exactly one timer change");
+		return press(id, "state", -2);
+	};
+	// These are saved targets on later dates, not a fresh calculation of the
+	// next selected mark. Seconds in the saved target must not appear on the key.
+	const QDate later = QDate::currentDate().addDays(2);
+	const QDateTime evening(later, QTime(21, 45, 37));
+	const QDateTime midnight(later.addDays(1), QTime(0, 0, 29));
+	for (const auto &target : {evening, midnight}) {
+		OBSDataAutoRelease state = set_timing(1, target.toMSecsSinceEpoch());
+		expect(obs_data_get_bool(state, "success") && !obs_data_get_bool(state, "running") &&
+			       deadline_matches(state, target.toMSecsSinceEpoch()),
+		       "state recomputed a saved future or midnight target, changed its hour, or retained seconds");
+		for (int frame = 0; frame < 3; ++frame) {
+			QCoreApplication::processEvents(QEventLoop::AllEvents, 15);
+			countdown_test::frame(source);
+		}
+		expect(!timer_events().contains(QString::fromUtf8(id)),
+		       "unchanged timer ticks repeated the timing-change notification");
+	}
+	OBSDataAutoRelease absent_deadline = set_timing(1, 0);
+	expect(no_deadline(absent_deadline), "an unset deadline exposed a target time");
+	OBSDataAutoRelease count_up = set_timing(2, evening.toMSecsSinceEpoch());
+	expect(no_deadline(count_up), "Count Up exposed its inactive saved deadline");
 	blog(LOG_INFO, "StageKit timer controls: cycle, hold, set, start and stop checked");
+	timer_events();
 	obs_data_set_int(data, "timer_mode", 0);
 	obs_source_update(source, data);
 	expect(until([&] {
@@ -392,6 +490,12 @@ inline void check(QStringList &issues, bool restart)
 			      status->text() == "Ready" && start->isEnabled();
 	       }),
 	       "return to saved duration after a clock shortcut");
+	OBSDataAutoRelease duration_state = press(id, "state", -2);
+	OBSDataAutoRelease duration_settings = obs_source_get_settings(source);
+	expect(no_deadline(duration_state) &&
+		       obs_data_get_int(duration_settings, "deadline_ms") == evening.toMSecsSinceEpoch() &&
+		       timer_events().count(QString::fromUtf8(id)) == 1,
+	       "returning to Duration kept an active target or failed to notify the key");
 	obs_source_set_name(source, shared_name.toUtf8().constData());
 	expect(until([&] { return targets->currentText() == shared_name; }),
 	       "renaming a linked timer broke the selection");

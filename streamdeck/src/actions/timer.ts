@@ -7,6 +7,7 @@ import { obs } from "../obs.ts";
 import { HoldPress } from "../hold.ts";
 import { timerPicture } from "../pictures.ts";
 import { MARKS, timerPress } from "../timer.ts";
+import { timerCycleTitle } from "../titles.ts";
 import { answerLists, type KeySettings, showOnOff } from "./shared.ts";
 
 type Settings = KeySettings & { timerPress?: string; timerMark?: string };
@@ -58,11 +59,7 @@ export class TimerKey extends SingletonAction<Settings> {
 			return;
 		}
 		await key.setState(state.running === true ? 1 : 0);
-		if (settings.timerPress === "cycle") await key.setTitle(this.cycleTitle(state.mark));
-	}
-
-	private cycleTitle(minute: unknown): string {
-		return typeof minute === "number" && [15, 30, 45, 0].includes(minute) ? ":" + String(minute).padStart(2, "0") : "Cycle";
+		if (settings.timerPress === "cycle") await key.setTitle(timerCycleTitle(state));
 	}
 
 	override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, Settings>): Promise<void> {
@@ -80,14 +77,14 @@ export class TimerKey extends SingletonAction<Settings> {
 	}
 
 	private async show(key: KeyAction<Settings>, settings: Settings): Promise<void> {
-		const state = settings.target && await obs.stageKit("TimerControl", { timer: settings.target, operation: "state" });
+		const state = settings.target ? await obs.stageKit("TimerControl", { timer: settings.target, operation: "state" }) : undefined;
 		const picture = timerPicture(settings.sourceType);
 		const running = !!state && state.running === true;
 		if (picture) await showOnOff(key, picture, running, settings);
 		else await key.setState(running ? 1 : 0);
 		const operation = settings.timerPress ?? "toggle";
 		const preset = MARKS.find((m) => m.value === (settings.timerMark ?? "next"));
-		const title = operation === "cycle" ? this.cycleTitle(state && state.mark) : operation === "stop" ? "Stop" : operation === "pause" ? "Pause" : operation === "start" ? "Start" : preset?.title ?? "Timer";
+		const title = operation === "cycle" ? timerCycleTitle(state) : operation === "stop" ? "Stop" : operation === "pause" ? "Pause" : operation === "start" ? "Start" : preset?.title ?? "Timer";
 		await key.setTitle(title);
 	}
 
