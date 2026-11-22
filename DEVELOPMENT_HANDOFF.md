@@ -31,6 +31,8 @@ Timing edits notify connected keys while idle or paused as well as while running
 
 All 132 companion tests, TypeScript/Rollup build, Elgato validation and package creation passed locally. The generated manifest was restored after packing. Guide labels, repository layout, whitespace and release-order checks passed. Native Linux and Windows OBS 32.2.2 execution and all platform builds remain required merge gates.
 
+The frontend fixture waits for OBS's media_stopped signal after the earlier Fit to Space cleanup before counting deadline-change events. OBS queues media actions, so checking only the stopped state can leave that command pending and count its later notification against a new timing edit. The exactly-one notification assertion remains in place.
+
 ## Auto Frame application and window rules
 
 Companion 0.41.0.0 adds Remember by to Remember Aspect Ratio and Measure and Remember. Window name is the default; Application saves a shared ratio for the captured executable. Explicit window rules match the complete title within the same application and take precedence over explicit application rules. The legacy rules_text matcher and existing OBS editor remain compatible. New scoped rules use structured settings so punctuation in a title cannot truncate or merge identities. The saved rules are visible and removable in the Auto Frame controls.

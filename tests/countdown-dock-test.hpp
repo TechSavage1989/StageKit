@@ -384,7 +384,21 @@ inline void check(QStringList &issues, bool restart)
 				expect(until([&] { return countdown_test::readout(source) == "00:12"; }) && placed(),
 				       "Fit to Space shifted the frame for shorter digits");
 				obs_source_filter_remove(editing, fit);
+				// OBS queues media actions until the next video tick. A merely
+				// stopped state does not prove this reset was consumed; wait for
+				// its completion signal before counting later TimerChanged events.
+				std::atomic<bool> stop_delivered{false};
+				auto stopped_signal = [](void *data, calldata_t *) {
+					static_cast<std::atomic<bool> *>(data)->store(true);
+				};
+				auto *source_signals = obs_source_get_signal_handler(source);
+				signal_handler_connect(source_signals, "media_stopped", stopped_signal,
+						       &stop_delivered);
 				obs_source_media_stop(source);
+				const bool stop_finished = until([&] { return stop_delivered.load(); });
+				signal_handler_disconnect(source_signals, "media_stopped", stopped_signal,
+							  &stop_delivered);
+				expect(stop_finished, "the Fit to Space fixture's queued timer stop did not finish");
 			} else {
 				expect(false, "creating the Fit to Space filter");
 			}
@@ -447,17 +461,30 @@ inline void check(QStringList &issues, bool restart)
 		       deadline_matches(stopped, started_deadline),
 	       "dedicated Stream Deck stop");
 	const auto set_timing = [&](int mode, int64_t target) {
-		timer_events();
+		const QString timer_id = QString::fromUtf8(id);
+		const QString discarded = timer_events();
 		OBSDataAutoRelease changes = obs_data_create();
 		obs_data_set_int(changes, "timer_mode", mode);
 		obs_data_set_int(changes, "deadline_ms", target);
 		obs_source_update(source, changes);
 		qsizetype notifications = 0;
-		expect(until([&] {
-			       notifications += timer_events().count(QString::fromUtf8(id));
-			       return notifications > 0;
-		       }) && notifications == 1,
-		       "an idle deadline or mode edit did not emit exactly one timer change");
+		QString observed;
+		const bool notified = until([&] {
+			const QString events = timer_events();
+			observed += events;
+			notifications += events.count(timer_id);
+			return notifications > 0;
+		});
+		blog(LOG_INFO,
+		     "StageKit timer controls: idle edit mode %d, deadline %lld, changes %lld, discarded %lld", mode,
+		     (long long)target, (long long)notifications, (long long)discarded.count(timer_id));
+		if (!notified || notifications != 1)
+			issues.append(QStringLiteral("Countdown dock: idle edit mode %1, deadline %2 emitted %3 timer "
+						     "changes instead of one; observed events: %4")
+					      .arg(mode)
+					      .arg(qlonglong(target))
+					      .arg(qlonglong(notifications))
+					      .arg(observed));
 		return press(id, "state", -2);
 	};
 	// These are saved targets on later dates, not a fresh calculation of the
