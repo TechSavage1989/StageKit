@@ -640,7 +640,7 @@ public:
 			[](void *data, calldata_t *) { static_cast<AutoFrame *>(data)->measure_now(); }, this);
 		proc_handler_add(
 			obs_source_get_proc_handler(source_),
-			"void frame_command(in string action, in string save_scope, out bool success, out int request_id, out string status, "
+			"void frame_command(in string action, in string save_scope, in int timeout_ms, out bool success, out int request_id, out string status, "
 			"out bool complete, out string program, out string executable, out string aspect_ratio, "
 			"out float ratio, out int width, out int height, out bool saved, out bool supports_remember_by, "
 			"out string remember_by, out string remember_target, out string error)",
@@ -648,8 +648,11 @@ public:
 				AutoFrameState state;
 				const char *action = calldata_string(cd, "action");
 				const char *remember_by = calldata_string(cd, "save_scope");
+				int64_t timeout_ms;
+				if (!calldata_get_int(cd, "timeout_ms", &timeout_ms))
+					timeout_ms = 4000;
 				static_cast<AutoFrame *>(data)->command(action ? action : "", state,
-									remember_by ? remember_by : "");
+									remember_by ? remember_by : "", timeout_ms);
 				write_frame_state(cd, state);
 			},
 			this);
@@ -980,7 +983,8 @@ public:
 			*live = true;
 	}
 
-	bool command(const std::string &action, AutoFrameState &out, const std::string &remember_by = {})
+	bool command(const std::string &action, AutoFrameState &out, const std::string &remember_by = {},
+		     int64_t timeout_ms = 4000)
 	{
 		if (action != "measure" && action != "remember" && action != "measure_and_remember") {
 			out.success = false;
@@ -995,6 +999,13 @@ public:
 			out.error = obs_module_text("Frame.Detection.InvalidScope");
 			return false;
 		}
+		if (timeout_ms < 1 || timeout_ms > 4000) {
+			out.success = false;
+			out.status = "failed";
+			out.error = obs_module_text("Frame.Detection.InvalidTimeout");
+			return false;
+		}
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
 		std::string match, executable, title;
 		bool live = false;
 		captured(match, executable, &title, &live);
@@ -1016,7 +1027,7 @@ public:
 						   : remember_by == "window"    ? capture_title_
 										: std::string();
 			request_generation_ = capture_generation_;
-			request_deadline_ = std::chrono::steady_clock::now() + std::chrono::seconds(4);
+			request_deadline_ = deadline;
 			request_save_ = action != "measure";
 			request_measure_ = action != "remember";
 			request_ready_ = false;
@@ -2836,11 +2847,12 @@ bool frame_call(obs_source_t *filter, const char *method, calldata_t &cd, AutoFr
 } // namespace
 
 bool auto_frame_command(obs_source_t *filter, const std::string &action, AutoFrameState &state,
-			const std::string &remember_by)
+			const std::string &remember_by, int64_t timeout_ms)
 {
 	calldata_t cd = {};
 	calldata_set_string(&cd, "action", action.c_str());
 	calldata_set_string(&cd, "save_scope", remember_by.c_str());
+	calldata_set_int(&cd, "timeout_ms", timeout_ms);
 	const bool success = frame_call(filter, "frame_command", cd, state);
 	calldata_free(&cd);
 	return success;

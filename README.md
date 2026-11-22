@@ -2184,7 +2184,7 @@ With obs-websocket, send `CallVendorRequest` with `vendorName: "StageKit"`:
 | `BlurAll` | `mode?`: `on`, `off` or `toggle` | `active` |
 | `HookFront` | `sourceName`: a Game Capture or a Window Capture; `transition?`: an OBS transition's kind or `none`; `transitionMs?` | `executable`: the program in front, which the capture now takes. An Auto Capture on the source is switched off |
 | `SetPictureShape` | `sourceName`: a source with an Auto Frame; `shape`: `4:3`, `8:7`, a number, or `auto`; `untilGone?` (true unless given): drop it when that game's capture ends | none |
-| AutoFrameCommand | sourceName and filterName identify an Auto Frame filter; action is measure, remember or measure_and_remember. Saving accepts optional rememberBy: application or window. Omitting it keeps legacy behavior. | Returns a requestId and status. Measurement is pending until a fresh result is ready. Remember saves a valid measured ratio for the selected scope; the combined action measures first and saves internally for that same capture. |
+| AutoFrameCommand | sourceName and filterName identify an Auto Frame filter; action is measure, remember or measure_and_remember. Saving accepts optional rememberBy: application or window. Omitting it keeps legacy behavior. Optional timeoutMs is an integer from 1 to 4000; omitted requests keep the 4000 ms native limit. | Returns a requestId and status. Measurement is pending until a fresh result is ready. Remember saves a valid measured ratio for the selected scope; the combined action measures first and saves internally for that same capture. |
 | GetAutoFrameState | sourceName, filterName and optional requestId. | Returns success, requestId, status, complete, program, executable, aspectRatio, ratio, width, height and saved. A valid target advertises supportsRememberBy; scoped commands also report rememberBy and rememberTarget. Failed or superseded operations return an error. Poll pending commands until complete. |
 | `GetOptions` | none | The dock's switches: `snap`, `guides`, `limit`, `slide`, `everyScene`, `keepShape` |
 | `SetOption` | `option`: one of those names; `mode?`: `toggle` (unless given), `on` or `off` | `on`: which way it is now. An `OptionsChanged` event with all six follows every change |
@@ -2201,6 +2201,8 @@ Every response has `success` and, on failure, `error`. A `BlurChanged` event is 
 on or off. The other tools are filters, so the standard `SetSourceFilterEnabled` request triggers them.
 
 Before sending an Auto Frame save with rememberBy, query GetAutoFrameState and require supportsRememberBy to be true. That capability describes the filter; its success and error fields can still describe a previous failed command. Check the new command's success, requestId, rememberBy and rememberTarget while polling. A companion must not send a scoped save to an older plugin that does not advertise support.
+
+The companion includes that support check in its five-second response limit. It passes the remaining native timeoutMs budget, capped at four seconds and reserving one second for transport. If no native budget remains, it does not start the command. OBS enforces the supplied limit before saving a completed measurement.
 
 ## Stream Deck plugin
 

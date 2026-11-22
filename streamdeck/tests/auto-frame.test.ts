@@ -36,7 +36,7 @@ test("combined Auto Frame waits for its own fresh save without issuing a second 
 		assert.equal(result, completed);
 		assert.deepEqual(calls, [
 			{ name: "GetAutoFrameState", data: { sourceName: "Captured window", filterName: "Frame edges" } },
-			{ name: "AutoFrameCommand", data: { sourceName: "Captured window", filterName: "Frame edges", action: "measure_and_remember", rememberBy } },
+			{ name: "AutoFrameCommand", data: { sourceName: "Captured window", filterName: "Frame edges", action: "measure_and_remember", timeoutMs: 4000, rememberBy } },
 			{ name: "GetAutoFrameState", data: { sourceName: "Captured window", filterName: "Frame edges", requestId: 27 } },
 			{ name: "GetAutoFrameState", data: { sourceName: "Captured window", filterName: "Frame edges", requestId: 27 } },
 		]);
@@ -71,13 +71,13 @@ test("saving keys default to Window name, support Application, and accept a capa
 			}, "Capture", "Frame A", action, setting, fakeClock());
 			assert.equal(result, completed);
 			assert.deepEqual(calls[0], { name: "GetAutoFrameState", data: { sourceName: "Capture", filterName: "Frame A" } });
-			assert.deepEqual(calls[1], { name: "AutoFrameCommand", data: { sourceName: "Capture", filterName: "Frame A", action, rememberBy } });
+			assert.deepEqual(calls[1], { name: "AutoFrameCommand", data: { sourceName: "Capture", filterName: "Frame A", action, timeoutMs: 4000, rememberBy } });
 			assert.equal(calls.length, 3);
 		}
 	}
 });
 
-test("Measure Bars sends no remember scope and needs no capability preflight", async () => {
+test("Measure Bars sends a four-second native budget without a remember scope or capability preflight", async () => {
 	for (const setting of [undefined, "window", "application", "invalid", null]) {
 		const calls: Array<{ name: string; data: Record<string, unknown> }> = [];
 		const responses = [pending, measured];
@@ -86,9 +86,50 @@ test("Measure Bars sends no remember scope and needs no capability preflight", a
 			return responses.shift();
 		}, "Capture", "Frame A", "measure", setting, fakeClock()), measured);
 		assert.deepEqual(calls, [
-			{ name: "AutoFrameCommand", data: { sourceName: "Capture", filterName: "Frame A", action: "measure" } },
+			{ name: "AutoFrameCommand", data: { sourceName: "Capture", filterName: "Frame A", action: "measure", timeoutMs: 4000 } },
 			{ name: "GetAutoFrameState", data: { sourceName: "Capture", filterName: "Frame A", requestId: 27 } },
 		]);
+	}
+});
+
+test("saving sends no command when preflight leaves no native work budget before the transport reserve", async () => {
+	for (const action of ["remember", "measure_and_remember"] as const) {
+		for (const delay of [4000, 4000.25, 4800, 4950]) {
+			const time = fakeClock();
+			const calls: string[] = [];
+			const result = await runAutoFrameCommand(async (name) => {
+				calls.push(name);
+				await time.wait(delay);
+				return capability;
+			}, "Capture", "Frame A", action, "application", time);
+			assert.equal(result, undefined);
+			assert.deepEqual(calls, ["GetAutoFrameState"], `preflight taking ${delay} ms must not start a save`);
+			assert.equal(time.now(), delay);
+		}
+	}
+});
+
+test("saving reduces the native budget after preflight and reserves one second for transport", async () => {
+	for (const action of ["remember", "measure_and_remember"] as const) {
+		for (const [delay, expectedBudget] of [[0, 4000], [1000, 3000], [2400, 1600], [3998.5, 1]]) {
+			const time = fakeClock();
+			const calls: Array<{ name: string; data: Record<string, unknown> }> = [];
+			const completed = scoped(saved, "application");
+			const result = await runAutoFrameCommand(async (name, data) => {
+				calls.push({ name, data });
+				if (name === "GetAutoFrameState") {
+					await time.wait(delay);
+					return capability;
+				}
+				return completed;
+			}, "Capture", "Frame A", action, "application", time);
+			assert.equal(result, completed);
+			assert.deepEqual(calls, [
+				{ name: "GetAutoFrameState", data: { sourceName: "Capture", filterName: "Frame A" } },
+				{ name: "AutoFrameCommand", data: { sourceName: "Capture", filterName: "Frame A", action,
+					timeoutMs: expectedBudget, rememberBy: "application" } },
+			]);
+		}
 	}
 });
 
@@ -246,7 +287,7 @@ test("a withheld capability reply times out and late support never starts a save
 	assert.deepEqual(calls, ["GetAutoFrameState"]);
 });
 
-test("a withheld save acceptance or status reply uses only the time left after preflight", { timeout: 1500 }, async () => {
+test("a withheld save acceptance or status reply uses only the time left after preflight", { timeout: 2000 }, async () => {
 	for (const phase of ["command", "poll"]) {
 		const time = fakeClock();
 		const calls: string[] = [];
@@ -254,7 +295,7 @@ test("a withheld save acceptance or status reply uses only the time left after p
 		const result = await runAutoFrameCommand(async (name) => {
 			calls.push(name);
 			if (calls.length === 1) {
-				await time.wait(phase === "command" ? 4950 : 2400);
+				await time.wait(phase === "command" ? 3999 : 2400);
 				return capability;
 			}
 			if (phase === "poll" && name === "AutoFrameCommand") {
@@ -304,7 +345,9 @@ test("saving key presses forward their scope once and keep pending feedback unti
 			await first;
 			assert.deepEqual(feedback, ["ok"]);
 			assert.equal(title, feature.title);
-			assert.deepEqual(calls[1], { name: "AutoFrameCommand", data: {
+			const { timeoutMs, ...command } = calls[1].data;
+			assert.ok(Number.isInteger(timeoutMs) && Number(timeoutMs) > 0 && Number(timeoutMs) <= 4000);
+			assert.deepEqual({ name: calls[1].name, data: command }, { name: "AutoFrameCommand", data: {
 				sourceName: "Capture", filterName: "Auto Frame", action: feature.action, rememberBy: rememberBy ?? "window",
 			} });
 			assert.equal(calls.length, 2);

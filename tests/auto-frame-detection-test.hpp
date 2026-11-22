@@ -241,7 +241,7 @@ inline OBSDataAutoRelease vendor(const char *name, obs_data_t *data)
 }
 
 inline OBSDataAutoRelease request(obs_source_t *source, obs_source_t *filter, const char *action = nullptr,
-				  long long request_id = 0, const char *remember_by = nullptr)
+				  long long request_id = 0, const char *remember_by = nullptr, int timeout_ms = 0)
 {
 	OBSDataAutoRelease data = obs_data_create();
 	obs_data_set_string(data, "sourceName", obs_source_get_name(source));
@@ -252,6 +252,8 @@ inline OBSDataAutoRelease request(obs_source_t *source, obs_source_t *filter, co
 		obs_data_set_int(data, "requestId", request_id);
 	if (remember_by)
 		obs_data_set_string(data, "rememberBy", remember_by);
+	if (timeout_ms > 0)
+		obs_data_set_int(data, "timeoutMs", timeout_ms);
 	return vendor(action ? "AutoFrameCommand" : "GetAutoFrameState", data);
 }
 
@@ -415,6 +417,47 @@ inline void check_scoped_rules(QStringList &issues)
 				       std::string::npos &&
 			       snapshot() == before_failures,
 		       QStringLiteral("malformed save scope %1 was accepted").arg(invalid_scope));
+	}
+	const auto before_invalid_timeouts = request(source, filter);
+	const long long unchanged_request_id = obs_data_get_int(before_invalid_timeouts, "requestId");
+	for (int invalid_timeout = 0; invalid_timeout < 7; ++invalid_timeout) {
+		OBSDataAutoRelease data = obs_data_create();
+		obs_data_set_string(data, "sourceName", obs_source_get_name(source));
+		obs_data_set_string(data, "filterName", obs_source_get_name(filter));
+		obs_data_set_string(data, "action", "measure_and_remember");
+		obs_data_set_string(data, "rememberBy", "window");
+		switch (invalid_timeout) {
+		case 0:
+			obs_data_set_int(data, "timeoutMs", 0);
+			break;
+		case 1:
+			obs_data_set_int(data, "timeoutMs", -1);
+			break;
+		case 2:
+			obs_data_set_int(data, "timeoutMs", 4001);
+			break;
+		case 3:
+			obs_data_set_int(data, "timeoutMs", 9007199254740991LL);
+			break;
+		case 4:
+			obs_data_set_double(data, "timeoutMs", 1.5);
+			break;
+		case 5:
+			obs_data_set_string(data, "timeoutMs", "250");
+			break;
+		case 6:
+			obs_data_set_bool(data, "timeoutMs", true);
+			break;
+		}
+		auto invalid = vendor("AutoFrameCommand", data);
+		auto unchanged = request(source, filter);
+		expect(!obs_data_get_bool(invalid, "success") &&
+			       std::string(obs_data_get_string(invalid, "error")).find("timeoutMs") !=
+				       std::string::npos &&
+			       obs_data_get_int(unchanged, "requestId") == unchanged_request_id &&
+			       snapshot() == before_failures,
+		       QStringLiteral("malformed timeout %1 changed the command or its saved rules")
+			       .arg(invalid_timeout));
 	}
 	for (const char *scope : {"application", "window"}) {
 		aim(source, first_title.c_str(), 300, 270, 480, 270, true, "");
@@ -1007,6 +1050,46 @@ inline void check(QStringList &issues)
 	expect(std::string(obs_data_get_string(resumed, "status")) == "failed" &&
 		       !obs_data_get_bool(resumed, "saved") && rules(filter) == before_failures,
 	       "resuming capture saved a combined command after its timeout");
+	obs_source_dec_showing(source);
+	// A slow capability reply leaves less than four seconds for native work.
+	// Keep this capture unrendered until its reduced budget has expired, then
+	// expose a valid image without changing its identity or source dimensions.
+	aim(source, "Reduced Budget Demo", 0, 0);
+	QElapsedTimer reduced_timer;
+	reduced_timer.start();
+	auto reduced = request(source, filter, "measure_and_remember", 0, "window", 250);
+	const long long reduced_id = obs_data_get_int(reduced, "requestId");
+	expect(obs_data_get_bool(reduced, "success") && !obs_data_get_bool(reduced, "complete"),
+	       "the reduced-budget capture did not begin a pending measurement");
+	expect(until(
+		       nullptr,
+		       [&] {
+			       reduced = request(source, filter, nullptr, reduced_id);
+			       return obs_data_get_bool(reduced, "complete");
+		       },
+		       1500),
+	       "the reduced native budget was replaced by the legacy four-second deadline");
+	expect(reduced_timer.elapsed() >= 225 && reduced_timer.elapsed() < 1500 &&
+		       !obs_data_get_bool(reduced, "success") &&
+		       std::string(obs_data_get_string(reduced, "status")) == "failed" &&
+		       !obs_data_get_bool(reduced, "saved") &&
+		       std::string(obs_data_get_string(reduced, "rememberBy")) == "window" &&
+		       std::string(obs_data_get_string(reduced, "rememberTarget")) == "Reduced Budget Demo",
+	       QStringLiteral("a 250 ms scoped timeout did not expire with its original identity (%1 ms): %2")
+		       .arg(reduced_timer.elapsed())
+		       .arg(QString::fromUtf8(obs_data_get_json(reduced))));
+	aim(source, "Reduced Budget Demo", 300, 270);
+	obs_source_inc_showing(source);
+	int reduced_frames = 0;
+	until(source, [&] { return ++reduced_frames >= 6; });
+	auto reduced_resumed = request(source, filter, nullptr, reduced_id);
+	OBSDataAutoRelease reduced_settings = obs_source_get_settings(filter);
+	OBSDataArrayAutoRelease reduced_rules = obs_data_get_array(reduced_settings, "scoped_rules");
+	expect(!obs_data_get_bool(reduced_resumed, "success") &&
+		       std::string(obs_data_get_string(reduced_resumed, "status")) == "failed" &&
+		       !obs_data_get_bool(reduced_resumed, "saved") && obs_data_array_count(reduced_rules) == 0 &&
+		       rules(filter) == before_failures,
+	       "a fresh image saved a scoped ratio after the client's reduced native budget expired");
 	obs_source_dec_showing(source);
 	obs_source_filter_remove(source, filter);
 	obs_source_remove(source);

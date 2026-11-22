@@ -583,9 +583,13 @@ test("Auto Frame keys await completed vendor operations for their selected filte
 			await press;
 			assert.deepEqual(feedback, ["ok"]);
 			assert.equal(title, feature.title);
+			const submitted = autoFrameRequests.slice(before).find((request) => request.requestType === "AutoFrameCommand");
+			const timeoutMs = submitted?.requestData.timeoutMs;
+			assert.ok(Number.isInteger(timeoutMs) && Number(timeoutMs) > 0 && Number(timeoutMs) <= 4000,
+				"the actual WebSocket command includes a bounded integer native work budget");
 			assert.deepEqual(autoFrameRequests.slice(before), [
 				...(feature.action === "measure" ? [] : [{ requestType: "GetAutoFrameState", requestData: { sourceName, filterName } }]),
-				{ requestType: "AutoFrameCommand", requestData: { sourceName, filterName, action: feature.action,
+				{ requestType: "AutoFrameCommand", requestData: { sourceName, filterName, action: feature.action, timeoutMs,
 					...(feature.action === "measure" ? {} : { rememberBy: scope.rememberBy }) } },
 				{ requestType: "GetAutoFrameState", requestData: { sourceName, filterName, requestId } },
 				{ requestType: "GetAutoFrameState", requestData: { sourceName, filterName, requestId } },

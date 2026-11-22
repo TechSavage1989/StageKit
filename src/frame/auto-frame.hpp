@@ -44,8 +44,9 @@ struct AutoFrameState {
 // poll with its request_id. A combined action saves only its own fresh result.
 // An empty remember_by keeps the existing untyped rule behavior. Explicit
 // "application" and "window" save exact identities in the scoped rule list.
+// timeout_ms bounds asynchronous work to the caller's remaining budget.
 bool auto_frame_command(obs_source_t *filter, const std::string &action, AutoFrameState &state,
-			const std::string &remember_by = {});
+			const std::string &remember_by = {}, int64_t timeout_ms = 4000);
 bool auto_frame_state(obs_source_t *filter, int64_t request_id, AutoFrameState &state);
 
 // Where the game picture sits in a source that has an Auto Frame switched on,

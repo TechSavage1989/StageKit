@@ -52,7 +52,11 @@ export async function runAutoFrameCommand(
 		const state = await request("GetAutoFrameState", target);
 		if (state?.supportsRememberBy !== true) return undefined;
 	}
-	let reply = await request("AutoFrameCommand", { ...target, action, ...(scope ? { rememberBy: scope } : {}) });
+	// Preflight consumes this press's deadline too. Shorten native work and
+	// reserve one second for delivery and completion feedback before starting it.
+	const timeoutMs = Math.min(4000, Math.floor(deadline - time.now() - 1000));
+	if (timeoutMs <= 0) return undefined;
+	let reply = await request("AutoFrameCommand", { ...target, action, timeoutMs, ...(scope ? { rememberBy: scope } : {}) });
 	const requestId = reply?.requestId;
 	if (typeof requestId !== "number" || !Number.isSafeInteger(requestId) || requestId <= 0) return undefined;
 	const rememberTarget = reply?.rememberTarget;
