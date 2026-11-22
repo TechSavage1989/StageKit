@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.40.0.0"
+VERSION = "0.41.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -568,7 +568,12 @@ def main():
     for feature in features["autoFrameCommands"]:
         key = feature["key"]
         key_pictures(key, "options/" + feature["image"], None)
-        page(key, "StageKit " + feature["name"], target_list(key, label="Capture and filter"))
+        body = target_list(key, label="Capture and filter")
+        if feature["action"] != "measure":
+            body += options("Remember by", "rememberBy", "window",
+                            [("application", "Application"), ("window", "Window name")],
+                            "Application sets the default for the app. Window name saves the exact title within that app and overrides its default.")
+        page(key, "StageKit " + feature["name"], body)
         add(key, feature["name"], feature["tip"], key, f"imgs/actions/{key}/icon", one(key))
 
     key_pictures("shape", "filters/auto-frame-on", None)

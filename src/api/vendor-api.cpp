@@ -261,6 +261,11 @@ void write_auto_frame_state(obs_data_t *response, const AutoFrameState &state)
 	obs_data_set_int(response, "width", state.width);
 	obs_data_set_int(response, "height", state.height);
 	obs_data_set_bool(response, "saved", state.saved);
+	obs_data_set_bool(response, "supportsRememberBy", state.supports_remember_by);
+	if (!state.remember_by.empty()) {
+		obs_data_set_string(response, "rememberBy", state.remember_by.c_str());
+		obs_data_set_string(response, "rememberTarget", state.remember_target.c_str());
+	}
 	if (!state.error.empty())
 		obs_data_set_string(response, "error", state.error.c_str());
 }
@@ -273,11 +278,34 @@ void req_auto_frame_command(obs_data_t *request, obs_data_t *response, void *)
 		fail(response, "action must be measure, remember or measure_and_remember");
 		return;
 	}
+	std::string remember_by;
+	if (obs_data_has_user_value(request, "rememberBy")) {
+		obs_data_item_t *item = obs_data_item_byname(request, "rememberBy");
+		const bool string = item && obs_data_item_gettype(item) == OBS_DATA_STRING;
+		obs_data_item_release(&item);
+		remember_by = obs_data_get_string(request, "rememberBy");
+		if (!string || (remember_by != "application" && remember_by != "window")) {
+			fail(response, "rememberBy must be application or window");
+			return;
+		}
+	}
+	int64_t timeout_ms = 4000;
+	if (obs_data_has_user_value(request, "timeoutMs")) {
+		obs_data_item_t *item = obs_data_item_byname(request, "timeoutMs");
+		const bool integer = item && obs_data_item_gettype(item) == OBS_DATA_NUMBER &&
+				     obs_data_item_numtype(item) == OBS_DATA_NUM_INT;
+		obs_data_item_release(&item);
+		timeout_ms = obs_data_get_int(request, "timeoutMs");
+		if (!integer || timeout_ms < 1 || timeout_ms > 4000) {
+			fail(response, "timeoutMs must be an integer from 1 to 4000");
+			return;
+		}
+	}
 	obs_source_t *filter = find_auto_frame(request, response);
 	if (!filter)
 		return;
 	AutoFrameState state;
-	state.success = auto_frame_command(filter, action, state);
+	state.success = auto_frame_command(filter, action, state, remember_by, timeout_ms);
 	write_auto_frame_state(response, state);
 	obs_source_release(filter);
 }

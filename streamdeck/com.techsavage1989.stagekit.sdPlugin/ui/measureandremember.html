@@ -21,7 +21,7 @@
 	</head>
 
 	<body>
-		<sdpi-item class="works" label="Works with" title="The kind of StageKit filter this key works, as OBS&#x27;s Filters window names it, and under it the one chosen below. In OBS: right-click the source and choose Filters. Measures a fresh image, then saves that result for the same captured window.">
+		<sdpi-item class="works" label="Works with" title="The kind of StageKit filter this key works, as OBS&#x27;s Filters window names it, and under it the one chosen below. In OBS: right-click the source and choose Filters. Measures a fresh image, then saves that result for the selected application or window name.">
 			<div id="worksWith" data-follow="target source filter">
 				<div class="works-kind">Source Filter: Auto Frame (StageKit)</div>
 				<div class="works-chosen"></div>
@@ -29,6 +29,12 @@
 		</sdpi-item>
 		<sdpi-item label="Capture and filter" title="Each entry is a source and, after the dash, the name of its “Source Filter: Auto Frame (StageKit)”. In OBS: right-click the source and choose Filters to find that filter by its name.">
 			<sdpi-select setting="target" datasource="getTargets" placeholder="Choose one" show-refresh></sdpi-select>
+		</sdpi-item>
+		<sdpi-item label="Remember by" title="Application sets the default for the app. Window name saves the exact title within that app and overrides its default.">
+			<sdpi-select setting="rememberBy" default="window">
+				<option value="application">Application</option>
+				<option value="window">Window name</option>
+			</sdpi-select>
 		</sdpi-item>
 		<details open>
 			<summary>Image</summary>
