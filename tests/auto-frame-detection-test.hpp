@@ -225,7 +225,7 @@ inline OBSDataAutoRelease vendor(const char *name, obs_data_t *data)
 					     : obs_data_create();
 	obs_websocket_request_response_free(response);
 	OBSDataAutoRelease result = obs_data_get_obj(payload, "responseData");
-	return result ? obs_data_get_ref(result) : obs_data_create();
+	return result ? obs_data_newref(result) : obs_data_create();
 }
 
 inline OBSDataAutoRelease request(obs_source_t *source, obs_source_t *filter, const char *action = nullptr,
