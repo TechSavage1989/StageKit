@@ -267,6 +267,14 @@ const SOURCES: Record<string, { family?: Family; only?: string[]; label?: string
 	},
 };
 
+// Measurement and remembering use the same capture images as Auto Frame.
+for (const feature of features.autoFrameCommands)
+	SOURCES[feature.key] = {
+		...SOURCES.autoframe,
+		automatic: "Automatic (the command's image)",
+		tip: "What is framed, for the key's image; the command is drawn in its corner. Automatic shows the command alone.",
+	};
+
 /** The keys whose list is the Scene type: Switch Scene, Blur All, Scene Blur, and keys for a filter on a scene. */
 function sceneKeys(): string[] {
 	const keys = ["scene", "movesourceport", "moveswapport", "obsstudio", "fitoverlap", "layout", "blurall", "sceneblur", "stream", "record"];

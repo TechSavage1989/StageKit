@@ -110,6 +110,8 @@ OWN = {
 TAKEN = (
     # Manual Window / Source: hide, clear.
     ["hide", "clear"]
+    # Auto Frame measurement and saved ratio commands.
+    + ["measure-bars", "remember-ratio", "measure-and-remember"]
     # OBS Stats reset.
     + ["reset-stats"]
     # Studio Mode's state and its momentary transition.

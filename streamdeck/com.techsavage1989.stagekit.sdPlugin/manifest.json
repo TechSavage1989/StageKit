@@ -1,6 +1,6 @@
 {
 	"Name": "StageKit",
-	"Version": "0.39.0.0",
+	"Version": "0.40.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
@@ -271,6 +271,54 @@
 				}
 			],
 			"DisableAutomaticStates": true
+		},
+		{
+			"Name": "Measure Bars",
+			"UUID": "com.techsavage1989.stagekit.measurebars",
+			"Icon": "imgs/actions/measurebars/icon",
+			"Tooltip": "Measures the current captured image and shows its detected aspect ratio.",
+			"PropertyInspectorPath": "ui/measurebars.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/measurebars/on",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Remember Aspect Ratio",
+			"UUID": "com.techsavage1989.stagekit.rememberratio",
+			"Icon": "imgs/actions/rememberratio/icon",
+			"Tooltip": "Saves the current detected aspect ratio for the captured window.",
+			"PropertyInspectorPath": "ui/rememberratio.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/rememberratio/on",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Measure and Remember",
+			"UUID": "com.techsavage1989.stagekit.measureandremember",
+			"Icon": "imgs/actions/measureandremember/icon",
+			"Tooltip": "Measures a fresh image, then saves that result for the same captured window.",
+			"PropertyInspectorPath": "ui/measureandremember.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/measureandremember/on",
+					"TitleAlignment": "bottom"
+				}
+			]
 		},
 		{
 			"Name": "Set Aspect Ratio",
@@ -879,7 +927,7 @@
 			"Name": "Studio Mode",
 			"UUID": "com.techsavage1989.stagekit.obsstudio",
 			"Icon": "imgs/actions/obsstudio/icon",
-			"Tooltip": "Switches OBS Studio Mode on or off. One monitor means off; two monitors mean on.",
+			"Tooltip": "A short press switches Studio Mode on or off. Hold to send Preview to Program, or set Long press to Nothing. One monitor means off; two monitors mean on.",
 			"PropertyInspectorPath": "ui/obsstudio.html",
 			"Controllers": [
 				"Keypad"

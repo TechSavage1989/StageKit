@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { after, before, test } from "node:test";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import { WebSocketServer } from "ws";
 
@@ -59,6 +60,10 @@ let previewScene = "";
 let studioMode = false;
 let refusedStudioTransition = false;
 let answerStudioTransition: ((reply: () => void) => void) | undefined;
+const autoFrameRequests: Array<{ requestType: string; requestData: Record<string, unknown> }> = [];
+let autoFrameReplies: Array<Record<string, unknown>> = [];
+let autoFrameReceived: (() => void) | undefined;
+let holdAutoFrameState: ((reply: () => void) => void) | undefined;
 let virtualCamera = false;
 let muted = false;
 let collection = "Test collection";
@@ -234,6 +239,12 @@ function answer(requestType: string, data: Record<string, unknown> = {}): { ok: 
 			return { ok: true };
 		case "CallVendorRequest": {
 			if (data.vendorName !== "StageKit") return { ok: false };
+			if (data.requestType === "AutoFrameCommand" || data.requestType === "GetAutoFrameState") {
+				autoFrameRequests.push({ requestType: data.requestType, requestData: (data.requestData ?? {}) as Record<string, unknown> });
+				const responseData = autoFrameReplies.shift() ?? { success: false, error: "No Auto Frame reply" };
+				if (data.requestType === "AutoFrameCommand") autoFrameReceived?.();
+				return { ok: true, data: { vendorName: "StageKit", requestType: data.requestType, responseData } };
+			}
 			if (data.requestType === "ListSceneBlurs" || data.requestType === "SceneBlur") {
 				const responseData = sceneBlur(String(data.requestType), (data.requestData ?? {}) as Record<string, unknown>);
 				return { ok: true, data: { vendorName: "StageKit", requestType: data.requestType, responseData } };
@@ -281,6 +292,7 @@ before(async () => {
 					responseData: got.data,
 				});
 				if (d.requestType === "TriggerStudioModeTransition" && answerStudioTransition) answerStudioTransition(reply);
+				else if (d.requestType === "CallVendorRequest" && d.requestData?.requestType === "GetAutoFrameState" && holdAutoFrameState) holdAutoFrameState(reply);
 				else reply();
 				if (got.ok && d.requestType === "SetSourceFilterEnabled")
 					send(5, { eventType: "SourceFilterEnableStateChanged", eventIntent: 32, eventData: d.requestData });
@@ -526,6 +538,96 @@ test("Preview to Program sends one native transition request and preserves the c
 		answerStudioTransition = undefined;
 		({ studioMode, programScene, previewScene, selectedTransition, selectedDuration } = old);
 		refusedStudioTransition = false;
+	}
+});
+
+test("Auto Frame keys await completed vendor operations for their selected filter and ignore duplicate pending presses", async () => {
+	const { AutoFrameCommand } = await import("../src/actions/auto-frame-command.ts");
+	const { AUTO_FRAME_COMMANDS } = await import("../src/auto-frame.ts");
+	const { TARGET_SEP } = await import("../src/kinds.ts");
+	for (const [index, feature] of AUTO_FRAME_COMMANDS.entries()) {
+		const action = new AutoFrameCommand(feature);
+		const requestId = 100 + index;
+		const sourceName = "Captured window " + index;
+		const filterName = "Frame borders " + index;
+		const settings = { target: sourceName + TARGET_SEP + filterName, source: "Stale source", filter: "Stale filter" };
+		const feedback: string[] = [];
+		let title = "";
+		const key = {
+			id: "Auto Frame key " + index,
+			setTitle: async (value: string) => { title = value; },
+			showOk: async () => { feedback.push("ok"); },
+			showAlert: async () => { feedback.push("alert"); },
+		};
+		const pending = { success: true, requestId, status: "pending", complete: false };
+		autoFrameReplies = [pending, pending, {
+			success: true, requestId, status: feature.action === "measure" ? "measured" : "saved", complete: true,
+			saved: feature.action !== "measure", aspectRatio: "13:7", ratio: 13 / 7,
+		}];
+		const before = autoFrameRequests.length;
+		const accepted = new Promise<void>((resolve) => { autoFrameReceived = resolve; });
+		try {
+			const press = action.onKeyDown({ action: key, payload: { settings } } as never);
+			await accepted;
+			assert.deepEqual(feedback, [], "accepting a pending measurement is not completion");
+			assert.equal(title, feature.pendingTitle);
+			await action.onKeyDown({ action: key, payload: { settings } } as never);
+			settings.target = "Another capture" + TARGET_SEP + "Another filter";
+			await press;
+			assert.deepEqual(feedback, ["ok"]);
+			assert.equal(title, feature.title);
+			assert.deepEqual(autoFrameRequests.slice(before), [
+				{ requestType: "AutoFrameCommand", requestData: { sourceName, filterName, action: feature.action } },
+				{ requestType: "GetAutoFrameState", requestData: { sourceName, filterName, requestId } },
+				{ requestType: "GetAutoFrameState", requestData: { sourceName, filterName, requestId } },
+			], "one command, then only that operation's status on the original selected filter");
+			autoFrameReplies = [{ success: false, requestId: requestId + 1, status: "failed", complete: true, error: "Capture changed during measurement" }];
+			await action.onKeyDown({ action: key, payload: { settings } } as never);
+			assert.deepEqual(feedback, ["ok", "alert"], "a native refusal cannot produce a success mark");
+			assert.equal(title, feature.title);
+		} finally {
+			autoFrameReceived = undefined;
+			autoFrameReplies = [];
+		}
+	}
+});
+
+test("Auto Frame stops pending feedback when a status reply is withheld and ignores a late saved result", { timeout: 7000 }, async () => {
+	const { AutoFrameCommand } = await import("../src/actions/auto-frame-command.ts");
+	const { AUTO_FRAME_COMMANDS } = await import("../src/auto-frame.ts");
+	const feature = AUTO_FRAME_COMMANDS.find((f) => f.action === "measure_and_remember")!;
+	const action = new AutoFrameCommand(feature);
+	const feedback: string[] = [];
+	let title = "", release: (() => void) | undefined;
+	const key = {
+		id: "Withheld Auto Frame status",
+		setTitle: async (value: string) => { title = value; },
+		showOk: async () => { feedback.push("ok"); },
+		showAlert: async () => { feedback.push("alert"); },
+	};
+	autoFrameReplies = [
+		{ success: true, requestId: 401, status: "pending", complete: false },
+		{ success: true, requestId: 401, status: "saved", complete: true, saved: true, aspectRatio: "4:3", ratio: 4 / 3 },
+	];
+	const before = autoFrameRequests.length;
+	const received = new Promise<void>((resolve) => { holdAutoFrameState = (reply) => { release = reply; resolve(); }; });
+	try {
+		const press = action.onKeyDown({ action: key, payload: { settings: { source: "Capture", filter: "Auto Frame" } } } as never);
+		await received;
+		assert.deepEqual(feedback, []);
+		assert.equal(title, feature.pendingTitle);
+		await press;
+		assert.deepEqual(feedback, ["alert"]);
+		assert.equal(title, feature.title);
+		release!();
+		release = undefined;
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		assert.deepEqual(feedback, ["alert"], "a saved result received after timeout cannot show success");
+		assert.deepEqual(autoFrameRequests.slice(before).map((r) => r.requestType), ["AutoFrameCommand", "GetAutoFrameState"]);
+	} finally {
+		release?.();
+		holdAutoFrameState = undefined;
+		autoFrameReplies = [];
 	}
 });
 
@@ -1205,6 +1307,139 @@ test("OBS control keys use ordinary filters, scene and group identities, mixer, 
 	}
 });
 
+test("Studio Mode distinguishes short presses from configurable holds without toggling before a transition", { timeout: 6000 }, async () => {
+	const { ObsControl } = await import("../src/actions/obs-control.ts");
+	const watched = ["ordinary", "changed", "connection"];
+	const previous = new Map(watched.map((name) => [name, obs.listeners(name)]));
+	const action = new ObsControl("obsstudio");
+	const old = { studioMode, programScene, previewScene, selectedTransition, selectedDuration };
+	let settings: Record<string, unknown> = { press: "off" };
+	const feedback: string[] = [];
+	let onFeedback: (() => void) | undefined;
+	let onState: (() => void) | undefined;
+	let reply: (() => void) | undefined;
+	const key = {
+		id: "studio-hold",
+		isKey: () => true,
+		getSettings: async () => settings,
+		setSettings: async (next: Record<string, unknown>) => { settings = next; },
+		setState: async () => { onState?.(); },
+		showOk: async () => { feedback.push("ok"); onFeedback?.(); },
+		showAlert: async () => { feedback.push("alert"); onFeedback?.(); },
+	};
+	const down = () => action.onKeyDown({ action: key, payload: { settings } } as never);
+	const up = () => action.onKeyUp({ action: key, payload: { settings } } as never);
+	const nextFeedback = () => new Promise<void>((resolve) => { onFeedback = resolve; });
+	try {
+		studioMode = true;
+		programScene = "Live";
+		previewScene = "Ready in Preview";
+		selectedTransition = "Make Room";
+		selectedDuration = 875;
+		let before = obsRequests.length;
+		const received = new Promise<void>((resolve) => {
+			answerStudioTransition = (respond) => { reply = respond; resolve(); };
+		});
+		const accepted = nextFeedback();
+		await down();
+		await sleep(350);
+		assert.equal(obsRequests.length, before, "the default 800 ms hold sends nothing early, including the configured short-press Off");
+		await received;
+		assert.equal(studioMode, true, "holding never switches Studio Mode off first");
+		assert.deepEqual(feedback, [], "acceptance feedback waits for the OBS response");
+		assert.deepEqual(obsRequests.slice(before), [{ requestType: "TriggerStudioModeTransition", requestData: {} }]);
+		up();
+		await sleep(30);
+		assert.equal(obsRequests.length, before + 1, "release while the transition response is pending sends no short press");
+		reply!();
+		reply = undefined;
+		answerStudioTransition = undefined;
+		await accepted;
+		assert.deepEqual(feedback, ["ok"]);
+		assert.equal(programScene, "Ready in Preview");
+		assert.deepEqual([selectedTransition, selectedDuration], ["Make Room", 875]);
+
+		settings = { press: "off", longPress: "transition", holdMs: "300" };
+		before = obsRequests.length;
+		const switched = new Promise<void>((resolve) => { onState = resolve; });
+		await down();
+		await sleep(50);
+		assert.equal(obsRequests.length, before, "a short press waits for release when a hold action is configured");
+		up();
+		await switched;
+		onState = undefined;
+		assert.equal(studioMode, false);
+		assert.deepEqual(obsRequests.slice(before).map((request) => request.requestType), ["GetStudioModeEnabled", "SetStudioModeEnabled", "GetStudioModeEnabled"]);
+		assert.equal(programScene, "Ready in Preview");
+
+		settings = { press: "on", longPress: "none", holdMs: "300" };
+		before = obsRequests.length;
+		await down();
+		assert.equal(studioMode, true, "Long press Nothing applies On press immediately on key down");
+		await sleep(350);
+		up();
+		assert.deepEqual(obsRequests.slice(before).map((request) => request.requestType), ["GetStudioModeEnabled", "SetStudioModeEnabled", "GetStudioModeEnabled"], "Nothing never triggers a transition or repeats the short press on release");
+
+		settings = { press: "on", longPress: "transition", holdMs: "300" };
+		for (const enabled of [false, true]) {
+			studioMode = enabled;
+			refusedStudioTransition = enabled;
+			const rejected = nextFeedback();
+			before = obsRequests.length;
+			await down();
+			await rejected;
+			up();
+			assert.equal(feedback.at(-1), "alert");
+			assert.equal(studioMode, enabled, "rejection never enables Studio Mode as a side effect");
+			assert.deepEqual(obsRequests.slice(before), [{ requestType: "TriggerStudioModeTransition", requestData: {} }]);
+			assert.equal(programScene, "Ready in Preview", "a failed hold cannot switch Program directly");
+		}
+		assert.deepEqual(feedback, ["ok", "alert", "alert"]);
+		refusedStudioTransition = false;
+		before = obsRequests.length;
+		await down();
+		action.onWillDisappear({ action: key } as never);
+		await sleep(350);
+		up();
+		assert.equal(obsRequests.length, before, "a key disappearing during a hold cancels both actions");
+	} finally {
+		action.onWillDisappear({ action: key } as never);
+		reply?.();
+		answerStudioTransition = undefined;
+		refusedStudioTransition = false;
+		({ studioMode, programScene, previewScene, selectedTransition, selectedDuration } = old);
+		for (const name of watched)
+			for (const listener of obs.listeners(name))
+				if (!previous.get(name)!.includes(listener)) obs.off(name, listener);
+	}
+});
+
+test("other OBS controls remain immediate even if their settings contain Studio hold fields", async () => {
+	const { ObsControl } = await import("../src/actions/obs-control.ts");
+	const watched = ["ordinary", "changed", "connection"];
+	const previous = new Map(watched.map((name) => [name, obs.listeners(name)]));
+	const action = new ObsControl("obsmute");
+	const old = muted;
+	let state = -1;
+	const key = { id: "mute-no-hold", setState: async (next: number) => { state = next; }, showAlert: async () => assert.fail("mute request failed") };
+	const event = { action: key, payload: { settings: { target: "camera", press: "on", longPress: "transition", holdMs: "300" } } } as never;
+	try {
+		muted = false;
+		await action.onKeyDown(event);
+		assert.equal(muted, true);
+		assert.equal(state, 1);
+		const before = obsRequests.length;
+		action.onKeyUp(event);
+		await sleep(350);
+		assert.equal(obsRequests.length, before);
+	} finally {
+		muted = old;
+		for (const name of watched)
+			for (const listener of obs.listeners(name))
+				if (!previous.get(name)!.includes(listener)) obs.off(name, listener);
+	}
+});
+
 test("Studio Mode keeps its saved controls and updates its single and dual monitor states from OBS", { timeout: 5000 }, async () => {
 	const { ObsControl } = await import("../src/actions/obs-control.ts");
 	const { imageOf } = await import("../src/actions/shared.ts");
@@ -1219,6 +1454,7 @@ test("Studio Mode keeps its saved controls and updates its single and dual monit
 	let onShown: (() => void) | undefined;
 	const images: string[] = [];
 	const key = {
+		id: "studio-state",
 		isKey: () => true,
 		getSettings: async () => settings,
 		setSettings: async (next: Record<string, unknown>) => { settings = next; },
@@ -1237,7 +1473,11 @@ test("Studio Mode keeps its saved controls and updates its single and dual monit
 		assert.equal(images[1], "imgs/pack/mono/status/on/options/studio-on.png");
 		for (const [press, expected] of [[undefined, true], ["on", true], ["on", true], ["off", false], ["toggle", true], ["toggle", false]] as const) {
 			settings = { ...settings, press };
+			const shown = new Promise<void>((resolve) => { onShown = resolve; });
 			await action.onKeyDown({ action: key, payload: { settings } } as never);
+			action.onKeyUp({ action: key, payload: { settings } } as never);
+			await shown;
+			onShown = undefined;
 			assert.equal(studioMode, expected);
 			assert.equal(state, expected ? 1 : 0, `saved press ${press ?? "default"}`);
 			assert.equal((settings.seen as { enabled: boolean }).enabled, expected, "a press saves the state OBS returned");
@@ -1265,6 +1505,7 @@ test("Studio Mode keeps its saved controls and updates its single and dual monit
 			assert.deepEqual(images, expectedImages);
 		}
 	} finally {
+		action.onWillDisappear({ action: key } as never);
 		studioMode = oldStudio;
 		for (const name of watched)
 			for (const listener of obs.listeners(name))
@@ -1281,14 +1522,16 @@ test("Studio Mode keeps its last known state while disconnected and refreshes it
 	let settings: Record<string, unknown> = { palette: "violet", press: "on" };
 	let state = -1, alerts = 0;
 	let onShown: (() => void) | undefined;
+	let onAlert: (() => void) | undefined;
 	const images: string[] = [];
 	const key = {
+		id: "studio-offline",
 		isKey: () => true,
 		getSettings: async () => settings,
 		setSettings: async (next: Record<string, unknown>) => { settings = next; },
 		setImage: async (image: string, options?: { state?: number }) => { images[options?.state ?? state] = image; },
 		setState: async (value: number) => { state = value; onShown?.(); },
-		showAlert: async () => { alerts++; },
+		showAlert: async () => { alerts++; onAlert?.(); },
 	};
 	Object.defineProperty(action, "actions", { get: () => [key] });
 	const nextShown = () => new Promise<void>((resolve) => { onShown = resolve; });
@@ -1313,7 +1556,11 @@ test("Studio Mode keeps its last known state while disconnected and refreshes it
 		await action.onWillAppear({ action: key, payload: { settings } } as never);
 		assert.equal(state, 1, "a key appearing offline uses the saved state");
 		assert.deepEqual(images, previousImages);
+		const refused = new Promise<void>((resolve) => { onAlert = resolve; });
 		await action.onKeyDown({ action: key, payload: { settings } } as never);
+		action.onKeyUp({ action: key, payload: { settings } } as never);
+		await refused;
+		onAlert = undefined;
 		assert.equal(alerts, 1);
 		assert.equal(state, 1);
 		assert.equal(obsRequests.length, before, "an offline appearance or press sends no requests");
@@ -1332,6 +1579,7 @@ test("Studio Mode keeps its last known state while disconnected and refreshes it
 		assert.equal(settings.palette, "violet");
 		assert.equal(settings.press, "on");
 	} finally {
+		action.onWillDisappear({ action: key } as never);
 		studioMode = oldStudio;
 		for (const name of watched)
 			for (const listener of obs.listeners(name))

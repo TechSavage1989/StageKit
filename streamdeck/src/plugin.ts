@@ -1,6 +1,8 @@
 import streamDeck from "@elgato/streamdeck";
 
 import { AppSwitch } from "./actions/app-switch.ts";
+import { AutoFrameCommand } from "./actions/auto-frame-command.ts";
+import { AUTO_FRAME_COMMANDS } from "./auto-frame.ts";
 import { DockOption } from "./actions/option.ts";
 import { SceneSwitch } from "./actions/scene.ts";
 import { Slide } from "./actions/slide.ts";
@@ -39,6 +41,8 @@ for (const key of ["obssource", "obsmute", "obsstudio", "obscamera"])
 for (const feature of features.sceneStarts)
 	streamDeck.actions.registerAction(new ObsControl(feature.key, feature.kind));
 streamDeck.actions.registerAction(new PictureShape());
+for (const feature of AUTO_FRAME_COMMANDS)
+	streamDeck.actions.registerAction(new AutoFrameCommand(feature));
 streamDeck.actions.registerAction(new Hook());
 streamDeck.actions.registerAction(new AppSwitch());
 streamDeck.actions.registerAction(new FitOverlap());

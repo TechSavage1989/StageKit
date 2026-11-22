@@ -60,6 +60,12 @@ After npm run pack, rerun python3 tools/make-plugin-files.py from streamdeck bef
 
 The Studio Mode UUID remains obsstudio with its existing toggle/on/off settings. Its one-monitor off and two-monitor on drawings are separate picture records selected through showOnOff's optional offPicture argument. Do not combine them into a normal on/off pair: make-state-icons.py intentionally substitutes the on drawing for unique off drawings. Typed scene images use state-specific monitor badges. Preview to Program is the single-state studiotransition action and calls TriggerStudioModeTransition once with no data or transition overrides. OBS rejects it with Studio Mode off; do not enable Studio Mode as a side effect. Exercise the real frontend request and keep the unfinished 10-bit Studio Preview color diagnostic separate from this key implementation.
 
+## Auto Frame and window transitions
+
+Auto Frame must not restart its normal resolution-change hold on every intermediate dimension of an Automatic Window Switcher transition. Query app_capture_change before locking the Auto Frame settings, bypass the settling hold through the last transition size step, and follow the switcher image without a second glide. Keep the ordinary same-window resolution hold. Exercise the shared window-morph-test.hpp fixture on prepared captures and parent re-aiming, in both directions, with blending and final placement assertions.
+
+The OBS properties frontend wraps labels with tooltips inside a widget containing a help icon. UI fixtures must match all QLabel children in the row's LabelRole and select the exact FieldRole control. A fresh OBS profile can open the Auto-Configuration Wizard and steal typing focus. The Auto Frame fixture rejects only the visible AutoConfig QWizard identified by its prioritizeStreaming radio button before opening Filters; rejection does not save wizard configuration. Keep the wizard dismissal and log limited to this disposable frontend session. The frontend fixture runs with hidden Windows OBS or Xvfb without a window manager, so QWidget::activateWindow alone cannot reliably establish active typing. For that test-only setup, use QApplication::setActiveWindow inside QT_WARNING_PUSH, QT_WARNING_DISABLE_DEPRECATED and QT_WARNING_POP; keep the deprecation suppression scoped to that one call. Production UI should use normal window activation. Include active-window, editor, focus-proxy and caret diagnostics when the setup fails. Editable QComboBox makes itself the line edit's focus proxy. Assert that the same live editor or its exact proxy has focus, then verify editor identity and caret position through detection refresh.
+
 ## Additional materials and data patterns
 
 Append new patterns to both the Ambient Background and outline registries. Outline design 34
@@ -322,6 +328,27 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   is a starting point like the built-in ones, never an order. Background: the owner hit
   it with Snes9x (Aladdin's title screen) and the picture resized repeatedly. The owner wants no manual steps when switching games; program rules and Picture
   Shape keys are the fallbacks.
+- **Auto Frame measurement feedback is the measured image, not a saved or guessed ratio.** The owner
+  asked for the result beside Measure the bars now and for Program or window and Its aspect ratio
+  to fill from the actual capture. Prefer Automatic Window Switcher's shown window, then the
+  capture's hooked window; a get_hooked reply saying false must not fall back to an old configured
+  target. Prefer its title so two windows sharing one executable can have separate rules. Keep
+  manual draft edits during automatic updates; filling the fields alone must not save. The rule
+  editor stays available when explicit measurement changes trimming to Manual.
+  Stream Deck's Measure Bars, Remember Aspect Ratio and Measure and Remember target an exact
+  Auto Frame filter. The combined operation measures and saves inside that native filter for one
+  capture generation; never implement it as a client-side Measure followed by Remember. Request
+  IDs are unique across filter instances. Reject changed captures, failed or superseded requests
+  and timeouts without saving an old result. The native command has a four-second limit, and the
+  companion's five-second limit must also cover each awaited WebSocket reply. A polling-loop
+  deadline alone cannot stop a reply that never arrives. Keep the existing thin readbacks and
+  conservative bar detection. The frontend fixture uses actual OBS filter controls and vendor
+  requests; its synthetic capture metadata changes immediately because OBS defers settings
+  updates to the video tick. Internal last_w_ resets when a rule changes are not real image
+  resizes: preserve the measured result when its actual source dimensions still match. Decoded
+  fallback titles must also be included in rule matching, and saved names must stop at every
+  delimiter accepted by the existing rules parser. OBS 32.2.2 closes the previous Filters dialog
+  when opening another; frontend tests must not assume two such dialogs remain open.
 - **Every list the user builds is a `PickList`** (`src/common/pick-list.*`): choose to add, one row per
   entry, each with its own remove button. The owner asked for one consistent control; do not add OBS's
   editable list or a comma-separated text box for a new list.
@@ -3021,6 +3048,13 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   changes. **Raise `VERSION` in `tools/make-plugin-files.py` whenever anything under
   `streamdeck/` changes**: with the same number Stream Deck may keep the copy it has (beta135
   changed its wording without a new number, and the owner's keys still said *Picture* afterwards).
+- **Studio Mode long press is separate from its normal toggle/on/off action.** The owner asked for
+  holding the Studio key to change Program, with a configurable action. In companion 0.40,
+  Long press defaults to Preview to Program after 800 ms; Nothing disables it and Hold time
+  accepts 300 to 5000 ms. Reuse HoldPress. A short press acts on release when a hold is configured;
+  a completed hold sends only TriggerStudioModeTransition, never toggles Studio Mode first, and
+  does not act again on release. Keep OBS's current transition and require Studio Mode to be on.
+  The other ordinary OBS controls still act immediately on key down.
 - **The Switch Scene key** (`src/actions/scene.ts`, UUID `.scene`) uses obs-websocket's own scene
   requests, nothing of the OBS plugin: `SetCurrentProgramScene`, or `SetCurrentPreviewScene` in
   Studio Mode; a transition named in the key is set first with `SetCurrentSceneTransition`, which

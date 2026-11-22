@@ -21,6 +21,27 @@ inline constexpr const char *kPictureShapeId = "stagekit_picture_shape";
 
 void register_auto_frame();
 
+// A measurement belongs to one filter instance and one captured window. Request
+// IDs are unique across Auto Frame instances for the lifetime of the plugin.
+struct AutoFrameState {
+	bool success = true;
+	int64_t request_id = 0;
+	std::string status = "idle";
+	bool complete = true;
+	std::string program;
+	std::string executable;
+	std::string aspect_ratio;
+	double ratio = 0.0;
+	uint32_t width = 0, height = 0;
+	bool saved = false;
+	std::string error;
+};
+
+// Actions: measure, remember, measure_and_remember. Measuring is asynchronous;
+// poll with its request_id. A combined action saves only its own fresh result.
+bool auto_frame_command(obs_source_t *filter, const std::string &action, AutoFrameState &state);
+bool auto_frame_state(obs_source_t *filter, int64_t request_id, AutoFrameState &state);
+
 // Where the game picture sits in a source that has an Auto Frame switched on,
 // in the source's own pixels, allowing for the room a Shadow & Backdrop after
 // it adds. Leaves the values alone and returns false when there is none.

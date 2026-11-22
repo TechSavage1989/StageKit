@@ -51,7 +51,8 @@ const char *const kRequests[] = {"GetVersion",        "ListBlurFilters", "BlurOn
 				 "SetPictureShape",   "GetOptions",      "SetOption",    "Slide",
 				 "GetSwitcherState",  "ListSceneModes",  "GetSceneMode", "SetSceneMode",
 				 "ListSceneBlurs",    "SceneBlur",       "StandbyCover", "GetStandbyCover",
-				 "ShowInScenesPress", "ListTimers",      "TimerControl"};
+				 "ShowInScenesPress", "ListTimers",      "TimerControl", "AutoFrameCommand",
+				 "GetAutoFrameState"};
 
 void fail(obs_data_t *response, const char *message)
 {
@@ -224,6 +225,85 @@ void req_set_picture_shape(obs_data_t *request, obs_data_t *response, void *)
 	else
 		fail(response, error.c_str());
 	obs_source_release(source);
+}
+
+// A measurement belongs to the explicitly selected Auto Frame filter.
+obs_source_t *find_auto_frame(obs_data_t *request, obs_data_t *response)
+{
+	const char *source_name = obs_data_get_string(request, "sourceName");
+	const char *filter_name = obs_data_get_string(request, "filterName");
+	if (!*source_name || !*filter_name) {
+		fail(response, "sourceName and filterName are required");
+		return nullptr;
+	}
+	obs_source_t *source = obs_get_source_by_name(source_name);
+	obs_source_t *filter = source ? obs_source_get_filter_by_name(source, filter_name) : nullptr;
+	obs_source_release(source);
+	const char *id = filter ? obs_source_get_unversioned_id(filter) : nullptr;
+	if (!id || std::strcmp(id, kAutoFrameId) != 0) {
+		obs_source_release(filter);
+		fail(response, "No Auto Frame filter with that sourceName and filterName");
+		return nullptr;
+	}
+	return filter;
+}
+
+void write_auto_frame_state(obs_data_t *response, const AutoFrameState &state)
+{
+	obs_data_set_bool(response, "success", state.success);
+	obs_data_set_int(response, "requestId", state.request_id);
+	obs_data_set_string(response, "status", state.status.c_str());
+	obs_data_set_bool(response, "complete", state.complete);
+	obs_data_set_string(response, "program", state.program.c_str());
+	obs_data_set_string(response, "executable", state.executable.c_str());
+	obs_data_set_string(response, "aspectRatio", state.aspect_ratio.c_str());
+	obs_data_set_double(response, "ratio", state.ratio);
+	obs_data_set_int(response, "width", state.width);
+	obs_data_set_int(response, "height", state.height);
+	obs_data_set_bool(response, "saved", state.saved);
+	if (!state.error.empty())
+		obs_data_set_string(response, "error", state.error.c_str());
+}
+
+// {sourceName, filterName, action: measure | remember | measure_and_remember}
+void req_auto_frame_command(obs_data_t *request, obs_data_t *response, void *)
+{
+	const std::string action = obs_data_get_string(request, "action");
+	if (action != "measure" && action != "remember" && action != "measure_and_remember") {
+		fail(response, "action must be measure, remember or measure_and_remember");
+		return;
+	}
+	obs_source_t *filter = find_auto_frame(request, response);
+	if (!filter)
+		return;
+	AutoFrameState state;
+	state.success = auto_frame_command(filter, action, state);
+	write_auto_frame_state(response, state);
+	obs_source_release(filter);
+}
+
+// A supplied ID must still identify this filter's command, never a replacement operation.
+void req_get_auto_frame_state(obs_data_t *request, obs_data_t *response, void *)
+{
+	int64_t request_id = 0;
+	if (obs_data_has_user_value(request, "requestId")) {
+		obs_data_item_t *item = obs_data_item_byname(request, "requestId");
+		const bool integer = item && obs_data_item_gettype(item) == OBS_DATA_NUMBER &&
+				     obs_data_item_numtype(item) == OBS_DATA_NUM_INT;
+		obs_data_item_release(&item);
+		request_id = obs_data_get_int(request, "requestId");
+		if (!integer || request_id <= 0 || request_id > 9007199254740991LL) {
+			fail(response, "requestId must be a positive safe integer");
+			return;
+		}
+	}
+	obs_source_t *filter = find_auto_frame(request, response);
+	if (!filter)
+		return;
+	AutoFrameState state;
+	state.success = auto_frame_state(filter, request_id, state);
+	write_auto_frame_state(response, state);
+	obs_source_release(filter);
 }
 
 // "sourceName": a Game Capture or a Window Capture. Aims it at the window in
@@ -634,6 +714,8 @@ void vendor_api_register()
 		{"BlurAll", req_blur_all},
 		{"HookFront", req_hook_front},
 		{"SetPictureShape", req_set_picture_shape},
+		{"AutoFrameCommand", req_auto_frame_command},
+		{"GetAutoFrameState", req_get_auto_frame_state},
 		{"GetOptions", req_get_options},
 		{"SetOption", req_set_option},
 		{"Slide", req_slide},
@@ -813,6 +895,8 @@ void vendor_api_add_test_calls()
 				{"ShowInScenesPress", req_show_in_scenes_press},
 				{"ListTimers", timer_vendor_list},
 				{"TimerControl", timer_vendor_control},
+				{"AutoFrameCommand", req_auto_frame_command},
+				{"GetAutoFrameState", req_get_auto_frame_state},
 			};
 			obs_data_t *request = json && *json ? obs_data_create_from_json(json) : obs_data_create();
 			if (!request)

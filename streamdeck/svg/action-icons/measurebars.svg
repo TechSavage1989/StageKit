@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="40" height="40" viewBox="0 0 160 160">
+<g id="icon" inkscape:groupmode="layer" inkscape:label="Icon">
+<rect x="12.9" y="22.5" width="84.6" height="115" rx="0" fill="none" stroke="#ffffff" stroke-width="13"/>
+<rect x="8" y="17.6" width="94.4" height="22.4" rx="1.6" fill="#ffffff"/>
+<rect x="8" y="120" width="94.4" height="22.4" rx="1.6" fill="#ffffff"/>
+<polyline points="121.6,19.2 153.6,19.2" fill="none" stroke="#ffffff" stroke-width="9"/>
+<ellipse cx="121.6" cy="19.2" rx="4.5" ry="4.5" fill="#ffffff"/>
+<ellipse cx="153.6" cy="19.2" rx="4.5" ry="4.5" fill="#ffffff"/>
+<polyline points="121.6,140.8 153.6,140.8" fill="none" stroke="#ffffff" stroke-width="9"/>
+<ellipse cx="121.6" cy="140.8" rx="4.5" ry="4.5" fill="#ffffff"/>
+<ellipse cx="153.6" cy="140.8" rx="4.5" ry="4.5" fill="#ffffff"/>
+<polyline points="137.6,80 137.6,41.6" fill="none" stroke="#ffffff" stroke-width="9"/>
+<ellipse cx="137.6" cy="80" rx="4.5" ry="4.5" fill="#ffffff"/>
+<ellipse cx="137.6" cy="41.6" rx="4.5" ry="4.5" fill="#ffffff"/>
+<polygon points="137.6,32 145.96,45.64 129.24,45.64" fill="#ffffff"/>
+<polyline points="137.6,80 137.6,118.4" fill="none" stroke="#ffffff" stroke-width="9"/>
+<ellipse cx="137.6" cy="80" rx="4.5" ry="4.5" fill="#ffffff"/>
+<ellipse cx="137.6" cy="118.4" rx="4.5" ry="4.5" fill="#ffffff"/>
+<polygon points="137.6,128 129.24,114.36 145.96,114.36" fill="#ffffff"/>
+</g>
+</svg>
