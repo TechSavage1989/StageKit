@@ -18,10 +18,12 @@
 #include <QMainWindow>
 #include <QPointer>
 #include <QPushButton>
+#include <QRadioButton>
 #include <QScrollArea>
 #include <QSplitter>
 #include <QStringList>
 #include <QThread>
+#include <QWizard>
 #include <cmath>
 #include <mutex>
 #include <string>
@@ -282,6 +284,16 @@ inline void check(QStringList &issues)
 	obs_source_filter_add(source, filter);
 	obs_source_inc_showing(source);
 	const std::string original_rules = rules(filter);
+	// The disposable OBS profile opens its first-run wizard. Cancel only that
+	// identified wizard so it cannot keep the actual Filters window modal-blocked.
+	for (QWidget *widget : QApplication::topLevelWidgets()) {
+		auto *wizard = qobject_cast<QWizard *>(widget);
+		if (wizard && wizard->isVisible() && QByteArray(wizard->metaObject()->className()) == "AutoConfig" &&
+		    wizard->findChild<QRadioButton *>("prioritizeStreaming")) {
+			wizard->reject();
+			blog(LOG_INFO, "[Auto Frame detection test] Dismissed OBS first-run Auto-Configuration Wizard");
+		}
+	}
 	obs_frontend_open_source_filters(source);
 	QPointer<QDialog> dialog;
 	const bool opened = until(source, [&] {
