@@ -5,8 +5,8 @@ import streamDeck, {
 import type { JsonValue } from "@elgato/utils";
 import { afterPress, targetOf } from "../kinds.ts";
 import { obs } from "../obs.ts";
-import { ordinaryControlPicture } from "../pictures.ts";
-import { answerLists, imageOf, showOnOff, type KeySettings } from "./shared.ts";
+import { ordinaryControlPicture, studioModeShown } from "../pictures.ts";
+import { answerLists, imageOf, remembered, showOnOff, type KeySettings } from "./shared.ts";
 
 export class ObsControl extends SingletonAction<KeySettings> {
 	override readonly manifestId: string;
@@ -42,6 +42,8 @@ export class ObsControl extends SingletonAction<KeySettings> {
 				const target = settings.target ?? "";
 				const before = await obs.controlState(this.key, target);
 				const result = await obs.controlState(this.key, target, afterPress(settings.press, before));
+				if (this.key === "obsstudio")
+					await remembered(ev.action, settings, this.key, { kind: this.key, enabled: result });
 				await ev.action.setState(result ? 1 : 0);
 			}
 		} catch {
@@ -71,6 +73,13 @@ export class ObsControl extends SingletonAction<KeySettings> {
 			const { source } = targetOf(settings);
 			const image = ordinaryControlPicture(this.key, source, settings.sourceType, settings.sceneType);
 			await key.setImage(imageOf(image, settings, true));
+			return;
+		}
+		if (this.key === "obsstudio") {
+			let active: boolean | undefined;
+			try { active = await obs.controlState(this.key, ""); } catch { /* Keep OBS's last reported state. */ }
+			const seen = await remembered(key, settings, this.key, active === undefined ? undefined : { kind: this.key, enabled: active });
+			await showOnOff(key, studioModeShown(true, settings.sceneType), seen?.enabled === true, settings, studioModeShown(false, settings.sceneType));
 			return;
 		}
 		try {

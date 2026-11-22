@@ -58,6 +58,8 @@ The Reset Stats key calls OBS's global OBSBasic.ResetStats hotkey through Trigge
 
 After npm run pack, rerun python3 tools/make-plugin-files.py from streamdeck before committing. Elgato's pack command rewrites manifest.json without its generated final newline, even when no version override is supplied. Commit the generator's output so the reproducibility check stays clean.
 
+The Studio Mode UUID remains obsstudio with its existing toggle/on/off settings. Its one-monitor off and two-monitor on drawings are separate picture records selected through showOnOff's optional offPicture argument. Do not combine them into a normal on/off pair: make-state-icons.py intentionally substitutes the on drawing for unique off drawings. Typed scene images use state-specific monitor badges. Preview to Program is the single-state studiotransition action and calls TriggerStudioModeTransition once with no data or transition overrides. OBS rejects it with Studio Mode off; do not enable Studio Mode as a side effect. Exercise the real frontend request and keep the unfinished 10-bit Studio Preview color diagnostic separate from this key implementation.
+
 ## Additional materials and data patterns
 
 Append new patterns to both the Ambient Background and outline registries. Outline design 34

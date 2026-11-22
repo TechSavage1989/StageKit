@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | feat/streamdeck-reset-stats, based on beta244. Release notes in docs/releases/0.1.0-beta245.md. |
+| Working branch | feat/studio-streamdeck-keys, based on beta245. Release notes in docs/releases/0.1.0-beta246.md. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -22,6 +22,14 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
+
+## Stream Deck Studio controls
+
+Companion 0.39.0.0 gives the existing Studio Mode key one monitor while off and two while on, preserving its UUID, saved toggle/on/off values, Scene type, Image layout and palette settings. The actual OBS state controls the displayed image; disconnected keys retain the last confirmed state. A chosen Scene type uses a one-monitor or two-monitor badge. Separate picture records preserve the drawings through the status generator and all layouts.
+
+Preview to Program is a new momentary key using OBS's native TriggerStudioModeTransition request. It follows the current Preview, transition, duration and native swap behavior. It does not enable Studio Mode or change transition settings. Success feedback confirms acceptance; mode-off, disconnected and rejected requests show an alert. It retains the shared image and connection controls and includes all six palettes, its own action-list icon, a function badge and editable SVGs.
+
+PR #256's title mentioned these keys, but its only commit added native Preview color tests and CI entries. It contained no Stream Deck implementation or production color fix. The keys are implemented here from current main. The 10-bit Studio Preview color diagnostic remains separate unfinished work. The key tests cover the actual WebSocket payload, rejected requests, saved Studio settings, state events and image choices; the native frontend fixture covers the real OBS request. All 107 Stream Deck tests, TypeScript/Rollup build, Elgato validation and packaging passed locally. The native frontend check runs in CI. Physical Stream Deck hardware is unavailable in this environment.
 
 ## Stream Deck Reset Stats
 

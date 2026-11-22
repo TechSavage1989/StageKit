@@ -1,6 +1,6 @@
 {
 	"Name": "StageKit",
-	"Version": "0.38.0.0",
+	"Version": "0.39.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
@@ -879,7 +879,7 @@
 			"Name": "Studio Mode",
 			"UUID": "com.techsavage1989.stagekit.obsstudio",
 			"Icon": "imgs/actions/obsstudio/icon",
-			"Tooltip": "Switches OBS Studio Mode on or off.",
+			"Tooltip": "Switches OBS Studio Mode on or off. One monitor means off; two monitors mean on.",
 			"PropertyInspectorPath": "ui/obsstudio.html",
 			"Controllers": [
 				"Keypad"
@@ -897,6 +897,22 @@
 				}
 			],
 			"DisableAutomaticStates": true
+		},
+		{
+			"Name": "Preview to Program",
+			"UUID": "com.techsavage1989.stagekit.studiotransition",
+			"Icon": "imgs/actions/studiotransition/icon",
+			"Tooltip": "Sends Preview to Program with OBS's current transition and duration. Requires Studio Mode.",
+			"PropertyInspectorPath": "ui/studiotransition.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/studiotransition/on",
+					"TitleAlignment": "bottom"
+				}
+			]
 		},
 		{
 			"Name": "Virtual Camera",

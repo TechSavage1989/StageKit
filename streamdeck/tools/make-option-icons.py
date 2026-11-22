@@ -100,6 +100,13 @@ DRAWINGS = {
     # OBS Stats: rising bars and a circular reset arrow.
     "reset-stats": [("box", 5, 22, 11, 31), ("box", 15, 14, 21, 31), ("box", 25, 6, 31, 31),
                     ("arc", 48, 19, 13, -60, 235), ("tri", 40.5, 8.4, 33, 10, 39, 16)],
+    # Studio Mode: separate records preserve the one/two-monitor geometry in marked copies and layouts.
+    "studio-off": [("frame", 12, 3, 52, 27), ("line", 32, 27, 32, 33), ("line", 22, 33, 42, 33)],
+    "studio-on": [("frame", 2, 5, 29, 25), ("frame", 35, 5, 62, 25),
+                  ("line", 15.5, 25, 15.5, 31), ("line", 48.5, 25, 48.5, 31),
+                  ("line", 8, 31, 23, 31), ("line", 41, 31, 56, 31)],
+    "studio-transition": [("frame", 2, 4, 25, 23), ("frame", 39, 4, 62, 23),
+                          ("line", 13.5, 23, 13.5, 29), ("line", 50.5, 23, 50.5, 29)] + arrow(24, 32, 43, 32, 5),
     # Filters with no picture in the pack (each also in an "off" look)
     "zoom": [("ring", 27, 16, 11), ("line", 35, 24, 46, 33), ("line", 22, 16, 32, 16), ("line", 27, 11, 27, 21)],
     "fit": [("frame", 6, 3, 58, 33), ("box", 20, 9, 44, 27)],

@@ -145,6 +145,7 @@ ICONS = {
     "obssource": lambda d: (d.ellipse((*p(.07,.26), *p(.93,.74)), outline=INK, width=W), ring(d,.5,.5,.12,fill=True)),
     "obsmute": lambda d: (box(d,.14,.40,.35,.61), line(d,.35,.45,.58,.22), line(d,.58,.22,.58,.78), line(d,.58,.78,.35,.54), line(d,.72,.36,.9,.64), line(d,.9,.36,.72,.64)),
     "obsstudio": lambda d: (box(d,.04,.15,.46,.78), box(d,.54,.15,.96,.78), line(d,.31,.89,.69,.89)),
+    "studiotransition": lambda d: (box(d,.03,.12,.40,.58, width=W-3), box(d,.60,.12,.97,.58, width=W-3), line(d,.215,.58,.215,.72,W-3), line(d,.785,.58,.785,.72,W-3), arrow(d,.25,.86,.78,.86,.14,W-3)),
     "obscamera": lambda d: (box(d,.06,.26,.64,.75), line(d,.64,.44,.91,.26), line(d,.91,.26,.91,.75), line(d,.91,.75,.64,.58)),
     "movesourceport": lambda d: (box(d,.05,.22,.48,.78), arrow(d,.4,.50,.92,.50,.14,W-3)),
     "moveswapport": lambda d: (arrow(d,.1,.31,.9,.31,.15,W-3), arrow(d,.9,.69,.1,.69,.15,W-3)),

@@ -75,7 +75,12 @@ const OTHERS: Record<string, WorksWith> = {
 	obsfilter: { feature: "A filter on an OBS source or scene", chosen: "target", tip: "Switches any OBS source or scene filter on and off." },
 	obssource: { feature: "A source in an OBS scene or group", tip: "Shows or hides a source in its scene or group." },
 	obsmute: { feature: "An input in the OBS audio mixer", tip: "Mutes or unmutes an OBS audio input." },
-	obsstudio: { feature: "OBS Studio Mode", tip: "Switches OBS Studio Mode on or off." },
+	obsstudio: { feature: "OBS Studio Mode", tip: "Switches OBS Studio Mode on or off. One monitor means off; two monitors mean on." },
+	studiotransition: {
+		feature: "OBS Studio Mode",
+		note: "Same as the Transition button in Studio Mode.",
+		tip: "Sends the current Preview to Program using OBS's current transition and duration. Studio Mode must be on.",
+	},
 	obscamera: { feature: "The OBS virtual camera", tip: "Starts or stops the OBS virtual camera." },
 	movesourceport: { kinds: ["stagekit_port_move_source_filter"], chosen: "target", tip: filterTip(["stagekit_port_move_source_filter"]) },
 	moveswapport: { kinds: ["stagekit_port_move_source_swap_filter"], chosen: "target", tip: filterTip(["stagekit_port_move_source_swap_filter"]) },
