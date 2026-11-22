@@ -18,6 +18,7 @@ on:
       - 'src/look/scene-shadow.cpp'
       - 'tests/alpha-bounds-test.cpp'
       - 'src/countdown/**'
+      - 'src/capture/app-capture.cpp'
       - 'src/common/item-transition.*'
       - 'src/placement/show-in-scenes.*'
       - 'src/placement/scene-transitions.*'
@@ -27,6 +28,7 @@ on:
       - 'tests/countdown*-test.hpp'
       - 'tests/reset-stats-test.hpp'
       - 'tests/studio-transition-test.hpp'
+      - 'tests/capture-settings-test.hpp'
       - 'src/plugin-main.cpp'
       - 'src/third-party/ports/**'
       - 'streamdeck/**'
@@ -64,7 +66,7 @@ jobs:
           cp tests/replacement-invert.effect "$out/invert.effect"
           build-ports/tests/stagekit-replacement-collection-test data/ports.json data
           xvfb-run -a build-ports/tests/stagekit-replacement-test "$PWD/build-ports/stagekit.so" "$PWD/data" "$out/art.png" "$out" > "$out/render.log" 2>&1 || { grep -E 'FAIL|shader error|error:.*effect|StageKit timer (at |layout:)' "$out/render.log" || true; tail -150 "$out/render.log"; xvfb-run -a gdb -q --batch -ex run -ex 'bt 30' --args build-ports/tests/stagekit-replacement-test "$PWD/build-ports/stagekit.so" "$PWD/data" "$out/art.png" "$out" > "$out/debug.log" 2>&1 || true; tail -50 "$out/debug.log"; exit 1; }
-          grep -E 'PASS|FAIL|mean difference|StageKit timer (at |layout:)' "$out/render.log"
+          grep -E 'PASS|FAIL|mean difference|capture settings test|StageKit timer (at |layout:)' "$out/render.log"
           python3 tests/replacement-images.py "$out" sheet
       - name: Check saved visibility, restore rules and Make Room motion
         env:

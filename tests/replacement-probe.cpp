@@ -3,6 +3,7 @@
 #include "countdown-dock-test.hpp"
 #include "reset-stats-test.hpp"
 #include "studio-transition-test.hpp"
+#include "capture-settings-test.hpp"
 #include "replacement-quick.hpp"
 #include "show-in-scenes-camera.hpp"
 #include <obs-module.h>
@@ -327,6 +328,7 @@ static void exercise()
 	countdown_dock_test::check(issues, false);
 	reset_stats_test::check(issues);
 	studio_transition_test::check(issues);
+	capture_settings_test::check(issues);
 	check_plugin_manager(issues);
 	check_blur_output(issues);
 	finish_probe(issues);

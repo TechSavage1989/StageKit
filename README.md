@@ -321,6 +321,9 @@ The window has four groups, in the order of the table: *Windows* (the first four
 
 - An app on the list that opens is captured. When the app being captured closes, the one you used
   before it comes back.
+- Changing the capture source's method, cursor option or other capture settings also updates the
+  windows kept ready. The selected window stays visible while a replacement starts. Other
+  switchers keep their own capture settings, and the current manual selection stays selected.
 - The change is smooth although there is only one capture: the filter keeps the last image the
   capture had, shows it while the capture is finding the other window, and brings the new image in
   over it. A Standby Image on the same capture does not stand in for that moment; it does once

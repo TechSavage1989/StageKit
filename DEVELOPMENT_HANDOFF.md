@@ -712,6 +712,12 @@ it on again once that program has no window (`hand_watch`; 5 s grace after loadi
 record). User-switched-off filters are never switched on. Gate `HOOK_BACK` (see AGENTS.md's hand-hook
 entry). Not seen on Windows.
 
+## Prepared capture settings refresh
+
+On branch fix/ready-capture-settings, Automatic Window Switcher refreshes prepared captures when the parent capture source's non-aim settings change. A single snapshot supplies the new pool key and settings. The active capture remains visible while a separate replacement starts with the same selected window. Promotion updates the entry and bridge together, preserving the current manual selection and transition state. Other switchers using the old pool entry keep their own options. Reverted and superseded candidates release their references, and removing an alias does not clear a bridge still owned by another active entry.
+
+The shared capture-settings-test.hpp fixture exercises the actual switcher renderer with two parents sharing a prepared manual window, method and cursor changes, delayed readiness, cancellation, supersession, rejoining the original pool entry, and complete cleanup. Formatting and whitespace checks passed. Native Windows/Linux execution is pending CI. This fixes the confirmed settings propagation defect; it does not establish the cause of missing application panels. Integrate the preceding Auto Frame update and number the release notes from fresh main before release.
+
 ## Window switchers share their ready captures (0.1.0-beta203)
 
 Branch `fix/ready-capture-share`, on beta202. Not pushed; release notes written by another session.
