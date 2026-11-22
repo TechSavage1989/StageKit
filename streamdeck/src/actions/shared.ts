@@ -116,6 +116,8 @@ export type KeySettings = {
 	/** A Picture shape key's shape ("4:3", "auto") and whether it lasts only for this game. */
 	shape?: string;
 	keep?: "game" | "always";
+	/** Auto Frame saving keys: unset keeps the existing window-name scope. */
+	rememberBy?: "application" | "window";
 	/** A Window switch key: on to the next capture, or back to following the apps. */
 	step?: "next" | "back" | "hide" | "toggle" | "clear";
 	/** A Switch Scene key's scene, and whether it goes to the program or the preview. */

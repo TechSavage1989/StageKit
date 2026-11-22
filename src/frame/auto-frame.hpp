@@ -34,12 +34,18 @@ struct AutoFrameState {
 	double ratio = 0.0;
 	uint32_t width = 0, height = 0;
 	bool saved = false;
+	bool supports_remember_by = true;
+	std::string remember_by;
+	std::string remember_target;
 	std::string error;
 };
 
 // Actions: measure, remember, measure_and_remember. Measuring is asynchronous;
 // poll with its request_id. A combined action saves only its own fresh result.
-bool auto_frame_command(obs_source_t *filter, const std::string &action, AutoFrameState &state);
+// An empty remember_by keeps the existing untyped rule behavior. Explicit
+// "application" and "window" save exact identities in the scoped rule list.
+bool auto_frame_command(obs_source_t *filter, const std::string &action, AutoFrameState &state,
+			const std::string &remember_by = {});
 bool auto_frame_state(obs_source_t *filter, int64_t request_id, AutoFrameState &state);
 
 // Where the game picture sits in a source that has an Auto Frame switched on,

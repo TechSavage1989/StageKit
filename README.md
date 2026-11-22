@@ -520,6 +520,10 @@ program is right from then on, at any window size, and everything else is still 
 
 *The actual OBS Filters window after measuring a 16:9 image, with the detected ratio and the captured window filled into the rule editor.*
 
+**Save for an application or one window name.** The Stream Deck **Remember Aspect Ratio** and **Measure and Remember** keys have a *Remember by* setting. *Application* saves one ratio for that captured application. *Window name*, the default, saves the full captured title within that application. Use Window name when an emulator puts the current game's name in its title and different games need different ratios. An exact saved window rule takes priority over an application rule. If neither applies, the existing program and title rules still work as described below. Saved application and window entries can be removed individually in Auto Frame.
+
+Window name identifies the title, not a temporary window handle. Reopening the same game with the same title reuses its ratio; a different title needs its own rule. Saving an application default leaves its saved window rules intact. An identical title in a different application uses that other application's rules. The key reports an alert if the chosen application or title cannot be identified, instead of saving under another scope. Both the StageKit OBS plugin and companion 0.41.0.0 must be installed for this choice.
+
 **Image shape for each program.** A program seen before starts from the shape it showed then.
 Otherwise common emulators start from their usual shape (Snes9x 8:7, mGBA
 3:2, Project64 4:3 and so on), so the image is right from the first frame. Either is only a starting
@@ -2180,8 +2184,8 @@ With obs-websocket, send `CallVendorRequest` with `vendorName: "StageKit"`:
 | `BlurAll` | `mode?`: `on`, `off` or `toggle` | `active` |
 | `HookFront` | `sourceName`: a Game Capture or a Window Capture; `transition?`: an OBS transition's kind or `none`; `transitionMs?` | `executable`: the program in front, which the capture now takes. An Auto Capture on the source is switched off |
 | `SetPictureShape` | `sourceName`: a source with an Auto Frame; `shape`: `4:3`, `8:7`, a number, or `auto`; `untilGone?` (true unless given): drop it when that game's capture ends | none |
-| AutoFrameCommand | sourceName and filterName identify an Auto Frame filter; action is measure, remember or measure_and_remember. | Returns a requestId and status. Measurement is pending until a fresh result is ready. Remember saves a valid measured ratio for the same detected window; the combined action measures first and saves internally. |
-| GetAutoFrameState | sourceName, filterName and optional requestId. | Returns success, requestId, status, complete, program, executable, aspectRatio, ratio, width, height and saved. Failed or superseded operations return an error. Poll pending commands until complete. |
+| AutoFrameCommand | sourceName and filterName identify an Auto Frame filter; action is measure, remember or measure_and_remember. Saving accepts optional rememberBy: application or window. Omitting it keeps legacy behavior. | Returns a requestId and status. Measurement is pending until a fresh result is ready. Remember saves a valid measured ratio for the selected scope; the combined action measures first and saves internally for that same capture. |
+| GetAutoFrameState | sourceName, filterName and optional requestId. | Returns success, requestId, status, complete, program, executable, aspectRatio, ratio, width, height and saved. A valid target advertises supportsRememberBy; scoped commands also report rememberBy and rememberTarget. Failed or superseded operations return an error. Poll pending commands until complete. |
 | `GetOptions` | none | The dock's switches: `snap`, `guides`, `limit`, `slide`, `everyScene`, `keepShape` |
 | `SetOption` | `option`: one of those names; `mode?`: `toggle` (unless given), `on` or `off` | `on`: which way it is now. An `OptionsChanged` event with all six follows every change |
 | `Slide` | `direction`: `left`, `right`, `up`, `down`, `up-left`, `up-right`, `down-left`, `down-right` or `centre` | none. Slides the item the dock is on, as its arrows do |
@@ -2195,6 +2199,8 @@ With obs-websocket, send `CallVendorRequest` with `vendorName: "StageKit"`:
 
 Every response has `success` and, on failure, `error`. A `BlurChanged` event is sent when a blur turns
 on or off. The other tools are filters, so the standard `SetSourceFilterEnabled` request triggers them.
+
+Before sending an Auto Frame save with rememberBy, query GetAutoFrameState and require supportsRememberBy to be true. That capability describes the filter; its success and error fields can still describe a previous failed command. Check the new command's success, requestId, rememberBy and rememberTarget while polling. A companion must not send a scoped save to an older plugin that does not advertise support.
 
 ## Stream Deck plugin
 
@@ -2360,8 +2366,8 @@ pressed, so it never flashes the wrong one.
 | **Move Source**, **Move Scene Item**, **Apply Layout** | Runs that move. A tick shows on the key when OBS has taken it |
 | **Set Aspect Ratio** | Sets a game's display ratio temporarily or until changed. *8:7 (SNES / NES, square pixels)*, *64:49 (SNES / NES on a 4:3 TV)* and *16:15* are available alongside the other Auto Frame ratios. Automatic returns control to Auto Frame. |
 | **Measure Bars** | Measures the current image on the selected Auto Frame filter. The key reports completion only after a fresh result is available. |
-| **Remember Aspect Ratio** | Saves the latest valid measured ratio for the window currently captured by the selected Auto Frame filter. A missing or changed capture is rejected. |
-| **Measure and Remember** | Measures the current image, waits for completion, then saves that fresh ratio for the same detected window. A failed, timed-out or superseded measurement does not save a rule. |
+| **Remember Aspect Ratio** | Saves the latest valid measured ratio on the selected Auto Frame filter. *Remember by* chooses *Application* or *Window name*. A missing or changed capture is rejected. |
+| **Measure and Remember** | Measures the current image, waits for completion, then saves that fresh ratio by *Application* or *Window name*. A failed, timed-out or superseded measurement does not save a rule. |
 | **Capture Active Window** | Aims the chosen Game Capture or Window Capture at the active window. Pick its transition and duration. Cut is instant. A Window Switcher uses its own transition and timing and treats the new window as a manual pick. Otherwise an Auto Capture on the chosen capture switches off until you turn it back on. |
 | **Fit to Space Overlap** | Switches a Fit to Space filter's, or a Scene Fit's, *Overlap only when it fills* on and off, and shows which way it is. On: the fitted window goes under the camera only while it fills its space, and beside it otherwise |
 | **Switch Scene** | Choose the Program or Preview scene. Preview controls Program when Studio Mode is off. The key lights while its selected scene is active on that output. *Transition* uses the current OBS choice by default, and a blank *Duration* keeps the current timing. *After the switch* can keep the selected transition and duration or restore the previous values. Restoration has been tested against a headless WebSocket server. It still needs a visual check in OBS. |
@@ -2391,7 +2397,7 @@ the first versions' *Filter switch* and *Move* keep working; those two are no lo
 
 **Hold Studio Mode to transition.** Companion 0.40.0.0 also lets one Studio Mode key do both jobs. A normal press uses its saved *On press* action. Holding for 800 ms sends Preview to Program. Change *Hold time* from 300 to 5000 ms, or set *Long press* to *Nothing* to turn it off. With a hold action enabled, a normal press acts when you release the key; a completed hold runs only the transition. Studio Mode must already be on for the transition.
 
-**Auto Frame measurement keys.** Install Stream Deck companion 0.40.0.0 and the matching StageKit OBS release. Add **Measure Bars**, **Remember Aspect Ratio**, or **Measure and Remember** from the StageKit actions list, then choose the capture source and its Auto Frame filter. Measure Bars reports when the new result is ready; Remember Aspect Ratio saves the valid measured ratio for that captured window; Measure and Remember does both in one press. A missing image, changed capture or failed measurement shows an alert. Each key has the usual Source type, Image layout and Palette controls.
+**Auto Frame measurement keys.** Install Stream Deck companion 0.41.0.0 and the matching StageKit OBS release. Add **Measure Bars**, **Remember Aspect Ratio**, or **Measure and Remember** from the StageKit actions list, then choose the capture source and its Auto Frame filter. Measure Bars reports when the new result is ready and does not save a rule. The two saving keys have *Remember by*: *Window name* saves for that title within its application, while *Application* applies across that app's windows. Window name is the default, and a matching window rule overrides an application rule. Remember Aspect Ratio uses the current valid measurement; Measure and Remember takes a fresh measurement before saving. A missing identity, changed capture or failed measurement shows an alert. Each key keeps the usual Source type, Image layout and Palette controls.
 
 <p align="center"><img src="docs/images/auto-frame-keys.png" width="550" alt="Measure Bars, Remember Aspect Ratio and Measure and Remember key artwork in all six palettes"></p>
 

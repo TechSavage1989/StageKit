@@ -24,9 +24,12 @@ export async function runAutoFrameCommand(
 	sourceName: string,
 	filterName: string,
 	action: AutoFrameOperation,
+	rememberBy: unknown = "window",
 	time: Clock = clock,
 ): Promise<Reply> {
 	if (!sourceName || !filterName) return undefined;
+	const scope = action === "measure" ? undefined : rememberBy;
+	if (action !== "measure" && scope !== "application" && scope !== "window") return undefined;
 	const target = { sourceName, filterName };
 	const deadline = time.now() + 5000;
 	const request = async (name: string, data: Record<string, unknown>): Promise<Reply> => {
@@ -34,19 +37,29 @@ export async function runAutoFrameCommand(
 		if (remaining <= 0) return undefined;
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		try {
-			return await Promise.race([
+			const reply = await Promise.race([
 				send(name, data),
 				new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), remaining); }),
 			]);
+			return time.now() < deadline ? reply : undefined;
 		} finally {
 			clearTimeout(timer);
 		}
 	};
-	let reply = await request("AutoFrameCommand", { ...target, action });
+	if (scope) {
+		// Old plugins ignore unknown command fields. Ask before saving, so
+		// choosing Application cannot silently create a window-name rule.
+		const state = await request("GetAutoFrameState", target);
+		if (state?.supportsRememberBy !== true) return undefined;
+	}
+	let reply = await request("AutoFrameCommand", { ...target, action, ...(scope ? { rememberBy: scope } : {}) });
 	const requestId = reply?.requestId;
 	if (typeof requestId !== "number" || !Number.isSafeInteger(requestId) || requestId <= 0) return undefined;
+	const rememberTarget = reply?.rememberTarget;
+	if (scope && (typeof rememberTarget !== "string" || !rememberTarget.trim())) return undefined;
 	for (;;) {
 		if (reply?.success !== true || reply.requestId !== requestId) return undefined;
+		if (scope && (reply.rememberBy !== scope || reply.rememberTarget !== rememberTarget)) return undefined;
 		if (reply.complete === true) {
 			const completed = action === "measure" ? reply.status === "measured" : reply.status === "saved" && reply.saved === true;
 			return completed ? reply : undefined;

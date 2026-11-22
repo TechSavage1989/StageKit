@@ -301,7 +301,7 @@ class ObsLink extends EventEmitter {
 	 * "Remote control" in the README). Undefined when it cannot be reached
 	 * or says no.
 	 */
-	async stageKit(requestType: string, requestData: Record<string, unknown> = {}): Promise<Record<string, unknown> | undefined> {
+	async stageKit(requestType: string, requestData: Record<string, unknown> = {}, options: { preserveFailure?: boolean } = {}): Promise<Record<string, unknown> | undefined> {
 		if (!this.connected) return undefined;
 		try {
 			const answer = await this.obs.call("CallVendorRequest", {
@@ -310,7 +310,7 @@ class ObsLink extends EventEmitter {
 				requestData: requestData as never,
 			});
 			const data = (answer.responseData ?? {}) as Record<string, unknown>;
-			return data.success === false ? undefined : data;
+			return data.success === false && !options.preserveFailure ? undefined : data;
 		} catch {
 			return undefined;
 		}

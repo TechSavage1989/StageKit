@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | fix/ready-capture-settings, based on beta247. Release notes in docs/releases/0.1.0-beta248.md. |
+| Working branch | feat/autoframe-ratio-scope, based on beta248. Release notes in docs/releases/0.1.0-beta249.md, numbered after checking fresh main. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -22,6 +22,14 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
+
+## Auto Frame application and window rules
+
+Companion 0.41.0.0 adds Remember by to Remember Aspect Ratio and Measure and Remember. Window name is the default; Application saves a shared ratio for the captured executable. Explicit window rules match the complete title within the same application and take precedence over explicit application rules. The legacy rules_text matcher and existing OBS editor remain compatible. New scoped rules use structured settings so punctuation in a title cannot truncate or merge identities. The saved rules are visible and removable in the Auto Frame controls.
+
+AutoFrameCommand accepts optional rememberBy values application and window. Omitting it retains the previous command behavior. A valid Auto Frame target advertises supportsRememberBy even if its previous command failed; the companion checks this before issuing a scoped save, so an older plugin cannot silently ignore the option. Explicit request states retain rememberBy and rememberTarget. Missing identity, capture changes, cancellation and timeouts cannot save under another scope or a later window. The companion's five-second deadline includes the capability check, command and polling.
+
+The focused tests cover different titles sharing one executable, exact matching and precedence, persisted settings, deletion, invalid scope, missing identity and legacy behavior. All 128 companion tests, the TypeScript/Rollup build, Elgato validation and packaging passed. The native frontend fixture is complete and awaits CI execution. It verifies actual rendered crops, settings reload and clicks on removable saved-rule rows, including the same title under different applications. The beta248 capture-settings fix and all earlier Auto Frame, Studio, Reset Stats and timer changes remain included. Physical Stream Deck hardware is unavailable in this environment.
 
 ## Auto Frame detection feedback and Stream Deck commands
 

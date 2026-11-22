@@ -75,6 +75,9 @@ void write_frame_state(calldata_t *cd, const AutoFrameState &state)
 	calldata_set_int(cd, "width", state.width);
 	calldata_set_int(cd, "height", state.height);
 	calldata_set_bool(cd, "saved", state.saved);
+	calldata_set_bool(cd, "supports_remember_by", state.supports_remember_by);
+	calldata_set_string(cd, "remember_by", state.remember_by.c_str());
+	calldata_set_string(cd, "remember_target", state.remember_target.c_str());
 	calldata_set_string(cd, "error", state.error.c_str());
 }
 
@@ -161,6 +164,11 @@ enum class Trim : int {
 	Manual = 2,
 };
 
+struct ScopedRule {
+	std::string scope, executable, title;
+	double ratio = 0.0;
+};
+
 struct Settings {
 	// The frame is the picture itself: no fixed size, no room around it.
 	bool follow = false;
@@ -183,6 +191,7 @@ struct Settings {
 	double force_ratio = 0.0;
 	bool force_until_gone = false; // a shape set by hand for this game: dropped when its capture ends
 	std::vector<std::pair<std::string, double>> rules;
+	std::vector<ScopedRule> scoped_rules;
 	bool known_programs = true; // use the built-in shapes for common emulators
 	double glide_s = 0.35;
 	EaseCurve curve = EaseCurve::Cubic;
@@ -438,6 +447,146 @@ bool write_shape_rule(obs_data_t *settings, std::string program, const std::stri
 	return true;
 }
 
+bool valid_scope(const std::string &scope)
+{
+	return scope == "application" || scope == "window";
+}
+
+// Exact executable identity, preserving the complete supplied name or path.
+// Windows executable names are case-insensitive; never use a substring here.
+std::string application_identity(std::string executable)
+{
+	return lower(std::move(executable));
+}
+
+std::vector<ScopedRule> read_scoped_rules(obs_data_t *settings)
+{
+	std::vector<ScopedRule> out;
+	OBSDataArrayAutoRelease entries = obs_data_get_array(settings, "scoped_rules");
+	for (size_t i = 0; i < obs_data_array_count(entries); ++i) {
+		OBSDataAutoRelease entry = obs_data_array_item(entries, i);
+		ScopedRule rule;
+		rule.scope = obs_data_get_string(entry, "scope");
+		rule.executable = obs_data_get_string(entry, "executable");
+		rule.title = obs_data_get_string(entry, "title");
+		rule.ratio = obs_data_get_double(entry, "ratio");
+		if (valid_scope(rule.scope) && !rule.executable.empty() &&
+		    (rule.scope != "window" || !rule.title.empty()) && std::isfinite(rule.ratio) && rule.ratio > 0.0)
+			out.push_back(std::move(rule));
+	}
+	return out;
+}
+
+// Quotes make the displayed identities unambiguous, including literal quotes,
+// separators and line breaks. The actual identities stay untouched in the array.
+std::string quoted_identity(const std::string &value)
+{
+	std::string text = "\"";
+	for (unsigned char c : value) {
+		if (c == '"' || c == '\\') {
+			text += '\\';
+			text += (char)c;
+		} else if (c < 0x20) {
+			char escaped[7];
+			snprintf(escaped, sizeof(escaped), "\\u%04x", (unsigned)c);
+			text += escaped;
+		} else {
+			text += (char)c;
+		}
+	}
+	return text + '"';
+}
+
+std::string scoped_rule_label(const ScopedRule &rule)
+{
+	std::string label =
+		obs_module_text(rule.scope == "window" ? "Frame.Scoped.Window" : "Frame.Scoped.Application");
+	label += " " + quoted_identity(rule.scope == "window" ? rule.title : rule.executable);
+	if (rule.scope == "window")
+		label += " (" + quoted_identity(rule.executable) + ")";
+	return label + " = " + ratio_name(rule.ratio);
+}
+
+void refresh_scoped_labels(obs_data_t *settings, const std::vector<ScopedRule> &rules)
+{
+	std::vector<std::string> labels;
+	for (const auto &rule : rules)
+		labels.push_back(scoped_rule_label(rule));
+	pick_list_write(settings, "scoped_rules_view", false, labels);
+}
+
+void write_scoped_rules(obs_data_t *settings, const std::vector<ScopedRule> &rules)
+{
+	OBSDataArrayAutoRelease entries = obs_data_array_create();
+	for (const auto &rule : rules) {
+		OBSDataAutoRelease entry = obs_data_create();
+		obs_data_set_string(entry, "scope", rule.scope.c_str());
+		obs_data_set_string(entry, "executable", rule.executable.c_str());
+		obs_data_set_string(entry, "title", rule.title.c_str());
+		obs_data_set_double(entry, "ratio", rule.ratio);
+		obs_data_array_push_back(entries, entry);
+	}
+	obs_data_set_array(settings, "scoped_rules", entries);
+	refresh_scoped_labels(settings, rules);
+}
+
+bool write_scoped_shape(obs_data_t *settings, const std::string &scope, const std::string &executable,
+			const std::string &target, double ratio)
+{
+	if (!valid_scope(scope) || executable.empty() || (scope == "window" && target.empty()) ||
+	    !std::isfinite(ratio) || ratio <= 0.0)
+		return false;
+	const std::string key = application_identity(executable);
+	auto rules = read_scoped_rules(settings);
+	rules.erase(std::remove_if(rules.begin(), rules.end(),
+				   [&](const ScopedRule &rule) {
+					   return rule.scope == scope && application_identity(rule.executable) == key &&
+						  (scope != "window" || rule.title == target);
+				   }),
+		    rules.end());
+	rules.push_back({scope, executable, scope == "window" ? target : std::string(), ratio});
+	write_scoped_rules(settings, rules);
+	return true;
+}
+
+double scoped_ratio(const std::vector<ScopedRule> &rules, const std::string &executable, const std::string &title)
+{
+	if (executable.empty())
+		return 0.0;
+	const std::string key = application_identity(executable);
+	double application = 0.0;
+	for (const auto &rule : rules) {
+		if (application_identity(rule.executable) != key)
+			continue;
+		if (rule.scope == "window" && rule.title == title)
+			return rule.ratio;
+		if (rule.scope == "application")
+			application = rule.ratio;
+	}
+	return application;
+}
+
+void scoped_list_changed(obs_properties_t *, obs_source_t *owner, obs_data_t *settings)
+{
+	if (!owner || !obs_data_has_user_value(settings, "scoped_rules_view"))
+		return;
+	const auto labels = pick_list_read(settings, "scoped_rules_view", false);
+	auto rules = read_scoped_rules(settings);
+	const size_t before = rules.size();
+	rules.erase(std::remove_if(rules.begin(), rules.end(),
+				   [&](const ScopedRule &rule) {
+					   const std::string label = scoped_rule_label(rule);
+					   return std::find(labels.begin(), labels.end(), label) == labels.end();
+				   }),
+		    rules.end());
+	if (rules.size() != before) {
+		// PickList updates the source before invoking this callback. Keep
+		// metadata removal here; regenerating labels in update would undo it.
+		write_scoped_rules(settings, rules);
+		obs_source_update(owner, settings);
+	}
+}
+
 class AutoFrame {
 public:
 	AutoFrame(obs_data_t *settings, obs_source_t *source) : source_(source)
@@ -491,13 +640,16 @@ public:
 			[](void *data, calldata_t *) { static_cast<AutoFrame *>(data)->measure_now(); }, this);
 		proc_handler_add(
 			obs_source_get_proc_handler(source_),
-			"void frame_command(in string action, out bool success, out int request_id, out string status, "
+			"void frame_command(in string action, in string save_scope, out bool success, out int request_id, out string status, "
 			"out bool complete, out string program, out string executable, out string aspect_ratio, "
-			"out float ratio, out int width, out int height, out bool saved, out string error)",
+			"out float ratio, out int width, out int height, out bool saved, out bool supports_remember_by, "
+			"out string remember_by, out string remember_target, out string error)",
 			[](void *data, calldata_t *cd) {
 				AutoFrameState state;
 				const char *action = calldata_string(cd, "action");
-				static_cast<AutoFrame *>(data)->command(action ? action : "", state);
+				const char *remember_by = calldata_string(cd, "save_scope");
+				static_cast<AutoFrame *>(data)->command(action ? action : "", state,
+									remember_by ? remember_by : "");
 				write_frame_state(cd, state);
 			},
 			this);
@@ -505,7 +657,8 @@ public:
 			obs_source_get_proc_handler(source_),
 			"void get_frame_state(in int for_request, out bool success, out int request_id, out string status, "
 			"out bool complete, out string program, out string executable, out string aspect_ratio, "
-			"out float ratio, out int width, out int height, out bool saved, out string error)",
+			"out float ratio, out int width, out int height, out bool saved, out bool supports_remember_by, "
+			"out string remember_by, out string remember_target, out string error)",
 			[](void *data, calldata_t *cd) {
 				AutoFrameState state;
 				static_cast<AutoFrame *>(data)->command_state(calldata_int(cd, "for_request"), state);
@@ -559,6 +712,7 @@ public:
 		s.force_until_gone = obs_data_get_bool(settings, "force_until_gone");
 		s.known_programs = obs_data_get_bool(settings, "known_programs");
 		parse_rules_text(obs_data_get_string(settings, "rules_text"), s.rules);
+		s.scoped_rules = read_scoped_rules(settings);
 		// 0.1.0-beta6 to beta9 kept the rules in a list box.
 		obs_data_array_t *rules = obs_data_get_array(settings, "rules");
 		for (size_t i = 0; i < obs_data_array_count(rules); i++) {
@@ -636,16 +790,19 @@ public:
 			live = live && !standby_showing();
 			std::lock_guard lock(mutex_);
 			feedback = observe_capture_locked(executable, title, live) || feedback_deferred_;
-			rule_ratio = 0.0;
+			rule_ratio = scoped_ratio(settings_.scoped_rules, executable, title);
 			double usual = 0.0;
 			bool seen_before = false;
 			// The rule that says the most wins: "primehack" over "dolphin"
 			// for a window of Dolphin.exe titled PrimeHack.
-			size_t said = 0;
-			for (const auto &[text, ratio] : settings_.rules) {
-				if (!program.empty() && text.size() > said && program.find(text) != std::string::npos) {
-					rule_ratio = ratio;
-					said = text.size();
+			if (rule_ratio <= 0.0) {
+				size_t said = 0;
+				for (const auto &[text, ratio] : settings_.rules) {
+					if (!program.empty() && text.size() > said &&
+					    program.find(text) != std::string::npos) {
+						rule_ratio = ratio;
+						said = text.size();
+					}
 				}
 			}
 			if (rule_ratio <= 0.0 && settings_.known_programs && !executable.empty()) {
@@ -823,12 +980,19 @@ public:
 			*live = true;
 	}
 
-	bool command(const std::string &action, AutoFrameState &out)
+	bool command(const std::string &action, AutoFrameState &out, const std::string &remember_by = {})
 	{
 		if (action != "measure" && action != "remember" && action != "measure_and_remember") {
 			out.success = false;
 			out.status = "failed";
 			out.error = obs_module_text("Frame.Detection.InvalidCommand");
+			return false;
+		}
+		if (!remember_by.empty() && !valid_scope(remember_by)) {
+			out.success = false;
+			out.status = "failed";
+			out.remember_by = remember_by;
+			out.error = obs_module_text("Frame.Detection.InvalidScope");
 			return false;
 		}
 		std::string match, executable, title;
@@ -847,6 +1011,10 @@ public:
 			request_.complete = false;
 			request_.program = capture_title_.empty() ? capture_executable_ : capture_title_;
 			request_.executable = capture_executable_;
+			request_.remember_by = remember_by;
+			request_.remember_target = remember_by == "application" ? capture_executable_
+						   : remember_by == "window"    ? capture_title_
+										: std::string();
 			request_generation_ = capture_generation_;
 			request_deadline_ = std::chrono::steady_clock::now() + std::chrono::seconds(4);
 			request_save_ = action != "measure";
@@ -860,6 +1028,10 @@ public:
 				fail_request_locked("Frame.Detection.Disabled");
 			} else if (!live || !w || !h || standing) {
 				fail_request_locked("Frame.Detection.NoImage");
+			} else if (!remember_by.empty() && capture_executable_.empty()) {
+				fail_request_locked("Frame.Detection.NoApplication");
+			} else if (remember_by == "window" && capture_title_.empty()) {
+				fail_request_locked("Frame.Detection.NoWindow");
 			} else if (request_save_ && request_.program.empty()) {
 				fail_request_locked("Frame.Detection.NoProgram");
 			} else if (!request_measure_) {
@@ -966,8 +1138,15 @@ public:
 						apply = true;
 					}
 					if (request_save_) {
-						if (write_shape_rule(settings, request_.program,
-								     request_.aspect_ratio)) {
+						const bool saved =
+							request_.remember_by.empty()
+								? write_shape_rule(settings, request_.program,
+										   request_.aspect_ratio)
+								: write_scoped_shape(settings, request_.remember_by,
+										     request_.executable,
+										     request_.remember_target,
+										     request_.ratio);
+						if (saved) {
 							obs_data_set_int(settings, "trim", (int)Trim::Automatic);
 							request_.saved = true;
 							rule_editing_ = false;
@@ -2398,6 +2577,16 @@ obs_properties_t *get_properties(void *data)
 	pick_list_add(top, self ? self->source() : nullptr, saved);
 	if (obs_property_t *rules = obs_properties_get(top, "rules_text|tlist"))
 		set_tip(rules, obs_module_text("Frame.Rules.Tip"));
+	if (self) {
+		OBSDataAutoRelease settings = obs_source_get_settings(self->source());
+		refresh_scoped_labels(settings, read_scoped_rules(settings));
+	}
+	PickList scoped;
+	scoped.setting = "scoped_rules_view";
+	scoped.title = "Frame.ScopedRules";
+	pick_list_add(top, self ? self->source() : nullptr, scoped);
+	if (obs_property_t *rules = obs_properties_get(top, "scoped_rules_view|alist"))
+		set_tip(rules, obs_module_text("Frame.ScopedRules.Tip"));
 
 	// 5. Movement.
 	props = obs_properties_create();
@@ -2617,6 +2806,7 @@ bool frame_call(obs_source_t *filter, const char *method, calldata_t &cd, AutoFr
 	if (!id || strcmp(id, kAutoFrameId) != 0 ||
 	    !proc_handler_call(obs_source_get_proc_handler(filter), method, &cd)) {
 		state.success = false;
+		state.supports_remember_by = false;
 		state.status = "failed";
 		state.error = obs_module_text("Frame.Detection.InvalidFilter");
 		return false;
@@ -2628,11 +2818,14 @@ bool frame_call(obs_source_t *filter, const char *method, calldata_t &cd, AutoFr
 	state.width = (uint32_t)calldata_int(&cd, "width");
 	state.height = (uint32_t)calldata_int(&cd, "height");
 	state.saved = calldata_bool(&cd, "saved");
+	state.supports_remember_by = calldata_bool(&cd, "supports_remember_by");
 	for (const auto &[key, value] :
 	     std::initializer_list<std::pair<const char *, std::string *>>{{"status", &state.status},
 									   {"program", &state.program},
 									   {"executable", &state.executable},
 									   {"aspect_ratio", &state.aspect_ratio},
+									   {"remember_by", &state.remember_by},
+									   {"remember_target", &state.remember_target},
 									   {"error", &state.error}}) {
 		const char *text = calldata_string(&cd, key);
 		*value = text ? text : "";
@@ -2642,10 +2835,12 @@ bool frame_call(obs_source_t *filter, const char *method, calldata_t &cd, AutoFr
 
 } // namespace
 
-bool auto_frame_command(obs_source_t *filter, const std::string &action, AutoFrameState &state)
+bool auto_frame_command(obs_source_t *filter, const std::string &action, AutoFrameState &state,
+			const std::string &remember_by)
 {
 	calldata_t cd = {};
 	calldata_set_string(&cd, "action", action.c_str());
+	calldata_set_string(&cd, "save_scope", remember_by.c_str());
 	const bool success = frame_call(filter, "frame_command", cd, state);
 	calldata_free(&cd);
 	return success;
@@ -2734,6 +2929,7 @@ bool set_picture_shape_on(obs_source_t *source, const std::string &shape, bool u
 
 void register_auto_frame()
 {
+	pick_list_on_change_for(kAutoFrameId, scoped_list_changed);
 	// For the tests: the shape set by hand, as the remote request sets it.
 	proc_handler_add(
 		obs_get_proc_handler(),

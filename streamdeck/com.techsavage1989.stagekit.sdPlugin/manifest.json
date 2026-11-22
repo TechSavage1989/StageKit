@@ -1,6 +1,6 @@
 {
 	"Name": "StageKit",
-	"Version": "0.40.0.0",
+	"Version": "0.41.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
@@ -292,7 +292,7 @@
 			"Name": "Remember Aspect Ratio",
 			"UUID": "com.techsavage1989.stagekit.rememberratio",
 			"Icon": "imgs/actions/rememberratio/icon",
-			"Tooltip": "Saves the current detected aspect ratio for the captured window.",
+			"Tooltip": "Saves the current detected aspect ratio for the captured application or window name.",
 			"PropertyInspectorPath": "ui/rememberratio.html",
 			"Controllers": [
 				"Keypad"
@@ -308,7 +308,7 @@
 			"Name": "Measure and Remember",
 			"UUID": "com.techsavage1989.stagekit.measureandremember",
 			"Icon": "imgs/actions/measureandremember/icon",
-			"Tooltip": "Measures a fresh image, then saves that result for the same captured window.",
+			"Tooltip": "Measures a fresh image, then saves that result for the selected application or window name.",
 			"PropertyInspectorPath": "ui/measureandremember.html",
 			"Controllers": [
 				"Keypad"

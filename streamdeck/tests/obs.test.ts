@@ -292,7 +292,7 @@ before(async () => {
 					responseData: got.data,
 				});
 				if (d.requestType === "TriggerStudioModeTransition" && answerStudioTransition) answerStudioTransition(reply);
-				else if (d.requestType === "CallVendorRequest" && d.requestData?.requestType === "GetAutoFrameState" && holdAutoFrameState) holdAutoFrameState(reply);
+				else if (d.requestType === "CallVendorRequest" && d.requestData?.requestType === "GetAutoFrameState" && d.requestData.requestData?.requestId !== undefined && holdAutoFrameState) holdAutoFrameState(reply);
 				else reply();
 				if (got.ok && d.requestType === "SetSourceFilterEnabled")
 					send(5, { eventType: "SourceFilterEnableStateChanged", eventIntent: 32, eventData: d.requestData });
@@ -550,7 +550,13 @@ test("Auto Frame keys await completed vendor operations for their selected filte
 		const requestId = 100 + index;
 		const sourceName = "Captured window " + index;
 		const filterName = "Frame borders " + index;
-		const settings = { target: sourceName + TARGET_SEP + filterName, source: "Stale source", filter: "Stale filter" };
+		const rememberBy = feature.action === "remember" ? "application" : undefined;
+		const settings = { target: sourceName + TARGET_SEP + filterName, source: "Stale source", filter: "Stale filter", rememberBy };
+		const scope = feature.action === "measure" ? {} : {
+			rememberBy: rememberBy ?? "window",
+			rememberTarget: rememberBy === "application" ? "emulator.exe" : "Example game - Emulator",
+		};
+		const preflight = feature.action === "measure" ? [] : [{ success: false, status: "failed", supportsRememberBy: true }];
 		const feedback: string[] = [];
 		let title = "";
 		const key = {
@@ -559,10 +565,10 @@ test("Auto Frame keys await completed vendor operations for their selected filte
 			showOk: async () => { feedback.push("ok"); },
 			showAlert: async () => { feedback.push("alert"); },
 		};
-		const pending = { success: true, requestId, status: "pending", complete: false };
-		autoFrameReplies = [pending, pending, {
+		const pending = { success: true, requestId, status: "pending", complete: false, ...scope };
+		autoFrameReplies = [...preflight, pending, pending, {
 			success: true, requestId, status: feature.action === "measure" ? "measured" : "saved", complete: true,
-			saved: feature.action !== "measure", aspectRatio: "13:7", ratio: 13 / 7,
+			saved: feature.action !== "measure", aspectRatio: "13:7", ratio: 13 / 7, ...scope,
 		}];
 		const before = autoFrameRequests.length;
 		const accepted = new Promise<void>((resolve) => { autoFrameReceived = resolve; });
@@ -573,15 +579,18 @@ test("Auto Frame keys await completed vendor operations for their selected filte
 			assert.equal(title, feature.pendingTitle);
 			await action.onKeyDown({ action: key, payload: { settings } } as never);
 			settings.target = "Another capture" + TARGET_SEP + "Another filter";
+			settings.rememberBy = rememberBy === "application" ? "window" : "application";
 			await press;
 			assert.deepEqual(feedback, ["ok"]);
 			assert.equal(title, feature.title);
 			assert.deepEqual(autoFrameRequests.slice(before), [
-				{ requestType: "AutoFrameCommand", requestData: { sourceName, filterName, action: feature.action } },
+				...(feature.action === "measure" ? [] : [{ requestType: "GetAutoFrameState", requestData: { sourceName, filterName } }]),
+				{ requestType: "AutoFrameCommand", requestData: { sourceName, filterName, action: feature.action,
+					...(feature.action === "measure" ? {} : { rememberBy: scope.rememberBy }) } },
 				{ requestType: "GetAutoFrameState", requestData: { sourceName, filterName, requestId } },
 				{ requestType: "GetAutoFrameState", requestData: { sourceName, filterName, requestId } },
 			], "one command, then only that operation's status on the original selected filter");
-			autoFrameReplies = [{ success: false, requestId: requestId + 1, status: "failed", complete: true, error: "Capture changed during measurement" }];
+			autoFrameReplies = [...preflight, { success: false, requestId: requestId + 1, status: "failed", complete: true, error: "Capture changed during measurement", ...scope }];
 			await action.onKeyDown({ action: key, payload: { settings } } as never);
 			assert.deepEqual(feedback, ["ok", "alert"], "a native refusal cannot produce a success mark");
 			assert.equal(title, feature.title);
@@ -606,8 +615,10 @@ test("Auto Frame stops pending feedback when a status reply is withheld and igno
 		showAlert: async () => { feedback.push("alert"); },
 	};
 	autoFrameReplies = [
-		{ success: true, requestId: 401, status: "pending", complete: false },
-		{ success: true, requestId: 401, status: "saved", complete: true, saved: true, aspectRatio: "4:3", ratio: 4 / 3 },
+		{ success: true, supportsRememberBy: true },
+		{ success: true, requestId: 401, status: "pending", complete: false, rememberBy: "window", rememberTarget: "Example game" },
+		{ success: true, requestId: 401, status: "saved", complete: true, saved: true, aspectRatio: "4:3", ratio: 4 / 3,
+			rememberBy: "window", rememberTarget: "Example game" },
 	];
 	const before = autoFrameRequests.length;
 	const received = new Promise<void>((resolve) => { holdAutoFrameState = (reply) => { release = reply; resolve(); }; });
@@ -623,7 +634,7 @@ test("Auto Frame stops pending feedback when a status reply is withheld and igno
 		release = undefined;
 		await new Promise((resolve) => setTimeout(resolve, 20));
 		assert.deepEqual(feedback, ["alert"], "a saved result received after timeout cannot show success");
-		assert.deepEqual(autoFrameRequests.slice(before).map((r) => r.requestType), ["AutoFrameCommand", "GetAutoFrameState"]);
+		assert.deepEqual(autoFrameRequests.slice(before).map((r) => r.requestType), ["GetAutoFrameState", "AutoFrameCommand", "GetAutoFrameState"]);
 	} finally {
 		release?.();
 		holdAutoFrameState = undefined;

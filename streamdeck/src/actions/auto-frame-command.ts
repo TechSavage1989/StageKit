@@ -38,9 +38,13 @@ export class AutoFrameCommand extends SingletonAction<KeySettings> {
 		if (this.pending.has(ev.action.id)) return;
 		this.pending.add(ev.action.id);
 		const { source, filter } = targetOf(ev.payload.settings);
+		const rememberBy = ev.payload.settings.rememberBy;
 		try {
 			await ev.action.setTitle(this.feature.pendingTitle);
-			const result = await runAutoFrameCommand((name, data) => obs.stageKit(name, data), source, filter, this.feature.action);
+			const result = await runAutoFrameCommand((name, data) => obs.stageKit(name, data, {
+				// Capability is available even when the previous command failed.
+				preserveFailure: name === "GetAutoFrameState" && !("requestId" in data),
+			}), source, filter, this.feature.action, rememberBy);
 			if (result) await ev.action.showOk();
 			else await ev.action.showAlert();
 		} catch {

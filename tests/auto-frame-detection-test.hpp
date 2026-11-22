@@ -12,6 +12,8 @@
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFormLayout>
+#include <QFileInfo>
+#include <QGroupBox>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -130,11 +132,12 @@ inline void register_capture()
 }
 
 inline void aim(obs_source_t *source, const char *title, uint32_t picture_width, uint32_t picture_height,
-		uint32_t width = 480, uint32_t height = 270, bool hooked = true)
+		uint32_t width = 480, uint32_t height = 270, bool hooked = true,
+		const char *executable = "example-emulator.exe")
 {
 	OBSDataAutoRelease settings = obs_data_create();
 	obs_data_set_string(settings, "title", title);
-	obs_data_set_string(settings, "executable", "example-emulator.exe");
+	obs_data_set_string(settings, "executable", executable);
 	obs_data_set_string(settings, "window", "Stale Target:WindowClass:stale-target.exe");
 	obs_data_set_int(settings, "width", width);
 	obs_data_set_int(settings, "height", height);
@@ -238,7 +241,7 @@ inline OBSDataAutoRelease vendor(const char *name, obs_data_t *data)
 }
 
 inline OBSDataAutoRelease request(obs_source_t *source, obs_source_t *filter, const char *action = nullptr,
-				  long long request_id = 0)
+				  long long request_id = 0, const char *remember_by = nullptr)
 {
 	OBSDataAutoRelease data = obs_data_create();
 	obs_data_set_string(data, "sourceName", obs_source_get_name(source));
@@ -247,7 +250,329 @@ inline OBSDataAutoRelease request(obs_source_t *source, obs_source_t *filter, co
 		obs_data_set_string(data, "action", action);
 	if (request_id > 0)
 		obs_data_set_int(data, "requestId", request_id);
+	if (remember_by)
+		obs_data_set_string(data, "rememberBy", remember_by);
 	return vendor(action ? "AutoFrameCommand" : "GetAutoFrameState", data);
+}
+
+inline void check_scoped_rules(QStringList &issues)
+{
+	const qsizetype first_issue = issues.size();
+	auto expect = [&](bool value, const QString &message) {
+		if (!value)
+			issues.append(QStringLiteral("Auto Frame scopes: ") + message);
+	};
+	constexpr const char *app = "shared-emulator.exe";
+	constexpr const char *other_app = "other-emulator.exe";
+	const std::string first_title = "Scope, Demo; = \"Alpha\"\r\nLine #3A";
+	const std::string second_title = "Scope, Demo; = \"Beta\"\r\nLine #3A";
+	OBSDataAutoRelease frame_settings = obs_data_create();
+	obs_data_set_int(frame_settings, "frame_width", 480);
+	obs_data_set_int(frame_settings, "frame_height", 270);
+	obs_data_set_int(frame_settings, "glide_ms", 0);
+	obs_data_set_double(frame_settings, "trim_wait", 0.0);
+	obs_data_set_bool(frame_settings, "known_programs", false);
+	obs_data_set_string(frame_settings, "rules_text", "shared-emulator = 1:1");
+	OBSSourceAutoRelease source =
+		obs_source_create("stagekit_test_auto_frame_detection", "Scoped Auto Frame capture", nullptr, nullptr);
+	OBSSourceAutoRelease filter =
+		obs_source_create_private("stagekit_auto_frame", "Scoped Auto Frame", frame_settings);
+	if (!source || !filter) {
+		expect(false, "could not create the scoped capture fixture");
+		return;
+	}
+	obs_source_filter_add(source, filter);
+	obs_source_inc_showing(source);
+	const std::string legacy_rules = rules(filter);
+	auto count = [&] {
+		OBSDataAutoRelease settings = obs_source_get_settings(filter);
+		OBSDataArrayAutoRelease entries = obs_data_get_array(settings, "scoped_rules");
+		return obs_data_array_count(entries);
+	};
+	auto snapshot = [&] {
+		OBSDataAutoRelease settings = obs_source_get_settings(filter);
+		OBSDataArrayAutoRelease entries = obs_data_get_array(settings, "scoped_rules");
+		OBSDataAutoRelease saved = obs_data_create();
+		obs_data_set_array(saved, "scoped_rules", entries);
+		return std::string(obs_data_get_json(saved));
+	};
+	auto contains = [&](const char *scope, const char *executable, const std::string &title, double shape) {
+		OBSDataAutoRelease settings = obs_source_get_settings(filter);
+		OBSDataArrayAutoRelease entries = obs_data_get_array(settings, "scoped_rules");
+		for (size_t i = 0; i < obs_data_array_count(entries); ++i) {
+			OBSDataAutoRelease entry = obs_data_array_item(entries, i);
+			if (std::string(obs_data_get_string(entry, "scope")) == scope &&
+			    std::string(obs_data_get_string(entry, "executable")) == executable &&
+			    std::string(obs_data_get_string(entry, "title")) == title &&
+			    std::abs(obs_data_get_double(entry, "ratio") - shape) < 0.006)
+				return true;
+		}
+		return false;
+	};
+	auto complete = [&](OBSDataAutoRelease &state) {
+		const long long id = obs_data_get_int(state, "requestId");
+		return until(source, [&] {
+			state = request(source, filter, nullptr, id);
+			return obs_data_get_bool(state, "complete");
+		});
+	};
+	auto save = [&](const std::string &title, uint32_t width, uint32_t height, const char *scope,
+			const char *executable, bool separate_measure = false) {
+		aim(source, title.c_str(), width, height, 480, 270, true, executable);
+		if (separate_measure) {
+			auto measured = request(source, filter, "measure");
+			expect(complete(measured) && obs_data_get_bool(measured, "success") &&
+				       !obs_data_get_bool(measured, "saved") &&
+				       !obs_data_has_user_value(measured, "rememberBy"),
+			       "legacy Measure was altered by adding scoped saves");
+		}
+		auto state = request(source, filter, separate_measure ? "remember" : "measure_and_remember", 0, scope);
+		const std::string target = std::string(scope) == "window" ? title : executable;
+		auto context_is = [&] {
+			return obs_data_get_bool(state, "supportsRememberBy") &&
+			       std::string(obs_data_get_string(state, "rememberBy")) == scope &&
+			       std::string(obs_data_get_string(state, "rememberTarget")) == target;
+		};
+		expect(obs_data_get_bool(state, "success") && !obs_data_get_bool(state, "complete") && context_is(),
+		       QStringLiteral("scoped save did not start with its exact scope and target: %1")
+			       .arg(QString::fromUtf8(obs_data_get_json(state))));
+		const long long id = obs_data_get_int(state, "requestId");
+		bool context_kept = true;
+		expect(until(source,
+			     [&] {
+				     state = request(source, filter, nullptr, id);
+				     context_kept = context_kept && context_is();
+				     return obs_data_get_bool(state, "complete");
+			     }),
+		       "scoped save did not complete");
+		expect(context_kept && obs_data_get_bool(state, "success") && obs_data_get_bool(state, "saved") &&
+			       std::string(obs_data_get_string(state, "status")) == "saved" &&
+			       std::abs(obs_data_get_double(state, "ratio") - double(width) / height) < 0.006 &&
+			       rules(filter) == legacy_rules,
+		       QStringLiteral("scoped save changed identity, ratio or legacy rules: %1")
+			       .arg(QString::fromUtf8(obs_data_get_json(state))));
+	};
+	// Check the actual crop after rendering, as well as the saved-rule status.
+	auto applied = [&](const std::string &title, const char *executable, double shape) {
+		aim(source, title.c_str(), 480, 270, 480, 270, true, executable);
+		return until(source, [&] {
+			calldata_t call = {};
+			const bool got = proc_handler_call(obs_source_get_proc_handler(filter), "get_trim", &call);
+			const double x = calldata_float(&call, "x"), y = calldata_float(&call, "y");
+			calldata_free(&call);
+			auto *properties = obs_source_properties(filter);
+			auto *status = properties ? obs_properties_get(properties, "status") : nullptr;
+			const bool saved =
+				status &&
+				std::string(obs_property_description(status)).find("from your saved aspect ratios") !=
+					std::string::npos;
+			obs_properties_destroy(properties);
+			return got && saved && std::abs((480.0 - 2.0 * x) / (270.0 - 2.0 * y) - shape) < 0.006;
+		});
+	};
+	auto idle = request(source, filter);
+	expect(obs_data_get_bool(idle, "success") && obs_data_get_bool(idle, "supportsRememberBy") &&
+		       std::string(obs_data_get_string(idle, "status")) == "idle",
+	       "a new valid filter did not advertise scoped-save support");
+	save("Application default", 360, 270, "application", app, true);
+	save(first_title, 300, 270, "window", app);
+	save(second_title, 480, 270, "window", app);
+	save(first_title, 320, 256, "application", other_app);
+	expect(count() == 4 && contains("window", app, first_title, 10.0 / 9.0) &&
+		       contains("window", app, second_title, 16.0 / 9.0),
+	       "delimiter-bearing window titles were truncated, collided, or lost their application identity");
+	expect(applied(first_title, app, 10.0 / 9.0) && applied(second_title, app, 16.0 / 9.0) &&
+		       applied("Unknown game", app, 4.0 / 3.0),
+	       "two window rules did not override their application default independently");
+	expect(applied(first_title, other_app, 5.0 / 4.0),
+	       "a window rule leaked into a different application with the exact same title");
+	// Saving the shared application's default last must not replace either game.
+	save("Application default changed", 360, 240, "application", app);
+	expect(count() == 4 && applied(first_title, app, 10.0 / 9.0) && applied(second_title, app, 16.0 / 9.0) &&
+		       applied("Unknown game", app, 3.0 / 2.0) && applied(first_title, other_app, 5.0 / 4.0),
+	       "saving an application default later overrode a window or another application's default");
+	expect(applied("Unknown game", "SHARED-EMULATOR.EXE", 3.0 / 2.0),
+	       "application identity was not case-insensitive");
+	expect(applied("Unknown game", "prefix-shared-emulator.exe", 1.0),
+	       "an exact application rule matched an executable substring instead of using the legacy fallback");
+	const std::string before_failures = snapshot();
+	for (int invalid_scope = 0; invalid_scope < 4; ++invalid_scope) {
+		OBSDataAutoRelease data = obs_data_create();
+		obs_data_set_string(data, "sourceName", obs_source_get_name(source));
+		obs_data_set_string(data, "filterName", obs_source_get_name(filter));
+		obs_data_set_string(data, "action", "measure_and_remember");
+		if (invalid_scope == 0)
+			obs_data_set_string(data, "rememberBy", "");
+		else if (invalid_scope == 1)
+			obs_data_set_string(data, "rememberBy", "process");
+		else if (invalid_scope == 2)
+			obs_data_set_int(data, "rememberBy", 1);
+		else
+			obs_data_set_bool(data, "rememberBy", true);
+		auto invalid = vendor("AutoFrameCommand", data);
+		expect(!obs_data_get_bool(invalid, "success") &&
+			       std::string(obs_data_get_string(invalid, "error")).find("rememberBy") !=
+				       std::string::npos &&
+			       snapshot() == before_failures,
+		       QStringLiteral("malformed save scope %1 was accepted").arg(invalid_scope));
+	}
+	for (const char *scope : {"application", "window"}) {
+		aim(source, first_title.c_str(), 300, 270, 480, 270, true, "");
+		auto missing = request(source, filter, "measure_and_remember", 0, scope);
+		expect(!obs_data_get_bool(missing, "success") && obs_data_get_bool(missing, "complete") &&
+			       !obs_data_get_bool(missing, "saved") &&
+			       obs_data_get_bool(missing, "supportsRememberBy") &&
+			       std::string(obs_data_get_string(missing, "rememberBy")) == scope &&
+			       snapshot() == before_failures,
+		       "a scoped save fell back to a window title without an application identity");
+	}
+	aim(source, "", 300, 270, 480, 270, true, app);
+	auto no_title = request(source, filter, "measure_and_remember", 0, "window");
+	expect(!obs_data_get_bool(no_title, "success") && obs_data_get_bool(no_title, "complete") &&
+		       !obs_data_get_bool(no_title, "saved") && !*obs_data_get_string(no_title, "rememberTarget") &&
+		       snapshot() == before_failures,
+	       "a Window save silently fell back to the application's name");
+	auto recoverable = request(source, filter);
+	expect(!obs_data_get_bool(recoverable, "success") && obs_data_get_bool(recoverable, "supportsRememberBy"),
+	       "a failed previous command hid the valid filter's scoped-save capability");
+	for (const char *scope : {"application", "window"}) {
+		obs_enter_graphics();
+		aim(source, "Scoped change first", 300, 270, 480, 270, true, app);
+		auto changed = request(source, filter, "measure_and_remember", 0, scope);
+		aim(source, "Scoped change second", 480, 270, 480, 270, true, app);
+		obs_leave_graphics();
+		expect(complete(changed) && !obs_data_get_bool(changed, "success") &&
+			       !obs_data_get_bool(changed, "saved") &&
+			       std::string(obs_data_get_string(changed, "rememberBy")) == scope &&
+			       std::string(obs_data_get_string(changed, "rememberTarget")) ==
+				       (std::string(scope) == "window" ? "Scoped change first" : app) &&
+			       snapshot() == before_failures,
+		       "changing games within one executable saved a stale scoped measurement");
+	}
+	// Round-trip the actual OBS settings through JSON, then recreate the filter.
+	auto reload = [&] {
+		OBSDataAutoRelease settings = obs_source_get_settings(filter);
+		OBSDataAutoRelease loaded = obs_data_create_from_json(obs_data_get_json(settings));
+		obs_source_filter_remove(source, filter);
+		filter = obs_source_create_private("stagekit_auto_frame", "Scoped Auto Frame", loaded);
+		if (filter)
+			obs_source_filter_add(source, filter);
+		return filter != nullptr;
+	};
+	if (!reload()) {
+		expect(false, "could not reload the scoped filter settings");
+		obs_source_dec_showing(source);
+		obs_source_remove(source);
+		return;
+	}
+	expect(snapshot() == before_failures && applied(first_title, app, 10.0 / 9.0) &&
+		       applied(second_title, app, 16.0 / 9.0) && applied("Unknown game", app, 3.0 / 2.0) &&
+		       applied(first_title, other_app, 5.0 / 4.0),
+	       "saved window or application rules changed after the filter was recreated");
+	obs_frontend_open_source_filters(source);
+	QPointer<QDialog> dialog;
+	const bool opened = until(source, [&] {
+		for (QWidget *widget : QApplication::topLevelWidgets()) {
+			auto *candidate = qobject_cast<QDialog *>(widget);
+			if (candidate && candidate->isVisible() &&
+			    candidate->windowTitle().contains("Scoped Auto Frame capture"))
+				dialog = candidate;
+		}
+		return dialog && choice(dialog, "Program or window");
+	});
+	expect(opened, "the reloaded scoped filter did not open its actual Filters window");
+	auto saved_button = [&](const QString &text) -> QPushButton * {
+		if (dialog)
+			for (auto *row : dialog->findChildren<QPushButton *>())
+				if (row->isVisible() && row->text().contains(text))
+					return row;
+		return nullptr;
+	};
+	if (opened) {
+		expect(until(source,
+			     [&] {
+				     return saved_button("Window: \"Scope, Demo; = \\\"Alpha\\\"") &&
+					    saved_button("Window: \"Scope, Demo; = \\\"Beta\\\"") &&
+					    saved_button("Application: \"shared-emulator.exe\"") &&
+					    saved_button("Application: \"other-emulator.exe\"");
+			     }),
+		       "scoped application and full window identities were not visible as removable rows");
+		if (auto *remove = saved_button("Window: \"Scope, Demo; = \\\"Alpha\\\""))
+			remove->click();
+		expect(until(source, [&] { return count() == 3; }) && applied(first_title, app, 3.0 / 2.0) &&
+			       applied(second_title, app, 16.0 / 9.0),
+		       "removing a window row did not reveal its application fallback or changed another window");
+		if (auto *remove = saved_button("Application: \"shared-emulator.exe\""))
+			remove->click();
+		expect(until(source, [&] { return count() == 2; }) && applied("Unknown game", app, 1.0) &&
+			       applied(second_title, app, 16.0 / 9.0) && applied(first_title, other_app, 5.0 / 4.0),
+		       "removing an application row changed its window override or another application's default");
+		if (auto *remove = saved_button("Window: \"Scope, Demo; = \\\"Beta\\\""))
+			remove->click();
+		expect(until(source, [&] { return count() == 1; }),
+		       "removing the remaining window row changed another application's rule");
+		if (auto *remove = saved_button("Application: \"other-emulator.exe\""))
+			remove->click();
+		expect(until(source, [&] { return count() == 0; }) && rules(filter) == legacy_rules,
+		       "removing scoped rows deleted legacy rules or left hidden scoped entries");
+		dialog->close();
+		until(nullptr, [&] { return !dialog || !dialog->isVisible(); });
+	}
+	if (!reload()) {
+		expect(false, "could not reload after deleting scoped rules");
+		obs_source_dec_showing(source);
+		obs_source_remove(source);
+		return;
+	}
+	expect(count() == 0 && applied(first_title, app, 1.0), "deleted scoped rules returned after reload");
+	// Leave representative application and window rows in a real screenshot.
+	save("Application default", 360, 270, "application", app);
+	save("Portrait Demo", 300, 270, "window", app);
+	save("Wide Demo", 480, 270, "window", app);
+	const QString capture = qEnvironmentVariable("STAGEKIT_AUTO_FRAME_CAPTURE");
+	if (!capture.isEmpty()) {
+		obs_frontend_open_source_filters(source);
+		expect(until(source,
+			     [&] {
+				     for (QWidget *widget : QApplication::topLevelWidgets()) {
+					     auto *candidate = qobject_cast<QDialog *>(widget);
+					     if (candidate && candidate->isVisible() &&
+						 candidate->windowTitle().contains("Scoped Auto Frame capture"))
+						     dialog = candidate;
+				     }
+				     return saved_button("Window: \"Wide Demo\"") &&
+					    saved_button("Window: \"Portrait Demo\"") &&
+					    saved_button("Application: \"shared-emulator.exe\"");
+			     }),
+		       "the representative scoped rules were not visible for the Filters capture");
+		if (dialog) {
+			dialog->resize(1000, 960);
+			for (auto *splitter : dialog->findChildren<QSplitter *>())
+				if (splitter->orientation() == Qt::Vertical)
+					splitter->setSizes({150, 720});
+			int frames = 0;
+			until(source, [&] { return ++frames >= 3; });
+			for (auto *group : dialog->findChildren<QGroupBox *>())
+				if (group->title() == "Saved app/window ratios")
+					for (auto *area : dialog->findChildren<QScrollArea *>())
+						if (area->widget() && area->widget()->isAncestorOf(group))
+							area->ensureWidgetVisible(group, 20, 20);
+			QCoreApplication::processEvents();
+			expect(dialog->grab().save(QFileInfo(capture).absolutePath() + "/auto-frame-scopes.png"),
+			       "could not capture the actual application/window rule controls");
+		}
+	}
+	if (dialog) {
+		dialog->close();
+		until(nullptr, [&] { return !dialog || !dialog->isVisible(); });
+	}
+	obs_source_dec_showing(source);
+	obs_source_filter_remove(source, filter);
+	obs_source_remove(source);
+	QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+	if (issues.size() == first_issue)
+		blog(LOG_INFO,
+		     "[Auto Frame detection test] PASS: explicit application/window scope, same-app window precedence, cross-app title isolation, delimiter-safe persistence, actual row deletion and rejection safeguards");
 }
 
 inline void check(QStringList &issues)
@@ -728,6 +1053,7 @@ inline void check(QStringList &issues)
 		obs_source_remove(fallback_source);
 		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 	}
+	check_scoped_rules(issues);
 	if (issues.size() == first_issue)
 		blog(LOG_INFO,
 		     "[Auto Frame detection test] PASS: live draft and feedback, manual edits, real measure/remember/combined requests, custom ratio and stale/empty capture rejection");
