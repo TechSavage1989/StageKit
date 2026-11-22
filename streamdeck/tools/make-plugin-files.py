@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.41.0.0"
+VERSION = "0.42.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -665,7 +665,7 @@ def main():
          one_list("Timer", "getTimers", "target", "Choose a timer", "The private timer or a named Countdown Timer source in this OBS collection.")
          + options("On press", "timerPress", "toggle", operations, "Cycle advances the selected mark when tapped. Hold for 0.8 seconds to start or stop.")
          + options("Clock shortcut", "timerMark", "next", marks, "Set the timer to the next occurrence on the OBS computer's clock.")
-         + '<sdpi-item id="cycleHelp" label="Cycle" title="A tap changes the deadline. A hold starts or stops without advancing the mark."><span>Tap to select :15, :30, :45 or :00. Hold for 0.8 seconds to start or stop.</span></sdpi-item>\n',
+         + '<sdpi-item id="cycleHelp" label="Cycle" title="The key shows the selected mark and its deadline on the OBS computer. A tap changes the deadline. A hold starts or stops without advancing the mark."><span>Tap to select :15, :30, :45 or :00. The key shows the mark and the time it is set to. Hold for 0.8 seconds to start or stop.</span></sdpi-item>\n',
          script="""<script>
             (() => {
                 const select = document.querySelector('[setting="timerPress"]');

@@ -83,6 +83,16 @@ const WAYS: Record<string, string> = {
 	centre: "Centre",
 };
 
+/** The selected cycle mark and its saved deadline, formatted by the OBS computer. */
+export function timerCycleTitle(state?: Record<string, unknown>): string {
+	const minute = state?.mark;
+	const mark = typeof minute === "number" && [15, 30, 45, 0].includes(minute)
+		? ":" + String(minute).padStart(2, "0") : "Cycle";
+	// Older StageKit versions only return the mark. Never guess the hour using the deck's clock.
+	const deadline = typeof state?.deadlineTime === "string" ? state.deadlineTime.trim() : "";
+	return deadline ? `${mark}\n${deadline}` : mark;
+}
+
 /** "On" or "Off" under a name, for a key that only switches one way. */
 function pressed(name: string, press: string | undefined): string {
 	return press === "on" ? `${name}\nOn` : press === "off" ? `${name}\nOff` : name;

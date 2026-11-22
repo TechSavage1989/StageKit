@@ -16,6 +16,7 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLocale>
 #include <QPointer>
 #include <QPushButton>
 #include <QResizeEvent>
@@ -489,6 +490,21 @@ void timer_vendor_control(obs_data_t *request, obs_data_t *response, void *)
 			obs_data_set_bool(response, "running",
 					  obs_source_media_get_state(timer) == OBS_MEDIA_STATE_PLAYING);
 			obs_data_set_string(response, "text", timer_readout(timer).toUtf8().constData());
+			const auto options = TimerOptions::read(settings);
+			const auto deadline = QDateTime::fromMSecsSinceEpoch(options.deadline);
+			if (options.mode == TimerMode::Deadline && options.deadline > 0 && deadline.isValid()) {
+				const QLocale locale = QLocale::system();
+				QString format = locale.timeFormat(QLocale::ShortFormat);
+				// Some system formats, including the C locale, retain seconds.
+				// Keep this key's clock compact while preserving its 12/24-hour choice.
+				if (format.contains(QLatin1Char('s')))
+					format = format.contains(QStringLiteral("AP"), Qt::CaseInsensitive)
+							 ? QStringLiteral("h:mm AP")
+							 : QStringLiteral("HH:mm");
+				obs_data_set_int(response, "deadlineMs", options.deadline);
+				obs_data_set_string(response, "deadlineTime",
+						    locale.toString(deadline.time(), format).toUtf8().constData());
+			}
 		} else {
 			obs_data_set_string(response, "error",
 					    "Choose an available StageKit timer and clock shortcut.");

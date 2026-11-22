@@ -278,8 +278,8 @@ public:
 		const QColor color(rgba & 255, (rgba >> 8) & 255, (rgba >> 16) & 255, (rgba >> 24) & 255);
 		const auto next = TimerOptions::read(s);
 		std::unique_lock lock(mutex_);
-		const bool reset = !initialized_ || !clock_.settings.same_timing(next);
-		const bool stopped_playback = reset && clock_.state == OBS_MEDIA_STATE_PLAYING;
+		const bool timing_changed = initialized_ && !clock_.settings.same_timing(next);
+		const bool reset = !initialized_ || timing_changed;
 		if (reset || next.scene != clock_.settings.scene || next.switch_scene != clock_.settings.switch_scene)
 			++*generation_;
 		if (!reset && next.steady != clock_.settings.steady && next.mode != TimerMode::Deadline &&
@@ -311,7 +311,7 @@ public:
 		dirty_ = true;
 		if (reset || font_changed || format_changed || box_changed)
 			measure_locked();
-		if (stopped_playback) {
+		if (timing_changed) {
 			lock.unlock();
 			vendor_emit_timer_changed(source_);
 		}

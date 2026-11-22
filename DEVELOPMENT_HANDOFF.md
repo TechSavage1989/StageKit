@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | feat/autoframe-ratio-scope, based on beta248. Release notes in docs/releases/0.1.0-beta249.md, numbered after checking fresh main. |
+| Working branch | fix/timer-cycle-deadline, based on beta249. Release notes in docs/releases/0.1.0-beta250.md, numbered after checking fresh main. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -22,6 +22,16 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
+
+## Countdown Timer cycle key deadline
+
+Companion 0.42.0.0 shows the selected cycle mark and its saved clock deadline on separate lines, for example :45 above 9:45 PM. TimerControl adds deadlineMs and deadlineTime for valid date-and-time timers. OBS formats the saved deadline in its local 12-hour or 24-hour clock format without seconds. The companion uses that text directly, including after a hold selects a fresh occurrence, and falls back to the existing mark-only label with older native plugins. Switching to a duration omits the date fields. Existing action IDs, selected marks, tap/hold behavior, palettes, layouts and custom-title override remain compatible.
+
+Timing edits notify connected keys while idle or paused as well as while running. Companion regression coverage exercises all four marks, midnight, host formatting, hold response updates, initial appearance, target changes, shared timer events, reconnects, older-server fallback and unchanged titles for other operations. Native regression coverage checks the actual vendor response and timing notifications. Actual Stream Deck UI and hardware are unavailable here; the native title cannot be captured honestly in this environment. Existing OBS screenshots and text-free key artwork remain valid.
+
+All 132 companion tests, TypeScript/Rollup build, Elgato validation and package creation passed locally. The generated manifest was restored after packing. Guide labels, repository layout, whitespace and release-order checks passed. Native Linux and Windows OBS 32.2.2 execution and all platform builds remain required merge gates.
+
+The frontend fixture waits for OBS's media_stopped signal after the earlier Fit to Space cleanup before counting deadline-change events. OBS queues media actions, so checking only the stopped state can leave that command pending and count its later notification against a new timing edit. The exactly-one notification assertion remains in place.
 
 ## Auto Frame application and window rules
 
