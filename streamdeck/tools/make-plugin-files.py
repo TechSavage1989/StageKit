@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.37.0.0"
+VERSION = "0.38.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -742,6 +742,10 @@ def main():
     page("obscamera", "StageKit Virtual Camera", PRESS)
     add("obscamera", "Virtual Camera", "Starts or stops the OBS virtual camera.", "obscamera", "imgs/actions/obscamera/icon", two("obscamera"))
 
+    key_pictures("resetstats", "options/reset-stats", None)
+    page("resetstats", "StageKit Reset Stats", "")
+    add("resetstats", "Reset Stats", "Resets OBS Stats, the same as pressing Reset in the OBS Stats window.", "resetstats", "imgs/actions/resetstats/icon", one("resetstats"))
+
     key_pictures("movesourceport", "options/camera-centre", None)
     page("movesourceport", "StageKit Move Source in Scene", target_list("movesourceport"))
     add("movesourceport", "Move Source in Scene", "Starts a StageKit Move Source scene filter.", "movesourceport", "imgs/actions/movesourceport/icon", one("movesourceport"))
@@ -765,7 +769,7 @@ def main():
         ("sendto", "placeitem", "matchitem", "layout", "fititem", "scenefit", "fitoverlap", "slide", "tool", "option"),
         ("blur", "sceneblur", "blurall", "shadow", "sceneshadow", "corners", "scenecorners", "zoom"),
         ("stream", "record", "timer"),
-        ("obsfilter", "obssource", "obsmute", "obsstudio", "obscamera", "movesourceport", "moveswapport"), ("switch", "move"),
+        ("obsfilter", "obssource", "obsmute", "obsstudio", "obscamera", "resetstats", "movesourceport", "moveswapport"), ("switch", "move"),
     ]
     rank = {key: index for index, key in enumerate(key for group in groups for key in group)}
     actions.sort(key=lambda item: rank[item["UUID"].rsplit(".", 1)[1]])

@@ -51,6 +51,8 @@ function standbyAndShow(request: string, data: Record<string, unknown>): Record<
 
 const pressed: string[] = [];
 const hotkeyContexts: Array<string | undefined> = [];
+const obsRequests: Array<{ requestType: string; requestData: Record<string, unknown> }> = [];
+let refusedHotkey = "";
 let blurred = false;
 let programScene = "Game Scene";
 let previewScene = "";
@@ -142,6 +144,7 @@ function sceneBlur(request: string, data: Record<string, unknown>): Record<strin
 }
 
 function answer(requestType: string, data: Record<string, unknown> = {}): { ok: boolean; data?: unknown } {
+	obsRequests.push({ requestType, requestData: data });
 	const list = filters[String(data.sourceName)];
 	switch (requestType) {
 		case "GetInputList":
@@ -219,6 +222,7 @@ function answer(requestType: string, data: Record<string, unknown> = {}): { ok: 
 			previewScene = String(data.sceneName);
 			return { ok: true };
 		case "TriggerHotkeyByName":
+			if (data.hotkeyName === refusedHotkey) return { ok: false };
 			hotkeyContexts.push(typeof data.contextName === "string" ? data.contextName : undefined);
 			pressed.push(String(data.hotkeyName));
 			return { ok: true };
@@ -311,6 +315,39 @@ after(() => {
 	setTimeout(() => process.exit(process.exitCode ?? 0), 50);
 });
 
+test("Reset Stats keeps its image choices offline and alerts without sending a request", async () => {
+	const { ResetStats } = await import("../src/actions/reset-stats.ts");
+	const { COLOURS } = await import("../src/pictures.ts");
+	const { decodePng } = await import("../src/compose.ts");
+	const action = new ResetStats();
+	let image = "", title = "";
+	const feedback: string[] = [];
+	const key = {
+		isKey: () => true,
+		setImage: async (value: string) => { image = value; },
+		setTitle: async (value: string) => { title = value; },
+		showOk: async () => { feedback.push("ok"); },
+		showAlert: async () => { feedback.push("alert"); },
+	};
+	assert.equal(obs.isConnected, false);
+	const before = obsRequests.length;
+	await action.onWillAppear({ action: key, payload: { settings: {} } } as never);
+	assert.equal(image, "imgs/pack/mono/options/reset-stats.png");
+	assert.equal(title, "Reset\nStats");
+	for (const palette of COLOURS) {
+		await action.onDidReceiveSettings({ action: key, payload: { settings: { palette } } } as never);
+		assert.equal(image, `imgs/pack/${palette}/options/reset-stats.png`);
+	}
+	await action.onDidReceiveSettings({ action: key, payload: { settings: { palette: "neon", sourceType: "camera", layout: "chat" } } } as never);
+	assert.match(image, /^data:image\/png;base64,/);
+	const raster = decodePng(Buffer.from(image.slice("data:image/png;base64,".length), "base64"));
+	assert.deepEqual([raster.width, raster.height], [144, 144]);
+	assert.equal(title, "Reset\nStats", "the image choice does not change what the key does");
+	await action.onKeyDown({ action: key, payload: { settings: {} } } as never);
+	assert.deepEqual(feedback, ["alert"]);
+	assert.equal(obsRequests.length, before, "appearance and a disconnected press send no OBS requests");
+});
+
 test("it connects, lists only StageKit's filters, switches one and hears of it", async () => {
 	assert.equal(obs.isConnected, false);
 	assert.deepEqual(await obs.stageKitFilters(), [], "nothing while there is no OBS");
@@ -356,6 +393,34 @@ test("it connects, lists only StageKit's filters, switches one and hears of it",
 	);
 	assert.deepEqual(await obs.transitionKinds(), ["cut_transition", "fade_transition", "swipe_transition"]);
 	assert.equal(await obs.stageKit("NoSuchRequest"), undefined, "and one it refuses comes back as nothing");
+});
+
+test("Reset Stats sends exactly one global OBS hotkey per press and reports a refused request", async () => {
+	const { ResetStats } = await import("../src/actions/reset-stats.ts");
+	const action = new ResetStats();
+	const feedback: string[] = [];
+	const key = {
+		showOk: async () => { feedback.push("ok"); },
+		showAlert: async () => { feedback.push("alert"); },
+	};
+	const before = obsRequests.length;
+	const pressedBefore = pressed.length;
+	const press = () => action.onKeyDown({ action: key, payload: { settings: { source: "camera", target: "unused", press: "off" } } } as never);
+	await press();
+	await press();
+	assert.deepEqual(feedback, ["ok", "ok"]);
+	assert.deepEqual(pressed.slice(pressedBefore), ["OBSBasic.ResetStats", "OBSBasic.ResetStats"]);
+	assert.deepEqual(hotkeyContexts.slice(-2), [undefined, undefined]);
+	refusedHotkey = "OBSBasic.ResetStats";
+	try {
+		await press();
+	} finally {
+		refusedHotkey = "";
+	}
+	assert.deepEqual(feedback, ["ok", "ok", "alert"], "a rejected reset does not report success");
+	assert.deepEqual(obsRequests.slice(before), Array.from({ length: 3 }, () => ({
+		requestType: "TriggerHotkeyByName", requestData: { hotkeyName: "OBSBasic.ResetStats" },
+	})), "one global request per press, with no stream, recording, timer or source commands");
 });
 
 test("manual capture addresses the chosen parent and offers only that filter's controls", async () => {

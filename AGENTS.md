@@ -54,6 +54,10 @@ action UUIDs registered even when hidden from the list. Group controls in the pr
 inspector by what the key does and by the image it displays. Manual capture steps are
 filter-specific. The hotkey context is the filter's parent source or scene in OBS.
 
+The Reset Stats key calls OBS's global OBSBasic.ResetStats hotkey through TriggerHotkeyByName with no contextName. Do not replace it with output restarts, keyboard injection or StageKit's internal timing reset. OBS creates the Stats widget even while its dock is hidden. The key's success mark means the request was accepted; disconnected or rejected requests show an alert. Keep its single-state action and the shared image controls.
+
+After npm run pack, rerun python3 tools/make-plugin-files.py from streamdeck before committing. Elgato's pack command rewrites manifest.json without its generated final newline, even when no version override is supplied. Commit the generator's output so the reproducibility check stays clean.
+
 ## Additional materials and data patterns
 
 Append new patterns to both the Ambient Background and outline registries. Outline design 34

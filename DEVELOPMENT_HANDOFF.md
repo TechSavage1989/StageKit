@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | fix/timer-visible-pixels. Release notes in docs/releases/0.1.0-beta244.md. |
+| Working branch | feat/streamdeck-reset-stats, based on beta244. Release notes in docs/releases/0.1.0-beta245.md. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -22,6 +22,12 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
+
+## Stream Deck Reset Stats
+
+The dedicated Reset Stats action uses OBS's existing global OBSBasic.ResetStats hotkey through obs-websocket TriggerHotkeyByName. It uses the shared connection and requires no keyboard binding, target source or StageKit vendor request. OBS creates its Stats dock at startup, so its own reset also reaches the hidden dock. The action reports acceptance with a tick and failures with an alert. Its image follows the existing Source type, Image layout and Palette controls. The Stream Deck companion version is 0.38.0.0.
+
+The Stream Deck tests cover the exact global hotkey request and feedback. The frontend fixture exercises OBS's actual request handler and Stats reset with the dock shown and hidden. All 100 Stream Deck tests, TypeScript/Rollup build, Elgato validation and package creation passed locally. Native frontend verification runs in CI. The frontend fixture uses idle outputs; a physical Stream Deck is unavailable in this environment.
 
 ## Scene rendering performance
 

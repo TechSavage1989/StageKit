@@ -55,6 +55,7 @@
 		"record-off",
 		"record-on",
 		"record-paused",
+		"reset-stats",
 		"same-height",
 		"same-size",
 		"same-width",

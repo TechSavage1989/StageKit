@@ -1,6 +1,6 @@
 {
 	"Name": "StageKit",
-	"Version": "0.37.0.0",
+	"Version": "0.38.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
@@ -920,6 +920,22 @@
 				}
 			],
 			"DisableAutomaticStates": true
+		},
+		{
+			"Name": "Reset Stats",
+			"UUID": "com.techsavage1989.stagekit.resetstats",
+			"Icon": "imgs/actions/resetstats/icon",
+			"Tooltip": "Resets OBS Stats, the same as pressing Reset in the OBS Stats window.",
+			"PropertyInspectorPath": "ui/resetstats.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/resetstats/on",
+					"TitleAlignment": "bottom"
+				}
+			]
 		},
 		{
 			"Name": "Move Source in Scene",

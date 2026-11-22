@@ -178,6 +178,10 @@ export function blurAllTitle(press: string | undefined): string {
 	return pressed("Blur All", press);
 }
 
+export function resetStatsTitle(): string {
+	return "Reset\nStats";
+}
+
 /** A Scene Blur key: "Scene Blur", and "On" or "Off" under it for a key that only switches one way. */
 export function sceneBlurTitle(press: string | undefined): string {
 	return pressed(KINDS.stagekit_scene_blur, press);

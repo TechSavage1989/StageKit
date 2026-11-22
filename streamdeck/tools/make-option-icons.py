@@ -97,6 +97,9 @@ DRAWINGS = {
     "toggle": arrow(14, 12, 50, 12) + arrow(50, 24, 14, 24),
     "hide": EYE + [("line", 16, 32, 48, 4)],
     "clear": WINDOW + [("line", 40, 12, 56, 28), ("line", 56, 12, 40, 28)],
+    # OBS Stats: rising bars and a circular reset arrow.
+    "reset-stats": [("box", 5, 22, 11, 31), ("box", 15, 14, 21, 31), ("box", 25, 6, 31, 31),
+                    ("arc", 48, 19, 13, -60, 235), ("tri", 40.5, 8.4, 33, 10, 39, 16)],
     # Filters with no picture in the pack (each also in an "off" look)
     "zoom": [("ring", 27, 16, 11), ("line", 35, 24, 46, 33), ("line", 22, 16, 32, 16), ("line", 27, 11, 27, 21)],
     "fit": [("frame", 6, 3, 58, 33), ("box", 20, 9, 44, 27)],
