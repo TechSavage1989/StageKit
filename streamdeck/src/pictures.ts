@@ -583,6 +583,13 @@ export function toolShown(chosen: string | undefined, tool: string | undefined, 
 	return { picture: toolPicture(chosen, tool) };
 }
 
+/** A Reset Stats key: its chosen type with the reset symbol, else the statistics and reset drawing. */
+export function resetStatsShown(chosen: string | undefined, sourceType?: unknown): Shown {
+	const typed = typedPicture(sourceType);
+	if (typed) return { picture: typed, badge: "reset-stats" };
+	return { picture: BY_ID.get(chosen ?? "") ?? BY_ID.get("options/reset-stats")! };
+}
+
 /** A Dock Option key: its Source type with its option, else the option. */
 export function optionShown(chosen: string | undefined, option: string | undefined, sourceType?: unknown): Shown {
 	const typed = typedPicture(sourceType);

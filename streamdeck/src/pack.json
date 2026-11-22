@@ -1864,6 +1864,13 @@
 			"off": "options/clear"
 		},
 		{
+			"id": "options/reset-stats",
+			"group": "options",
+			"label": "reset stats",
+			"on": "options/reset-stats",
+			"off": "options/reset-stats"
+		},
+		{
 			"id": "options/zoom",
 			"group": "options",
 			"label": "zoom",

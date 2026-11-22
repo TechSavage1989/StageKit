@@ -10,7 +10,7 @@ const base = "com.techsavage1989.stagekit";
 
 test("every feature has its own key in the manifest, with a settings page and pictures that exist", () => {
 	const wanted = [...features.switches, ...features.moves, ...features.scenes, ...features.sceneStarts].map((f) => `${base}.${f.key}`);
-	for (const extra of [features.timer.key, "shape", "hook", "appswitch", "fitoverlap", "scene", "mode", "tool", "blurall", "option", "slide", "stream", "record", "obsfilter", "obssource", "obsmute", "obsstudio", "obscamera", "switch", "move"]) wanted.push(`${base}.${extra}`);
+	for (const extra of [features.timer.key, "shape", "hook", "appswitch", "fitoverlap", "scene", "mode", "tool", "blurall", "option", "slide", "stream", "record", "obsfilter", "obssource", "obsmute", "obsstudio", "obscamera", "resetstats", "switch", "move"]) wanted.push(`${base}.${extra}`);
 	const have = manifest.Actions.map((a: { UUID: string }) => a.UUID);
 	assert.deepEqual([...have].sort(), [...wanted].sort());
 	for (const action of manifest.Actions) {
@@ -18,6 +18,18 @@ test("every feature has its own key in the manifest, with a settings page and pi
 		assert.ok(existsSync(new URL(`${action.Icon}.png`, plugin)), action.Icon);
 		for (const state of action.States) assert.ok(existsSync(new URL(`${state.Image}.png`, plugin)), state.Image);
 	}
+});
+
+test("Reset Stats is a single-press global key with the shared image and connection controls", () => {
+	const action = manifest.Actions.find((a: { UUID: string }) => a.UUID === `${base}.resetstats`);
+	assert.equal(action.Name, "Reset Stats");
+	assert.deepEqual(action.Controllers, ["Keypad"]);
+	assert.equal(action.States.length, 1);
+	const page = readFileSync(new URL(action.PropertyInspectorPath, plugin), "utf8");
+	assert.match(page, /OBS Stats/);
+	assert.match(page, /Same as Reset in the OBS Stats window/);
+	const settings = [...new Set([...page.matchAll(/<sdpi-[^>]+\bsetting="([^"]+)"/g)].map((m) => m[1]))].sort();
+	assert.deepEqual(settings, ["host", "layout", "palette", "password", "port", "sourceType"], "no target, toggle or output choices");
 });
 
 test("every key offered has an icon of its own in Stream Deck's list, at both sizes", () => {

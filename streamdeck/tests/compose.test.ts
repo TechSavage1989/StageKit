@@ -22,6 +22,7 @@ import {
 	moveShown,
 	optionPicture,
 	optionShown,
+	resetStatsShown,
 	placeBadge,
 	shapePicture,
 	shapeShown,
@@ -53,7 +54,7 @@ const PLACES = typeLists("sendto")[0].groups.flatMap((g) => g.entries.map((e) =>
 
 /** Every key with a function, each function with a type chosen: what it shows. */
 function everyFunction(type = "camera", scene = "gameplay"): Array<[string, Shown]> {
-	const out: Array<[string, Shown]> = [];
+	const out: Array<[string, Shown]> = [["resetstats", resetStatsShown(undefined, type)]];
 	for (const s of STEPS) out.push([`appswitch ${s}`, stepShown(undefined, s, type)]);
 	for (const t of TOOLS) out.push([`tool ${t.value}`, toolShown(undefined, t.value, type)]);
 	for (const o of OPTIONS) out.push([`option ${o}`, optionShown(undefined, o, type)]);
@@ -149,6 +150,10 @@ test("the PNG reader and writer agree, on the pack's 256-colour and full-colour 
 
 test("Automatic, and every setting from before, shows exactly what it showed before: the same file, no badge", () => {
 	for (const auto of [undefined, "", "auto"]) {
+		const reset = resetStatsShown(undefined, auto);
+		assert.equal(reset.picture.id, "options/reset-stats");
+		assert.equal(reset.badge, undefined);
+		assert.equal(composed(layersOf(reset, "mono")), "imgs/pack/mono/options/reset-stats.png");
 		for (const s of STEPS) {
 			const shown = stepShown(undefined, s, auto);
 			assert.deepEqual(shown, { picture: stepPicture(undefined, s, auto) }, `appswitch ${s}`);

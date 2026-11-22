@@ -2348,10 +2348,15 @@ pressed, so it never flashes the wrong one.
 | **Scene Blur** | Switches a scene's *Scene Blur*. *Blur filter* lists the Scene Blurs by name (with the scene, or how many scenes have one of that name); *Scene* is *All scenes with this filter* (as it comes) or one of the scenes that has it. *On press*: *Toggle* (with all scenes: all off when any is on, else all on), *Switch on* or *Switch off*. Lit (green dot) while it is on (with all scenes, while any is); titled *Scene Blur*. Its image, as on *Blur All*: the *Scene type* chosen with the blur style in its corner, else the *Blur style* chosen (the Blur key's fourteen), else the style the filter is set to |
 | **Stream** | Starts and stops OBS's stream. *On press*: *Toggle (start or stop)* (as it comes), *Start streaming* or *Stop streaming*. **A stream cannot be paused**: OBS can pause a recording but not a stream, and OBS's WebSocket server has no request for it, so this key has no Pause (its tooltip says so). Lit (green dot) while live, reconnecting or stopping. Titled with what a press does and, while live, how long the stream has run (*Show time*: *On* as it comes, or *Off*) |
 | **Record** | Starts, stops, pauses and resumes OBS's recording. *On press*: *Toggle (start or stop)* (as it comes), *Start recording*, *Stop recording*, *Pause / resume* (pauses, or resumes while paused), *Pause* or *Resume*. Lit while recording or paused. Titled as the Stream key, with the recording's time |
+| **Reset Stats** | Resets OBS's statistics using its own Reset Stats command, including while the Stats dock is hidden. Uses the shared OBS connection; no source selection or keyboard shortcut assignment is needed. A tick confirms that OBS accepted the command; an alert means it could not be sent or OBS rejected it. |
 
 A key that cannot reach OBS, or whose target is gone, shows Stream Deck's yellow warning triangle when
 pressed. *Set Aspect Ratio* and *Capture Active Window* need StageKit 0.1.0-beta84 or later in OBS; *Dock Option* and *Slide to Edge* need 0.1.0-beta85; *Scene Mode* and the four scene filter keys need 0.1.0-beta155; *Scene Blur* needs 0.1.0-beta161. Keys made with
 the first versions' *Filter switch* and *Move* keep working; those two are no longer in the list.
+
+**Reset Stats in all six palettes.**
+
+<p align="center"><img src="docs/images/reset-stats-keys.png" width="624" alt="Reset Stats key artwork in Mono, Violet, Ocean, Forest, Ember and Neon palettes"></p>
 
 **Stream and Record keys.** Both talk to OBS's own WebSocket requests and events, so they work
 with any version of StageKit in OBS. Their images move, in the key's palette, while something is

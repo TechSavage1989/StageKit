@@ -168,6 +168,7 @@ const SOURCES: Record<string, { family?: Family; only?: string[]; label?: string
 	obsfilter: { automatic: "Automatic (filter image)", tip: "Choose the source type displayed on this filter key." },
 	obssource: { automatic: "Automatic (source visibility)", tip: "Choose the image for the source controlled by this key." },
 	timer: { automatic: "Automatic (timer)", tip: "Choose the image for this timer key.", only: ["countdown", "title", "alerts", "logo"] },
+	resetstats: { automatic: "Automatic (reset stats)", tip: "Choose this key's image. The reset stats symbol stays in its corner; the image does not change which OBS statistics are reset." },
 	obsmute: { automatic: "Automatic (audio mixer)", tip: "Choose the image for the input that this key mutes." },
 	obscamera: { automatic: "Automatic (virtual camera)", tip: "Choose the image for the virtual camera control." },
 	// Everything a source can be: not the activities, which are what a scene or a mode is for.

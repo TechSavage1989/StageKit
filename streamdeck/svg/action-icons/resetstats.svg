@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" width="40" height="40" viewBox="0 0 160 160">
+<g id="icon" inkscape:groupmode="layer" inkscape:label="Icon">
+<rect x="9.6" y="102.4" width="19.2" height="40" rx="3.2" fill="#ffffff"/>
+<rect x="40" y="70.4" width="19.2" height="72" rx="3.2" fill="#ffffff"/>
+<rect x="70.4" y="35.2" width="19.2" height="107.2" rx="3.2" fill="#ffffff"/>
+<path d="M137.35,53.73 A23.5,33.1 0 1 1 112.12,55.29" fill="none" stroke="#ffffff" stroke-width="9"/>
+<polygon points="110.4,51.2 92.8,57.6 108.8,75.2" fill="#ffffff"/>
+</g>
+</svg>
