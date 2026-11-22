@@ -331,18 +331,26 @@ inline void check(QStringList &issues)
 		       "manual draft entry was not retained");
 		auto *ratio_box = choice(dialog, "Its aspect ratio");
 		QPointer<QLineEdit> editor = ratio_box ? ratio_box->lineEdit() : nullptr;
+		auto editor_has_focus = [&] {
+			auto *current_box = choice(dialog, "Its aspect ratio");
+			auto *focused = QApplication::focusWidget();
+			// Editable QComboBox delegates the line edit's focus to the combo
+			// itself, then forwards focus and keyboard events to the editor.
+			return editor && current_box && current_box->lineEdit() == editor &&
+			       (focused == editor || (editor->focusProxy() && focused == editor->focusProxy()));
+		};
 		if (editor) {
 			dialog->activateWindow();
 			editor->setFocus(Qt::OtherFocusReason);
-			editor->setCursorPosition(2);
 		}
-		expect(editor && until(source, [&] { return QApplication::focusWidget() == editor; }),
-		       "the editable ratio could not receive typing focus");
+		expect(until(source, editor_has_focus), "the editable ratio could not receive typing focus");
+		if (editor)
+			editor->setCursorPosition(2);
 		aim(source, "Wide Demo", 480, 270);
 		expect(until(source, [&] { return detection(dialog).contains("16:9"); }),
 		       "measurement feedback did not follow the current image while a draft was edited");
 		expect(draft_is("Manual Draft", 13.0 / 7.0), "automatic refresh overwrote the manually edited draft");
-		expect(editor && QApplication::focusWidget() == editor && editor->cursorPosition() == 2,
+		expect(editor_has_focus() && editor->cursorPosition() == 2,
 		       "live detection rebuilt the active editor or moved its typing caret");
 		expect(measure_button(), "Measure the bars now button was missing");
 		expect(until(source,

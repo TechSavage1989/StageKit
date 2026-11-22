@@ -496,6 +496,10 @@ Auto Frame follows the blended image and changing size throughout the transition
 hold the old image until Morph finishes or add a second resize animation afterward. Ordinary
 resolution changes keep the short settling hold described above.
 
+![Window Morph with and without Auto Frame](docs/images/window-morph.png)
+
+*Actual rendered frames before, during and after a window switch. The middle column shows the fade while the image changes size.*
+
 **If a game's shape is slow to come right**, OBS's log says what Auto Frame saw and when
 (*Help → Log Files → Show Log Files*, the lines with `Auto Frame:` in them).
 
@@ -508,6 +512,10 @@ program is right from then on, at any window size, and everything else is still 
 **See the measured ratio.** The result beside *Measure the bars now* shows the detected image ratio and dimensions. A measurement reports its progress and any unavailable image instead of presenting an older ratio as a new result. The program-rule editor stays available after measuring.
 
 **Fill a rule from the capture.** *Program or window* and *Its aspect ratio* fill from the currently captured window and its measured image. A window title distinguishes games or windows that use the same executable; the executable is used when a title is unavailable. An Automatic Window Switcher supplies the window it is actually showing. You can edit either field, and automatic updates keep those edits until you save or explicitly measure again. Filling the fields does not save a rule; press *Remember this ratio* to save it.
+
+![Auto Frame measurement and current window](docs/images/auto-frame-detection.png)
+
+*The actual OBS Filters window after measuring a 16:9 image, with the detected ratio and the captured window filled into the rule editor.*
 
 **Image shape for each program.** A program seen before starts from the shape it showed then.
 Otherwise common emulators start from their usual shape (Snes9x 8:7, mGBA
