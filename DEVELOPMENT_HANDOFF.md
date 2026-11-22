@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | feat/autoframe-detection-feedback, based on beta246. Release notes in docs/releases/0.1.0-beta247.md. |
+| Working branch | fix/ready-capture-settings, based on beta247. Release notes in docs/releases/0.1.0-beta248.md. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -727,6 +727,12 @@ program) into the Auto Capture it switches off, and the filter's tick (called wh
 it on again once that program has no window (`hand_watch`; 5 s grace after loading for a saved
 record). User-switched-off filters are never switched on. Gate `HOOK_BACK` (see AGENTS.md's hand-hook
 entry). Not seen on Windows.
+
+## Prepared capture settings refresh
+
+On branch fix/ready-capture-settings, Automatic Window Switcher refreshes prepared captures when the parent capture source's non-aim settings change. A single snapshot supplies the new pool key and settings. The active capture remains visible while a separate replacement starts with the same selected window. Promotion updates the entry and bridge together, preserving the current manual selection and transition state. Other switchers using the old pool entry keep their own options. Reverted and superseded candidates release their references, and removing an alias does not clear a bridge still owned by another active entry.
+
+The shared capture-settings-test.hpp fixture exercises the actual switcher renderer with two parents sharing a prepared manual window, method and cursor changes, delayed readiness, cancellation, supersession, rejoining the original pool entry, and complete cleanup. Formatting, whitespace, guide settings and repository checks passed. The native renderer and actual Linux and Windows OBS 32.2.2 frontends passed the settings fixture, including preserved selection, isolation and complete cleanup. Initial replacement frames appeared after 416 to 467 ms and rejoining the shared capture took 62 to 66 ms. The beta247 Auto Frame update is integrated, and the complete combined frontend suite is a required release gate. This fixes the confirmed settings propagation defect; it does not establish the cause of missing application panels.
 
 ## Window switchers share their ready captures (0.1.0-beta203)
 

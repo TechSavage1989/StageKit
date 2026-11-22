@@ -2156,7 +2156,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     owner's log: `tick_sources` at a median of 3 to 3.9 ms with their Dolphin GBA windows open,
     each window captured once per switcher that lists it and once more by the parent. Now one
     private ready capture per window (its handle, else program, class and title), way of aiming
-    and kind and settings of the parent less what aiming writes (`ready_key`) serves every
+    and kind and settings of the parent less what aiming writes (`ready_target` plus the options) serves every
     switcher (`g_pool`, `ready_take` / `ready_give` in `app-capture.cpp`): the pool holds it only
     weakly with a count of users; each switcher holds it and keeps it showing itself, so it goes
     when the last one lets go (filter destroyed, a change of collection, shutdown) and nothing is
@@ -2169,6 +2169,16 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     from it would bring its filters along. Tested in `[window switcher: ready captures shared
     ...]` (`ready_share_test`, alone with `STAGEKIT_TEST_ONLY_READY_SHARE`;
     `stagekit_test_ready_pool`, a global proc).
+  - **Changed parent capture options reach prepared windows.** Compare the non-aim settings
+    snapshot on every window poll, using the same snapshot for the pool key and creation.
+    Never update a shared pooled capture in place. Keep its active image until a separately
+    acquired replacement has dimensions, then publish the active entry and bridge together.
+    Start replacements on the selected capture's aim, preserve the manual selection, and
+    release reverted or superseded candidates. When aliases share a capture, retain the
+    bridge while any active entry still owns it. The capture-settings-test.hpp renderer
+    covers method/cursor changes, delayed readiness, isolation, cancellation, supersession,
+    rejoining the original pool entry and cleanup. It does not verify application-specific
+    secondary-window capture, which remains the underlying OBS capture method's behavior.
   - *Captured window* (`picked`, by number, append-only: 0 *Wait until switched to*, as it
     comes; 1 *Switch at selection*): what the Capture Active Window key does through the filter.
     Waiting, the window's program joins `by_hand` and becomes `last_held_`, so it is captured in

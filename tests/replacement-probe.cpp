@@ -5,6 +5,7 @@
 #include "studio-transition-test.hpp"
 #include "auto-frame-detection-test.hpp"
 #include "window-morph-test.hpp"
+#include "capture-settings-test.hpp"
 #include "replacement-quick.hpp"
 #include "show-in-scenes-camera.hpp"
 #include <obs-module.h>
@@ -331,6 +332,7 @@ static void exercise()
 	studio_transition_test::check(issues);
 	auto_frame_detection_test::check(issues);
 	window_morph_test::check(issues);
+	capture_settings_test::check(issues);
 	check_plugin_manager(issues);
 	check_blur_output(issues);
 	finish_probe(issues);
