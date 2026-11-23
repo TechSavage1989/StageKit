@@ -7,6 +7,7 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include "control-catalog.hpp"
 #include "scene-controller.hpp"
 
+#include "../common/go-to-scene.hpp"
 #include "../common/item-transition.hpp"
 #include "../common/loading.hpp"
 #include "../common/pick-list.hpp"
@@ -15,6 +16,7 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include "../placement/show-in-scenes.hpp"
 #include "../placement/visibility-link.hpp"
 
+#include <obs-frontend-api.h>
 #include <obs-module.h>
 #include <QCoreApplication>
 #include <QThread>
@@ -193,6 +195,30 @@ struct Alias {
 	Data controller, group, definition;
 };
 using Aliases = std::map<std::string, Alias>;
+
+void scene_controls(obs_data_array_t *out)
+{
+	if (!obs_frontend_get_main_window())
+		return;
+	const bool studio = obs_frontend_preview_program_mode_active();
+	auto current = source(studio ? obs_frontend_get_current_preview_scene() : obs_frontend_get_current_scene());
+	obs_frontend_source_list scenes = {};
+	obs_frontend_get_scenes(&scenes);
+	// Use the Scenes dock's order. The frontend list retains every source
+	// until the entries, IDs and active state have been copied out.
+	for (size_t i = 0; i < scenes.sources.num; ++i) {
+		obs_source_t *scene = scenes.sources.array[i];
+		if (!scene || obs_obj_is_private(scene) || obs_source_removed(scene) || !obs_scene_from_source(scene) ||
+		    obs_source_is_group(scene))
+			continue;
+		const std::string uuid = obs_source_get_uuid(scene);
+		auto action = target("scene");
+		set_text(action.get(), "sceneUuid", uuid);
+		append(out, stable_id("scene", {uuid}), obs_source_get_name(scene), label("Controls.Scenes"),
+		       scene == current.get(), true, {}, false, action.get());
+	}
+	obs_frontend_source_list_free(&scenes);
+}
 
 Aliases controller_controls(obs_data_array_t *out)
 {
@@ -417,6 +443,7 @@ void ordinary_sources(obs_data_array_t *out, const Inventory &inventory)
 Array catalog()
 {
 	auto out = array();
+	scene_controls(out.get());
 	const auto aliases = controller_controls(out.get());
 	const Inventory inventory;
 	const auto looks = scene_modes_list(nullptr);
@@ -490,7 +517,7 @@ void view_controls_list(obs_data_t *response)
 	set_text(response, "reason", ready ? "" : label("Controls.NotReady"));
 }
 
-bool view_control_press(obs_data_t *requested, std::string &why)
+bool view_control_press(obs_data_t *requested, std::string &why, bool show_scene)
 {
 	if (!requested || text(requested, "id").empty() || !frontend_thread() || !scenes_loaded()) {
 		why = label("Controls.NotReady");
@@ -518,12 +545,27 @@ bool view_control_press(obs_data_t *requested, std::string &why)
 	}
 	auto action = object(chosen.get(), "target");
 	const std::string kind = text(action.get(), "kind");
+	if (kind == "scene") {
+		auto scene = source(obs_get_source_by_uuid(obs_data_get_string(action.get(), "sceneUuid")));
+		if (!scene || obs_obj_is_private(scene.get()) || obs_source_removed(scene.get()) ||
+		    !obs_scene_from_source(scene.get()) || obs_source_is_group(scene.get())) {
+			why = label("Controls.Missing");
+			return false;
+		}
+		GoTo go;
+		go.kind = "Control Panel";
+		go.filter = "Scene";
+		go.target = obs_source_get_name(scene.get());
+		go.target_uuid = obs_source_get_uuid(scene.get());
+		go_to_scene(std::move(go));
+		return true;
+	}
 	if (kind == "controller")
 		return scene_controller_command(obs_data_get_string(action.get(), "controllerId"),
 						obs_data_get_string(action.get(), "groupId"),
 						obs_data_get_string(action.get(), "choiceId"),
 						obs_data_get_string(action.get(), "viewId"),
-						obs_data_get_string(action.get(), "command"), why);
+						obs_data_get_string(action.get(), "command"), why, show_scene);
 	if (kind == "source")
 		return press_source(action.get(), why);
 	auto filter = source(obs_get_source_by_uuid(obs_data_get_string(action.get(), "filterUuid")));
@@ -536,7 +578,7 @@ bool view_control_press(obs_data_t *requested, std::string &why)
 	if (kind == "mode" && is_kind(filter.get(), kSceneModesId))
 		return scene_modes_press(obs_source_get_name(parent.get()), obs_source_get_name(filter.get()),
 					 obs_data_get_string(action.get(), "modeId"),
-					 obs_data_get_string(action.get(), "command"), why);
+					 obs_data_get_string(action.get(), "command"), why, show_scene);
 	if (kind == "link" && is_kind(filter.get(), kVisibilityLinkId)) {
 		const std::string uuid = text(action.get(), "sourceUuid");
 		auto member = uuid.empty() ? Source() : source(obs_get_source_by_uuid(uuid.c_str()));

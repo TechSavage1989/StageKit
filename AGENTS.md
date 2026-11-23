@@ -51,7 +51,10 @@ The full schema-1 definition is stored under controller. Preserve group/choice/v
 renames and reload; only allocate IDs for new records. The Views dock and StageKit View companion action
 share that definition and actual state. A combined view must validate every selection before any work
 is queued, stage all target modes before ticking any group, and keep unspecified groups unchanged.
-Scene changes are explicit. Follow groups expose rules rather than selectable choices.
+Scene changes remain explicit for existing vendor, hotkey and Stream Deck commands. The Views panel's
+visible scene-navigation option is on by default: a selected mode or view uses its explicit destination
+or its own scene, including a selection that was already active. Follow groups expose rules rather than
+selectable choices.
 
 Embedded Scene Modes settings belong to their child group, not the controller's root source settings.
 Import preserves complete native settings and original filters. Active imports leave the original as
@@ -80,7 +83,7 @@ compatibility, removal rollback and an actual OBS restart. Capture the Windows d
 guide. Source renames use source_settings_renamed for nested generic/per-source transition settings and
 scene_modes_rename_settings for mode membership and saved placements.
 
-StageKit Views opens on one collection-wide control panel. Keep scene/controller selectors on its
+StageKit Views opens on one collection-wide control panel. Keep controller-management selectors on its
 management page; ordinary operation must not require browsing them. Discover existing native controls
 without requiring import, and preserve saved panel pins, labels, sections and order per collection.
 Use stable controller/group/choice IDs, filter and source UUIDs, and owning scene-item identities.
@@ -96,6 +99,38 @@ drafts on collection changes and return to the control panel on collection load 
 Keep the existing dock ID and manager object names. Exercise control-panel-test.hpp in the real OBS
 frontend, including multi-scene controls, native visibility actions, pin identity and restart, and
 capture the actual Windows panel and its editor for the guide.
+
+List and Buttons are two presentations of the same saved panel. Preserve pins, labels, sections, icons,
+order and deliberately empty panels when switching presentation or changing density. Compact list rows
+use native row heights, and activating a row must work even when it is already current. Focus changes,
+restored selection and state refreshes must not invoke a control. Avoid double dispatch through clicked
+and activated signals. Keep section collapse and scroll state during state-only updates. Never derive
+scene identities by splitting display names.
+
+Panel editing uses explicit checkbox inclusion and bulk removal. Filtering available choices must not
+remove hidden selections. Cancel preserves the saved panel, including its presentation settings. Store
+custom icons as bounded embedded thumbnails so collection exports and restarts do not depend on the
+original file. Reject invalid images without losing an existing icon, and decode icons only when their
+appearance changes. Button sizing must include wrapped text and icons and retain the OBS theme cap fix.
+
+Panel scene navigation belongs in the native queued command, after successful validation and application.
+An explicit mode or view destination takes priority over the parent scene. Studio Mode changes Preview.
+Keep ordinary source toggles, direct Link Visibility and Show in Scenes behavior unchanged. Turning the
+panel option off restores existing native destination rules. A queued panel destination uses stable
+scene identity and must not attach to a same-name replacement. Exercise repeated selection from another
+scene, explicit destinations, the option off, Studio Preview, both layouts, icons, size and real restart.
+The panel's operational Scene selector is separate from the manager's browsing-only selector. Populate
+it in OBS Scenes dock order, synchronize from actual Program/Preview state with signals blocked, and
+dispatch only a user activation. Direct scene pins use UUID identity and stay opt-in for the automatic
+panel. Coalesce Preview and Studio Mode events along with the existing scene refresh events.
+
+OBS accepts standalone video-filter settings before deferring its update callback. A panel mode press
+binds the destination from accepted source settings and keeps FIFO order while waiting for that update;
+execution still compares the applied definition's UUID before changing items. Controller-owned engines
+use their own settings. In the actual Qt file
+chooser fixture, selectFile after opening can leave the filename field and selectedFiles empty. Enter
+the path in the dialog's real filename field, verify the selected file, then accept; do not bypass the
+production accepted callback or weaken embedded-icon and restart assertions.
 
 Import all applies only to supported Scene Modes and Link Visibility filters on the controller's own
 scene. Retain discovered filters, deep-clone the prospective definition, preserve complete settings

@@ -398,6 +398,17 @@ struct Press {
 	// Leave: the mode that was on when the source was shown, and that
 	// source, which the change never hides again.
 	std::string from, spare;
+	bool show_scene = false;
+	bool await_update = false; // accepted standalone settings have not reached update() yet
+	std::string parent_uuid, scene_uuid;
+};
+
+struct SourceRef {
+	obs_source_t *source;
+	explicit SourceRef(obs_source_t *value) : source(value) {}
+	~SourceRef() { obs_source_release(source); }
+	SourceRef(const SourceRef &) = delete;
+	SourceRef &operator=(const SourceRef &) = delete;
 };
 
 // An item shown or hidden by something else, in a scene the filter covers.
@@ -615,7 +626,7 @@ public:
 			look.modes.push_back({mode.id, mode.name, mode.type});
 		return look;
 	}
-	bool runtime_press(const char *mode, const char *how, std::string &why) override
+	bool runtime_press(const char *mode, const char *how, std::string &why, bool show_scene) override
 	{
 		if (retired_) {
 			why = "Scene Controller is no longer available";
@@ -632,7 +643,7 @@ public:
 			: action == "toggle" ? How::Toggle
 			: action == "window" ? How::Window
 					     : How::On;
-		const bool accepted = queue(mode ? mode : "", h, why);
+		const bool accepted = queue(mode ? mode : "", h, why, show_scene);
 		obs_source_release(held);
 		return accepted;
 	}
@@ -743,6 +754,8 @@ public:
 				keys_changed = modes[i].id != modes_[i].id || modes[i].name != modes_[i].name;
 			keys_changed = keys_changed || allow_none != allow_none_;
 			modes_ = std::move(modes);
+			for (Press &press : presses_)
+				press.await_update = false;
 			share_ = share;
 			allow_none_ = allow_none;
 			change_ = change;
@@ -779,8 +792,9 @@ public:
 		{
 			std::lock_guard lock(g_modes_mutex);
 			parent_ = parent;
-			if (internal_)
-				parent_weak_ = obs_source_get_weak_source(parent);
+			// Panel presses retain the same parent identity for standalone
+			// filters and controller-owned engines, without an ownership cycle.
+			parent_weak_ = obs_source_get_weak_source(parent);
 		}
 		signal_handler_connect(obs_source_get_signal_handler(parent), "item_visible", visible_cb, this);
 		sync_hotkeys();
@@ -812,7 +826,7 @@ public:
 
 	// A press from a key, a hotkey or the window. Checked here, acted on in
 	// the next tick.
-	bool queue(const std::string &mode, How how, std::string &why)
+	bool queue(const std::string &mode, How how, std::string &why, bool show_scene = false)
 	{
 		if (internal_ && retired_) {
 			why = "Scene Controller is no longer available";
@@ -828,8 +842,15 @@ public:
 					     : how == How::Toggle ? "toggle"
 					     : how == How::Window ? "window"
 								  : "on";
-			return target->runtime_press(mode.c_str(), action, why);
+			return target->runtime_press(mode.c_str(), action, why, show_scene);
 		}
+		// Panel rows select a named mode. Clearing the selection never adds
+		// navigation; native Next/Toggle keep their existing behavior.
+		show_scene = show_scene && how == How::On;
+		SourceRef parent_hold(show_scene ? parent_ref() : nullptr);
+		SourceRef destination(nullptr);
+		std::unique_ptr<obs_data_t, decltype(&obs_data_release)> settings(
+			show_scene && !internal_ ? obs_source_get_settings(source_) : nullptr, obs_data_release);
 		std::lock_guard lock(mutex_);
 		std::string id;
 		if (how == How::On || how == How::Toggle || (how == How::Window && !mode.empty())) {
@@ -856,7 +877,39 @@ public:
 			why = "That Scene Modes has no modes";
 			return false;
 		}
-		presses_.push_back({id, how});
+		Press press{id, how};
+		press.show_scene = show_scene;
+		if (show_scene) {
+			if (!parent_hold.source || obs_source_removed(parent_hold.source)) {
+				why = "That Scene Modes is no longer attached to its parent";
+				return false;
+			}
+			press.parent_uuid = obs_source_get_uuid(parent_hold.source);
+			const Mode *selected = find_mode(modes_, id);
+			// OBS accepts standalone settings before deferring update() to the
+			// video thread. An immediate press must bind the accepted edit,
+			// not the previous runtime destination; act() still revalidates it.
+			const std::string go_to =
+				settings ? obs_data_get_string(settings.get(), key(id, "go_to").c_str())
+					 : selected->go_to;
+			press.await_update = settings && go_to != selected->go_to;
+			if (!go_to.empty())
+				destination.source = obs_get_source_by_name(go_to.c_str());
+			else if (obs_scene_from_source(parent_hold.source) && !obs_source_is_group(parent_hold.source))
+				destination.source = obs_source_get_ref(parent_hold.source);
+			// An OBS group can be reused in several scenes. Keep its native
+			// selection without guessing which outer scene the user wants.
+			if (!go_to.empty() || destination.source) {
+				if (!destination.source || obs_source_removed(destination.source) ||
+				    !obs_scene_from_source(destination.source) ||
+				    obs_source_is_group(destination.source)) {
+					why = "The mode's destination scene is unavailable";
+					return false;
+				}
+				press.scene_uuid = obs_source_get_uuid(destination.source);
+			}
+		}
+		presses_.push_back(std::move(press));
 		return true;
 	}
 
@@ -902,7 +955,18 @@ public:
 			std::lock_guard lock(mutex_);
 			seen.swap(pending_);
 			if (enabled && scenes_loaded()) {
-				presses.swap(presses_);
+				// An accepted edit may arrive after OBS's deferred-update
+				// check for this frame. Keep its press and later keys in order
+				// until update() has applied that edit, then revalidate as usual.
+				const auto waiting =
+					std::find_if(presses_.begin(), presses_.end(),
+						     [](const Press &press) { return press.await_update; });
+				if (waiting == presses_.end()) {
+					presses.swap(presses_);
+				} else {
+					presses.assign(presses_.begin(), waiting);
+					presses_.erase(presses_.begin(), waiting);
+				}
 				if (planned_press_) {
 					presses.push_back({planned_, planned_how_});
 					planned_press_ = false;
@@ -1188,6 +1252,26 @@ private:
 		}
 		if (!to.empty() && !find_mode(s.modes, to))
 			return;
+		SourceRef parent_hold(press.show_scene ? parent_ref() : nullptr);
+		SourceRef destination(nullptr);
+		if (press.show_scene) {
+			const Mode *selected = find_mode(s.modes, to);
+			if (!selected || !parent_hold.source || obs_source_removed(parent_hold.source) ||
+			    press.parent_uuid != obs_source_get_uuid(parent_hold.source))
+				return;
+			if (!selected->go_to.empty())
+				destination.source = obs_get_source_by_name(selected->go_to.c_str());
+			else if (obs_scene_from_source(parent_hold.source) && !obs_source_is_group(parent_hold.source))
+				destination.source = obs_source_get_ref(parent_hold.source);
+			// Recheck the current definition before changing items. Renaming
+			// keeps the UUID; an edited destination or replacement rejects it.
+			if ((destination.source &&
+			     (obs_source_removed(destination.source) || !obs_scene_from_source(destination.source) ||
+			      obs_source_is_group(destination.source) ||
+			      press.scene_uuid != obs_source_get_uuid(destination.source))) ||
+			    (!destination.source && (!selected->go_to.empty() || !press.scene_uuid.empty())))
+				return;
+		}
 		if (to != s.current) {
 			std::vector<obs_source_t *> scenes = covered(s.share);
 			const std::string spare = press.how == How::Leave ? press.spare : std::string();
@@ -1212,6 +1296,20 @@ private:
 				changed_ = true;
 			else
 				vendor_emit_scene_mode_changed(source_, to, s.current);
+		}
+		if (press.show_scene) {
+			// A repeat press still displays the selected mode. Resolve by UUID
+			// again on the UI queue so rename/removal cannot redirect it.
+			if (destination.source && active() && scenes_loaded() && this->parent() == parent_hold.source &&
+			    !obs_source_removed(parent_hold.source) && !obs_source_removed(destination.source)) {
+				GoTo go;
+				go.kind = "Scene Modes";
+				go.filter = obs_source_get_name(source_) ? obs_source_get_name(source_) : "";
+				go.target = obs_source_get_name(destination.source);
+				go.target_uuid = press.scene_uuid;
+				go_to_scene(std::move(go));
+			}
+			return;
 		}
 		// "Switch to scene": a key's press turning a mode on, even the one on
 		// already, changes scene unless the scene on screen is one of this
@@ -2315,7 +2413,8 @@ bool scene_modes_unforward(obs_source_t *legacy, const std::shared_ptr<SceneMode
 	return self && self->unforward(expected);
 }
 
-bool scene_modes_press(const char *scene, const char *filter, const char *mode, const char *how, std::string &why)
+bool scene_modes_press(const char *scene, const char *filter, const char *mode, const char *how, std::string &why,
+		       bool show_scene)
 {
 	if (!scene || !*scene) {
 		why = "scene is required";
@@ -2343,7 +2442,7 @@ bool scene_modes_press(const char *scene, const char *filter, const char *mode, 
 	}
 	bool done = false;
 	if (void *data = obs_obj_get_data(found[0]))
-		done = static_cast<SceneModes *>(data)->queue(mode ? mode : "", h, why);
+		done = static_cast<SceneModes *>(data)->queue(mode ? mode : "", h, why, show_scene);
 	for (obs_source_t *f : found)
 		obs_source_release(f);
 	return done;

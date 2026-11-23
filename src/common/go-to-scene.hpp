@@ -30,9 +30,13 @@ struct GoTo {
 	std::vector<std::string> sources;
 	// No change while the scene on screen is one of these, by name.
 	std::vector<std::string> stay_in;
+	// Optional identity for a destination already resolved by a control press.
+	// A removed scene must not be replaced by another with the same name.
+	std::string target_uuid;
 };
 
-// Whether to change from `current` to the scene named `go.target`: it must be
+// Whether to change from `current` to `go.target_uuid` (when given), otherwise
+// the scene named `go.target`: it must be
 // a scene (not a group), not the one on screen, the one on screen must not be
 // in `go.stay_in` nor have any of `go.sources` already. Gives the target,
 // with a reference, or null.

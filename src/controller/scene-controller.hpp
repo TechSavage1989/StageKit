@@ -51,8 +51,12 @@ bool scene_controller_configure(const char *controller_id, obs_data_t *config, s
 // a visibility rule, not a directly selectable choice list.
 // Success means accepted. The real state changes on the controller tick and
 // emits SceneControllerChanged only after all involved rule locks are released.
+// show_scene is a panel-only opt-in: modes and combined views also display their
+// explicit destination, or the owning scene when none is configured. Vendor and
+// hotkey defaults remain false. Choose one, Show together and clearing a modes
+// group do not add navigation.
 bool scene_controller_command(const char *controller_id, const char *group_id, const char *choice_id,
-			      const char *view_id, const char *command, std::string &why);
+			      const char *view_id, const char *command, std::string &why, bool show_scene = false);
 
 // Frontend editing helpers. create adds one real scene filter and returns its
 // snapshot. import copies the full legacy configuration; activate transfers

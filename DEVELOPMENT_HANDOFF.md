@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | feat/always-visible-controls. The next StageKit Views update adds one persistent panel across scenes and controllers, plus Import all. Platform follow-up PR276 is tracked separately below. |
+| Working branch | feat/compact-views-panel, PR278 for beta256. Beta255 is published. Compact controls and direct scene switching passed the complete Windows OBS run; the final guide/capture revision is awaiting its exact-head release gates. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -23,7 +23,63 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Compact panel layout and selection navigation
+
+The owner reports that the automatic button panel is too tall and the editor is awkward. The requested
+update offers a compact list resembling the OBS Scenes dock or the existing button layout, with the
+same saved controls and scene/section grouping. A grouped checkbox inventory lets the owner include
+individual choices or complete groups. Bulk removal, shared section edits and ordering reduce setup
+work. The owner also requested custom button icons and a button-size control; icons are stored as
+bounded embedded PNG thumbnails, and size changes affect button dimensions while list rows stay compact.
+
+The owner then asked for easier direct scene switching. The panel adds a Scene selector beside its
+layout choice and direct scene entries that can be pinned. They follow OBS scene order, use UUID
+identities and display Program or Studio Preview as appropriate. They do not require a controller or
+mode. Direct scenes default to absent from automatic discovery to avoid expanding every panel; the
+always-visible selector makes them immediately accessible.
+
+The user expects selecting a mode or combined view to display its scene, even when the selection was
+already active. Review found that native repeated presses already run, but only explicit destinations
+cause a scene switch. The panel gains a visible default-on navigation option. Native queued dispatch
+uses an explicit mode/view destination first, otherwise the owning scene, and uses Preview in Studio
+Mode. The option off retains existing native destination behavior. Direct source/Link/Show in Scenes
+controls and existing Stream Deck/vendor/hotkey defaults remain unchanged. The parent fallback must
+not guess a scene for a group or rebind a deleted destination to a same-name replacement.
+
+Implementation is complete. Preserve the beta255 panel's stable identities,
+per-collection saved selections, empty custom panels, collection readiness and state-only refresh
+behavior. Actual Windows captures of the list, icon buttons and revised editor belong in this PR.
+The exact final head must pass Windows build/package, OBS frontend/restart and shared checks before
+the next beta is merged. No user OBS configuration has been edited.
+
+PR278's first head, 70f8ef8b54f821327ea17b5f22b2a802aee86981, passed Windows compilation/package and
+shared checks. Windows frontend job 137983689574 reached the actual panel and passed the list, size,
+direct-scene, repeated-selection and Studio assertions, but failed standalone explicit navigation and
+icon embedding. Restart and timing trials did not run after those failures. A standalone press now
+reads its accepted OBS destination settings and waits in FIFO order for the deferred video-thread
+update, while execution still rejects a changed destination UUID. The icon failure was reproduced as the test chooser's
+selectFile call leaving its visible filename field empty; entering that real field reaches the working
+production image loader. The fixture keeps its strict icon and persistence assertions, captures compact
+buttons with every selected control visible, and restores the saved nondefault size before restart.
+
+Corrected head 5a62ca5986c1d837f532ff6d57e3ebeecafc2267 passed Windows frontend job 137992344279 in
+run 45260125245. Both result.txt and ndi-restart.txt report PASS, including the immediate destination
+edit/press regression, icons after removing their original files, nondefault Buttons/navigation settings,
+size 64, imported-original compatibility and collection isolation. All four quiet timing trials completed
+450 frames each; those software-renderer diagnostics do not establish hardware performance. The tested
+DLL SHA-256 is 6baed41e0be60cfc90b01dc1870cb39f52b514e4f0e9962cddda0619b3b26f16. Artifact 14861696305
+has SHA-256 646f4ea56587f3f150b11cd5827bcacfe7614d13f6a817acbb13602f8cd31324. The actual Windows list,
+compact icon buttons and checkbox editor were visually reviewed and copied into docs/images. Windows
+packaging and all shared checks passed on this head. The final screenshot/documentation head must pass
+those exact-head gates before merge; no further runtime change is planned.
+
 ## One persistent StageKit Views control panel
+
+Beta255 is published. PR277 merged as 685baf5d8f16d27acac552cf416008be88767fb6; final reviewed head
+2b0780534f3b0faf949dbfb9d5437bc2370f905e passed all eight Windows/shared gates. Windows frontend
+job 137941920666 passed first run and real restart, including the saved customized panel. Publisher
+45247856324 completed successfully. All seven public assets were downloaded and their checksums
+verified. The published Windows DLL matches the tested hash recorded below and embeds beta255.
 
 The owner clarified that normal operation must resemble always-available Stream Deck keys: selections
 from different scenes and controllers must be visible together without changing scene/controller

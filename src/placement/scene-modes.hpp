@@ -51,7 +51,11 @@ std::vector<SceneModesLook> scene_modes_list(const char *scene);
 // filter's next tick. Says false, with the reason in `why`, when the scene,
 // the filter or the mode is not there, the filter is switched off, or no
 // mode is not allowed.
-bool scene_modes_press(const char *scene, const char *filter, const char *mode, const char *how, std::string &why);
+// The panel can opt in to show_scene for "on": show its explicit destination
+// without the covered-scene exception, otherwise its actual scene parent.
+// Groups do not infer an outer scene. Other callers keep the native default.
+bool scene_modes_press(const char *scene, const char *filter, const char *mode, const char *how, std::string &why,
+		       bool show_scene = false);
 
 // True when an enabled Scene Modes covering `scene` (its own scene, or one
 // listed under "Same modes in scenes") has the item's source in one of its
@@ -82,7 +86,7 @@ public:
 	virtual std::string runtime_controller_id() = 0;
 	virtual SceneModesLook runtime_look() = 0;
 	virtual obs_data_t *runtime_settings() = 0; // a reference to release
-	virtual bool runtime_press(const char *mode, const char *how, std::string &why) = 0;
+	virtual bool runtime_press(const char *mode, const char *how, std::string &why, bool show_scene = false) = 0;
 	// Stage every member of a combined view before ticking any: hidden-state
 	// queries then see all target modes, independent of engine execution order.
 	virtual bool runtime_stage(const char *mode, bool scene_switch, std::string &why) = 0;

@@ -13,28 +13,37 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <obs-module.h>
 #include <obs.hpp>
 #include <QApplication>
+#include <QBuffer>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
 #include <QDockWidget>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHideEvent>
+#include <QImageReader>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMap>
 #include <QMenu>
 #include <QMessageBox>
+#include <QMouseEvent>
 #include <QPointer>
 #include <QPushButton>
 #include <QSet>
 #include <QScrollArea>
+#include <QScrollBar>
+#include <QSlider>
 #include <QStackedWidget>
 #include <QShowEvent>
 #include <QStylePainter>
@@ -46,9 +55,11 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <QHeaderView>
 #include <QTimer>
 #include <QToolButton>
+#include <QTreeWidget>
 #include <QUuid>
 #include <QVBoxLayout>
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <functional>
 #include <utility>
@@ -1082,14 +1093,24 @@ public:
 		// These wrapped size hints describe the full widget rectangle.
 		setAttribute(Qt::WA_LayoutUsesWidgetRect);
 	}
-	QSize sizeHint() const override { return {150, 58}; }
-	QSize minimumSizeHint() const override { return {105, 48}; }
+	void set_display_size(int value)
+	{
+		size_ = std::clamp(value, 40, 112);
+		setMinimumHeight(size_);
+		setIconSize(QSize(icon_side(), icon_side()));
+		updateGeometry();
+		update();
+	}
+	int preferred_width() const { return size_ * 3 + 6; }
+	QSize sizeHint() const override { return {preferred_width(), heightForWidth(preferred_width())}; }
+	QSize minimumSizeHint() const override { return {80, size_}; }
 	int heightForWidth(int width) const override
 	{
-		return std::max(48, fontMetrics().boundingRect(QRect(0, 0, std::max(40, width - 20), 1000),
+		const int label_height = fontMetrics()
+						 .boundingRect(QRect(0, 0, std::max(40, width - padding() * 2), 1000),
 							       Qt::TextWordWrap | Qt::AlignCenter, text())
-						    .height() +
-					    20);
+						 .height();
+		return std::max(size_, label_height + padding() * 2 + (icon().isNull() ? 0 : icon_side() + 4));
 	}
 
 protected:
@@ -1111,12 +1132,25 @@ protected:
 		QStyleOptionButton option;
 		initStyleOption(&option);
 		option.text.clear();
+		option.icon = QIcon();
 		painter.drawControl(QStyle::CE_PushButton, option);
 		const auto group = isEnabled() ? QPalette::Active : QPalette::Disabled;
 		painter.setPen(palette().color(group, isChecked() && isEnabled() ? QPalette::HighlightedText
 										 : QPalette::ButtonText));
-		painter.drawText(rect().adjusted(10, 8, -10, -8), Qt::TextWordWrap | Qt::AlignCenter, text());
+		QRect label = rect().adjusted(padding(), padding(), -padding(), -padding());
+		if (!icon().isNull()) {
+			const QRect image((width() - icon_side()) / 2, padding(), icon_side(), icon_side());
+			icon().paint(&painter, image, Qt::AlignCenter, isEnabled() ? QIcon::Normal : QIcon::Disabled,
+				     isChecked() ? QIcon::On : QIcon::Off);
+			label.setTop(image.bottom() + 5);
+		}
+		painter.drawText(label, Qt::TextWordWrap | Qt::AlignCenter, text());
 	}
+
+private:
+	int padding() const { return std::max(6, size_ / 8); }
+	int icon_side() const { return std::clamp(size_ / 2, 20, 56); }
+	int size_ = 48;
 };
 
 QJsonObject panel_pin(const QJsonObject &control)
@@ -1140,10 +1174,70 @@ QString panel_section(const QJsonObject &pin, const QJsonObject &control)
 	return section.isEmpty() ? text("Controls.General") : section;
 }
 
+QIcon panel_icon(const QJsonObject &pin)
+{
+	const QString encoded = pin["iconPng"].toString();
+	if (encoded.isEmpty() || encoded.size() > 128 * 1024)
+		return {};
+	QByteArray bytes = QByteArray::fromBase64(encoded.toLatin1());
+	QBuffer buffer(&bytes);
+	buffer.open(QIODevice::ReadOnly);
+	QImageReader reader(&buffer, "PNG");
+	const QSize size = reader.size();
+	if (!size.isValid() || size.width() > 128 || size.height() > 128)
+		return {};
+	return QIcon(QPixmap::fromImage(reader.read()));
+}
+
+// A click and a keyboard activation have the same meaning, including when the
+// current row already represents an active native selection. A double-click is
+// one command, not two visibility toggles.
+class ViewControlList final : public QTreeWidget {
+public:
+	using QTreeWidget::QTreeWidget;
+	std::function<void(QTreeWidgetItem *)> activate;
+
+protected:
+	void keyPressEvent(QKeyEvent *event) override
+	{
+		if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter || event->key() == Qt::Key_Space) {
+			if (!event->isAutoRepeat()) {
+				auto *item = currentItem();
+				if (item && item->childCount())
+					item->setExpanded(!item->isExpanded());
+				else if (item && activate && (item->flags() & Qt::ItemIsEnabled))
+					activate(item);
+			}
+			event->accept();
+			return;
+		}
+		QTreeWidget::keyPressEvent(event);
+	}
+
+	void mouseDoubleClickEvent(QMouseEvent *event) override
+	{
+		suppress_release_ = true;
+		event->accept();
+	}
+
+	void mouseReleaseEvent(QMouseEvent *event) override
+	{
+		if (suppress_release_) {
+			suppress_release_ = false;
+			event->accept();
+			return;
+		}
+		QTreeWidget::mouseReleaseEvent(event);
+	}
+
+private:
+	bool suppress_release_ = false;
+};
+
 class ViewPanelEditor final : public QDialog {
 public:
-	ViewPanelEditor(QWidget *parent, const QJsonArray &inventory, const QJsonArray &pins,
-			std::function<void(QJsonArray, bool)> apply)
+	ViewPanelEditor(QWidget *parent, const QJsonArray &inventory, const QJsonArray &pins, bool show_scene,
+			std::function<void(QJsonArray, bool, bool)> apply)
 		: QDialog(parent),
 		  inventory_(inventory),
 		  apply_(std::move(apply))
@@ -1162,26 +1256,37 @@ public:
 		search_->setObjectName("viewsPanelSearch");
 		search_->setPlaceholderText(text("Controls.Search"));
 		available_column->addWidget(search_);
-		available_ = new QListWidget(this);
+		available_ = new QTreeWidget(this);
 		available_->setObjectName("viewsPanelAvailable");
-		available_->setSelectionMode(QAbstractItemView::ExtendedSelection);
-		available_->setWordWrap(true);
+		available_->setHeaderHidden(true);
+		available_->setUniformRowHeights(true);
+		available_->setWordWrap(false);
+		available_->setTextElideMode(Qt::ElideRight);
+		available_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+		available_->header()->setSectionResizeMode(QHeaderView::Stretch);
+		available_->setIndentation(16);
 		available_column->addWidget(available_, 1);
-		auto *add = new QPushButton(text("Controls.AddSelected"), this);
-		add->setObjectName("viewsPanelAdd");
-		available_column->addWidget(add);
 		auto *selected_column = new QVBoxLayout;
 		columns->addLayout(selected_column, 1);
-		selected_column->addWidget(note(this, text("Controls.OnPanel")));
+		selected_heading_ = note(this, {});
+		selected_column->addWidget(selected_heading_);
 		pins_ = new QListWidget(this);
 		pins_->setObjectName("viewsPanelPins");
-		pins_->setWordWrap(true);
+		pins_->setSelectionMode(QAbstractItemView::ExtendedSelection);
+		pins_->setDragDropMode(QAbstractItemView::InternalMove);
+		pins_->setDefaultDropAction(Qt::MoveAction);
+		pins_->setWordWrap(false);
+		pins_->setTextElideMode(Qt::ElideRight);
+		pins_->setIconSize(QSize(20, 20));
 		selected_column->addWidget(pins_, 1);
 		auto *tools = new QHBoxLayout;
 		selected_column->addLayout(tools);
-		auto *remove = new QPushButton(text("Views.Remove"), this);
-		remove->setObjectName("viewsPanelRemove");
-		tools->addWidget(remove, 1);
+		remove_ = new QPushButton(text("Controls.RemoveSelected"), this);
+		remove_->setObjectName("viewsPanelRemove");
+		tools->addWidget(remove_, 1);
+		clear_ = new QPushButton(text("Controls.RemoveAll"), this);
+		clear_->setObjectName("viewsPanelRemoveAll");
+		tools->addWidget(clear_);
 		for (const int direction : {-1, 1}) {
 			auto *move = new QToolButton(this);
 			move->setObjectName(direction < 0 ? "viewsPanelUp" : "viewsPanelDown");
@@ -1189,15 +1294,7 @@ public:
 			move->setAccessibleName(text(direction < 0 ? "Views.MoveUp" : "Views.MoveDown"));
 			move->setToolTip(move->accessibleName());
 			tools->addWidget(move);
-			connect(move, &QToolButton::clicked, this, [this, direction] {
-				const int from = pins_->currentRow(), to = from + direction;
-				if (from < 0 || to < 0 || to >= pins_->count())
-					return;
-				automatic_ = false;
-				auto *item = pins_->takeItem(from);
-				pins_->insertItem(to, item);
-				pins_->setCurrentRow(to);
-			});
+			connect(move, &QToolButton::clicked, this, [this, direction] { move_pins(direction); });
 		}
 		auto *form = new QFormLayout;
 		selected_column->addLayout(form);
@@ -1207,13 +1304,37 @@ public:
 		form->addRow(text("Controls.Label"), label_);
 		section_ = new QLineEdit(this);
 		section_->setObjectName("viewsPanelSection");
-		section_->setPlaceholderText(text("Controls.UseSection"));
-		form->addRow(text("Controls.Section"), section_);
+		auto *section_row = new QHBoxLayout;
+		section_row->addWidget(section_, 1);
+		reset_section_ = new QToolButton(this);
+		reset_section_->setObjectName("viewsPanelResetSection");
+		reset_section_->setText(text("Controls.ResetSection"));
+		reset_section_->setToolTip(text("Controls.ResetSectionHelp"));
+		section_row->addWidget(reset_section_);
+		form->addRow(text("Controls.Section"), section_row);
+		auto *icons = new QHBoxLayout;
+		icon_preview_ = new QLabel(this);
+		icon_preview_->setObjectName("viewsPanelIconPreview");
+		icon_preview_->setFixedSize(32, 32);
+		icon_preview_->setAlignment(Qt::AlignCenter);
+		icons->addWidget(icon_preview_);
+		choose_icon_ = new QPushButton(text("Controls.ChooseIcon"), this);
+		choose_icon_->setObjectName("viewsPanelChooseIcon");
+		icons->addWidget(choose_icon_, 1);
+		remove_icon_ = new QPushButton(text("Controls.RemoveIcon"), this);
+		remove_icon_->setObjectName("viewsPanelRemoveIcon");
+		icons->addWidget(remove_icon_);
+		form->addRow(text("Controls.Icon"), icons);
 		context_ = note(this, {}, "viewsPanelContext");
 		selected_column->addWidget(context_);
-		auto *automatic = new QPushButton(text("Controls.Automatic"), this);
-		automatic->setObjectName("viewsPanelAutomatic");
-		layout->addWidget(automatic, 0, Qt::AlignLeft);
+		switch_scene_ = new QCheckBox(text("Controls.SwitchScene"), this);
+		switch_scene_->setObjectName("viewsPanelSwitchScene");
+		switch_scene_->setToolTip(text("Controls.SwitchSceneHelp"));
+		switch_scene_->setChecked(show_scene);
+		layout->addWidget(switch_scene_);
+		auto *automatic_button = new QPushButton(text("Controls.Automatic"), this);
+		automatic_button->setObjectName("viewsPanelAutomatic");
+		layout->addWidget(automatic_button, 0, Qt::AlignLeft);
 		status_ = note(this, {}, "viewsPanelEditorStatus");
 		layout->addWidget(status_);
 		auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
@@ -1223,33 +1344,66 @@ public:
 			append_pin(value.toObject());
 		fill_available();
 		connect(search_, &QLineEdit::textChanged, this, [this] { filter_available(); });
-		connect(add, &QPushButton::clicked, this, [this] {
-			automatic_ = false;
-			for (auto *item : available_->selectedItems()) {
-				const QString id = item->data(Qt::UserRole).toString();
-				if (!has_pin(id))
-					append_pin(panel_pin(find_id(inventory_, id)));
+		connect(available_, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem *item, int column) {
+			if (column != 0)
+				return;
+			mark_custom();
+			const bool checked = item->checkState(0) == Qt::Checked;
+			if (item->childCount()) {
+				for (int i = 0; i < item->childCount(); ++i)
+					include_control(item->child(i), checked);
+			} else {
+				include_control(item, checked);
 			}
-			fill_available();
-			if (pins_->currentRow() < 0 && pins_->count())
+			sync_checks();
+			if (pins_->selectedItems().isEmpty() && pins_->count())
 				pins_->setCurrentRow(pins_->count() - 1);
-		});
-		connect(remove, &QPushButton::clicked, this, [this] {
-			automatic_ = false;
-			delete pins_->takeItem(pins_->currentRow());
-			fill_available();
 			show_pin();
 		});
-		connect(pins_, &QListWidget::currentRowChanged, this, [this] { show_pin(); });
-		connect(label_, &QLineEdit::textChanged, this, [this] { edit_pin(); });
-		connect(section_, &QLineEdit::textChanged, this, [this] { edit_pin(); });
-		connect(automatic, &QPushButton::clicked, this, [this] {
+		connect(remove_, &QPushButton::clicked, this, [this] {
+			mark_custom();
+			{
+				const QSignalBlocker blocker(pins_);
+				for (auto *item : pins_->selectedItems())
+					delete pins_->takeItem(pins_->row(item));
+			}
+			sync_checks();
+			show_pin();
+		});
+		connect(clear_, &QPushButton::clicked, this, [this] {
+			mark_custom();
+			pins_->clear();
+			sync_checks();
+			show_pin();
+		});
+		connect(pins_, &QListWidget::itemSelectionChanged, this, [this] { show_pin(); });
+		connect(pins_->model(), &QAbstractItemModel::rowsMoved, this, [this] { mark_custom(); });
+		connect(label_, &QLineEdit::textChanged, this, [this] { edit_labels(); });
+		connect(section_, &QLineEdit::textChanged, this, [this] { edit_sections(); });
+		connect(reset_section_, &QToolButton::clicked, this, [this] {
+			section_->clear();
+			edit_sections();
+			show_pin();
+		});
+		connect(choose_icon_, &QPushButton::clicked, this, [this] { choose_icon(); });
+		connect(remove_icon_, &QPushButton::clicked, this, [this] {
+			const auto selected = pins_->selectedItems();
+			if (selected.size() != 1)
+				return;
+			mark_custom();
+			auto pin = pin_data(selected.front());
+			pin.remove("iconPng");
+			update_pin(selected.front(), pin);
+			show_pin();
+		});
+		connect(automatic_button, &QPushButton::clicked, this, [this] {
 			automatic_ = true;
 			pins_->clear();
+			remembered_.clear();
 			for (const QJsonValue value : inventory_)
 				if (value.toObject()["defaultVisible"].toBool())
 					append_pin(panel_pin(value.toObject()));
-			fill_available();
+			sync_checks();
 			show_pin();
 			status_->setText(text("Controls.AutomaticPending"));
 		});
@@ -1257,105 +1411,282 @@ public:
 		connect(buttons, &QDialogButtonBox::accepted, this, [this] {
 			QJsonArray pins;
 			for (int i = 0; i < pins_->count(); ++i)
-				pins.append(
-					QJsonObject::fromVariantMap(pins_->item(i)->data(Qt::UserRole + 1).toMap()));
-			apply_(pins, !automatic_);
+				pins.append(pin_data(pins_->item(i)));
+			apply_(pins, !automatic_, switch_scene_->isChecked());
 			accept();
 		});
 		if (pins_->count())
 			pins_->setCurrentRow(0);
 		show_pin();
-		resize(800, 580);
+		resize(860, 650);
 	}
 
 private:
-	bool has_pin(const QString &id) const
+	QJsonObject pin_data(const QListWidgetItem *item) const
+	{
+		return item ? QJsonObject::fromVariantMap(item->data(Qt::UserRole + 1).toMap()) : QJsonObject{};
+	}
+
+	QListWidgetItem *pin_item(const QString &id) const
 	{
 		for (int i = 0; i < pins_->count(); ++i)
 			if (pins_->item(i)->data(Qt::UserRole).toString() == id)
-				return true;
-		return false;
+				return pins_->item(i);
+		return nullptr;
 	}
 
-	void set_pin_text(QListWidgetItem *item, const QJsonObject &pin)
+	void mark_custom()
+	{
+		automatic_ = false;
+		status_->clear();
+	}
+
+	void update_pin(QListWidgetItem *item, const QJsonObject &pin)
 	{
 		const auto control = find_id(inventory_, pin["id"].toString());
 		QString name = panel_title(pin, control);
 		if (control.isEmpty())
 			name = text("Views.MissingItem").arg(name);
-		item->setText(name + "\n" + panel_section(pin, control));
+		item->setData(Qt::UserRole + 1, pin.toVariantMap());
+		item->setText(name);
+		item->setIcon(panel_icon(pin));
+		item->setToolTip(panel_section(pin, control) + "\n" + control["section"].toString());
+		remembered_.insert(pin["id"].toString(), pin);
 	}
 
 	void append_pin(const QJsonObject &pin)
 	{
-		if (pin["id"].toString().isEmpty() || has_pin(pin["id"].toString()))
+		const QString id = pin["id"].toString();
+		if (id.isEmpty() || pin_item(id))
 			return;
 		auto *item = new QListWidgetItem(pins_);
-		item->setData(Qt::UserRole, pin["id"].toString());
-		item->setData(Qt::UserRole + 1, pin.toVariantMap());
-		set_pin_text(item, pin);
+		item->setData(Qt::UserRole, id);
+		update_pin(item, remembered_.value(id, pin));
+	}
+
+	void include_control(QTreeWidgetItem *item, bool include)
+	{
+		const QString id = item->data(0, Qt::UserRole).toString();
+		if (id.isEmpty())
+			return;
+		if (include)
+			append_pin(panel_pin(QJsonObject::fromVariantMap(item->data(0, Qt::UserRole + 1).toMap())));
+		else if (auto *pin = pin_item(id))
+			delete pins_->takeItem(pins_->row(pin));
 	}
 
 	void fill_available()
 	{
+		const QSignalBlocker blocker(available_);
 		available_->clear();
+		QMap<QString, QTreeWidgetItem *> groups;
 		for (const QJsonValue value : inventory_) {
 			const auto control = value.toObject();
-			if (has_pin(control["id"].toString()))
-				continue;
-			auto *item = new QListWidgetItem(
-				control["name"].toString() + "\n" + control["section"].toString(), available_);
-			item->setData(Qt::UserRole, control["id"].toString());
-			item->setData(Qt::UserRole + 1, control.toVariantMap());
-			item->setToolTip(control["reason"].toString());
+			const QString section = panel_section({}, control);
+			auto *group = groups.value(section);
+			if (!group) {
+				group = new QTreeWidgetItem(available_, {section});
+				group->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable);
+				group->setToolTip(0, section);
+				groups.insert(section, group);
+			}
+			auto *item = new QTreeWidgetItem(group, {control["name"].toString()});
+			item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsUserCheckable);
+			item->setData(0, Qt::UserRole, control["id"].toString());
+			item->setData(0, Qt::UserRole + 1, control.toVariantMap());
+			item->setToolTip(0, section + "\n" + control["name"].toString() + "\n" +
+						    control["reason"].toString());
 		}
+		sync_checks();
 		filter_available();
+	}
+
+	void sync_checks()
+	{
+		const QSignalBlocker blocker(available_);
+		for (int i = 0; i < available_->topLevelItemCount(); ++i) {
+			auto *group = available_->topLevelItem(i);
+			int checked = 0;
+			for (int j = 0; j < group->childCount(); ++j) {
+				auto *item = group->child(j);
+				const bool present = pin_item(item->data(0, Qt::UserRole).toString());
+				item->setCheckState(0, present ? Qt::Checked : Qt::Unchecked);
+				checked += present ? 1 : 0;
+			}
+			group->setCheckState(0, checked == 0                     ? Qt::Unchecked
+						: checked == group->childCount() ? Qt::Checked
+										 : Qt::PartiallyChecked);
+		}
+		selected_heading_->setText(text("Controls.OnPanelCount").arg(pins_->count()));
 	}
 
 	void filter_available()
 	{
 		const QString query = search_->text().trimmed();
-		for (int i = 0; i < available_->count(); ++i)
-			available_->item(i)->setHidden(
-				!available_->item(i)->text().contains(query, Qt::CaseInsensitive));
+		if (!query.isEmpty() && !searching_) {
+			expanded_before_search_.clear();
+			for (int i = 0; i < available_->topLevelItemCount(); ++i)
+				if (available_->topLevelItem(i)->isExpanded())
+					expanded_before_search_.insert(available_->topLevelItem(i)->text(0));
+		}
+		for (int i = 0; i < available_->topLevelItemCount(); ++i) {
+			auto *group = available_->topLevelItem(i);
+			bool any = false;
+			for (int j = 0; j < group->childCount(); ++j) {
+				auto *item = group->child(j);
+				const bool match =
+					(group->text(0) + "\n" + item->text(0)).contains(query, Qt::CaseInsensitive);
+				item->setHidden(!match);
+				any = any || match;
+			}
+			group->setHidden(!any);
+			if (!query.isEmpty())
+				group->setExpanded(any);
+			else if (searching_)
+				group->setExpanded(expanded_before_search_.contains(group->text(0)));
+		}
+		searching_ = !query.isEmpty();
 	}
 
 	void show_pin()
 	{
 		const QSignalBlocker label_block(label_), section_block(section_);
-		const auto *item = pins_->currentItem();
-		const auto pin = item ? QJsonObject::fromVariantMap(item->data(Qt::UserRole + 1).toMap())
-				      : QJsonObject{};
-		label_->setEnabled(item != nullptr);
-		section_->setEnabled(item != nullptr);
+		const auto selected = pins_->selectedItems();
+		const bool one = selected.size() == 1;
+		const auto pin = one ? pin_data(selected.front()) : QJsonObject{};
+		label_->setEnabled(one);
 		label_->setText(pin["label"].toString());
-		section_->setText(pin["section"].toString());
+		section_->setEnabled(!selected.isEmpty());
+		reset_section_->setEnabled(!selected.isEmpty());
+		QString section = selected.isEmpty() ? QString() : pin_data(selected.front())["section"].toString();
+		bool same_section = true;
+		for (auto *item : selected)
+			same_section = same_section && pin_data(item)["section"].toString() == section;
+		section_->setPlaceholderText(text(same_section ? "Controls.UseSection" : "Controls.MixedSections"));
+		section_->setText(same_section ? section : QString());
 		const auto control = find_id(inventory_, pin["id"].toString());
-		context_->setText(item ? control["section"].toString(pin["context"].toString()) + "\n" +
+		context_->setText(one ? control["section"].toString(pin["context"].toString()) + "\n" +
 						  control["name"].toString(pin["name"].toString())
-				       : QString());
+				  : selected.isEmpty() ? text("Controls.SelectToEdit")
+						       : text("Controls.EditSelection").arg(selected.size()));
+		remove_->setEnabled(!selected.isEmpty());
+		choose_icon_->setEnabled(one);
+		remove_icon_->setEnabled(one && !pin["iconPng"].toString().isEmpty());
+		icon_preview_->clear();
+		if (one)
+			icon_preview_->setPixmap(panel_icon(pin).pixmap(28, 28));
 	}
 
-	void edit_pin()
+	void edit_labels()
 	{
-		auto *item = pins_->currentItem();
-		if (!item)
+		const auto selected = pins_->selectedItems();
+		if (selected.size() != 1)
 			return;
-		automatic_ = false;
-		status_->clear();
-		auto pin = QJsonObject::fromVariantMap(item->data(Qt::UserRole + 1).toMap());
+		mark_custom();
+		auto pin = pin_data(selected.front());
 		pin["label"] = label_->text();
-		pin["section"] = section_->text();
-		item->setData(Qt::UserRole + 1, pin.toVariantMap());
-		set_pin_text(item, pin);
+		update_pin(selected.front(), pin);
+	}
+
+	void edit_sections()
+	{
+		const auto selected = pins_->selectedItems();
+		if (selected.isEmpty())
+			return;
+		mark_custom();
+		for (auto *item : selected) {
+			auto pin = pin_data(item);
+			pin["section"] = section_->text();
+			update_pin(item, pin);
+		}
+	}
+
+	void move_pins(int direction)
+	{
+		if (pins_->selectedItems().isEmpty())
+			return;
+		mark_custom();
+		const QSignalBlocker blocker(pins_);
+		auto *current = pins_->currentItem();
+		const int start = direction < 0 ? 0 : pins_->count() - 1;
+		for (int i = start; i >= 0 && i < pins_->count(); i -= direction) {
+			const int next = i + direction;
+			if (!pins_->item(i)->isSelected() || next < 0 || next >= pins_->count() ||
+			    pins_->item(next)->isSelected())
+				continue;
+			auto *item = pins_->takeItem(i);
+			pins_->insertItem(next, item);
+			item->setSelected(true);
+		}
+		pins_->setCurrentItem(current, QItemSelectionModel::NoUpdate);
+	}
+
+	void choose_icon()
+	{
+		const auto selected = pins_->selectedItems();
+		if (selected.size() != 1)
+			return;
+		const QString id = selected.front()->data(Qt::UserRole).toString();
+		auto *picker = new QFileDialog(this, text("Controls.ChooseIcon"));
+		picker->setObjectName("viewsPanelIconDialog");
+		picker->setAttribute(Qt::WA_DeleteOnClose);
+		picker->setOption(QFileDialog::DontUseNativeDialog);
+		picker->setFileMode(QFileDialog::ExistingFile);
+		picker->setNameFilter(text("Controls.IconFiles"));
+		picker->setWindowModality(Qt::WindowModal);
+		connect(picker, &QFileDialog::accepted, this, [this, picker, id] {
+			const auto files = picker->selectedFiles();
+			auto *item = pin_item(id);
+			if (!item || files.isEmpty())
+				return;
+			if (QFileInfo(files.front()).size() > 16 * 1024 * 1024) {
+				status_->setText(text("Controls.IconError"));
+				return;
+			}
+			QImageReader reader(files.front());
+			reader.setAutoTransform(true);
+			const QSize size = reader.size();
+			if (!size.isValid() || size.width() > 16384 || size.height() > 16384 ||
+			    int64_t(size.width()) * size.height() > 64 * 1024 * 1024) {
+				status_->setText(text("Controls.IconError"));
+				return;
+			}
+			reader.setScaledSize(size.scaled(128, 128, Qt::KeepAspectRatio));
+			QImage image = reader.read();
+			if (image.isNull()) {
+				status_->setText(text("Controls.IconError"));
+				return;
+			}
+			image = image.scaled(128, 128, Qt::KeepAspectRatio, Qt::SmoothTransformation)
+					.convertToFormat(QImage::Format_ARGB32);
+			QByteArray png;
+			QBuffer buffer(&png);
+			buffer.open(QIODevice::WriteOnly);
+			if (!image.save(&buffer, "PNG")) {
+				status_->setText(text("Controls.IconError"));
+				return;
+			}
+			mark_custom();
+			auto pin = pin_data(item);
+			pin["iconPng"] = QString::fromLatin1(png.toBase64());
+			update_pin(item, pin);
+			show_pin();
+		});
+		picker->open();
 	}
 
 	QJsonArray inventory_;
-	std::function<void(QJsonArray, bool)> apply_;
+	QMap<QString, QJsonObject> remembered_;
+	std::function<void(QJsonArray, bool, bool)> apply_;
 	QLineEdit *search_ = nullptr, *label_ = nullptr, *section_ = nullptr;
-	QListWidget *available_ = nullptr, *pins_ = nullptr;
-	QLabel *context_ = nullptr, *status_ = nullptr;
-	bool automatic_ = false;
+	QTreeWidget *available_ = nullptr;
+	QListWidget *pins_ = nullptr;
+	QLabel *context_ = nullptr, *status_ = nullptr, *selected_heading_ = nullptr, *icon_preview_ = nullptr;
+	QPushButton *remove_ = nullptr, *clear_ = nullptr, *choose_icon_ = nullptr, *remove_icon_ = nullptr;
+	QCheckBox *switch_scene_ = nullptr;
+	QToolButton *reset_section_ = nullptr;
+	QSet<QString> expanded_before_search_;
+	bool automatic_ = false, searching_ = false;
 };
 
 class ViewsControlPanel final : public QWidget {
@@ -1377,7 +1708,44 @@ public:
 		tools->addWidget(configure);
 		connect(configure, &QPushButton::clicked, this, std::move(manage));
 		connect(edit_, &QPushButton::clicked, this, [this] { edit(); });
-		scroll_ = new QScrollArea(this);
+		auto *display = new QHBoxLayout;
+		layout->addLayout(display);
+		scene_label_ = new QLabel(text("Views.Scene"), this);
+		scene_label_->setObjectName("viewsPanelSceneLabel");
+		display->addWidget(scene_label_);
+		scene_choice_ = new QComboBox(this);
+		scene_choice_->setObjectName("viewsPanelScene");
+		scene_choice_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+		scene_choice_->setMinimumContentsLength(6);
+		scene_choice_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+		scene_choice_->setToolTip(text("Controls.SceneTip"));
+		scene_label_->setBuddy(scene_choice_);
+		display->addWidget(scene_choice_, 1);
+		auto *display_label = new QLabel(text("Controls.Layout"), this);
+		display->addWidget(display_label);
+		layout_choice_ = new QComboBox(this);
+		layout_choice_->setObjectName("viewsPanelLayout");
+		layout_choice_->addItem(text("Controls.List"), "list");
+		layout_choice_->addItem(text("Controls.Buttons"), "buttons");
+		display_label->setBuddy(layout_choice_);
+		display->addWidget(layout_choice_);
+		pages_ = new QStackedWidget(this);
+		pages_->setObjectName("viewsPanelLayouts");
+		layout->addWidget(pages_, 1);
+		list_ = new ViewControlList(pages_);
+		list_->setObjectName("viewsPanelList");
+		list_->setHeaderHidden(true);
+		list_->setUniformRowHeights(true);
+		list_->setWordWrap(false);
+		list_->setTextElideMode(Qt::ElideRight);
+		list_->setSelectionMode(QAbstractItemView::NoSelection);
+		list_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+		list_->header()->setSectionResizeMode(QHeaderView::Stretch);
+		list_->setIndentation(16);
+		list_->setIconSize(QSize(16, 16));
+		list_->setAccessibleName(text("Controls.List"));
+		pages_->addWidget(list_);
+		scroll_ = new QScrollArea(pages_);
 		scroll_->setObjectName("viewsPanelScroll");
 		scroll_->setWidgetResizable(true);
 		scroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -1389,9 +1757,61 @@ public:
 		content_layout_->setContentsMargins(0, 0, 0, 0);
 		content_layout_->setSpacing(12);
 		scroll_->setWidget(content_);
-		layout->addWidget(scroll_, 1);
+		pages_->addWidget(scroll_);
+		size_controls_ = new QWidget(this);
+		size_controls_->setObjectName("viewsPanelSizeControls");
+		auto *sizes = new QHBoxLayout(size_controls_);
+		sizes->setContentsMargins(0, 0, 0, 0);
+		auto *size_label = new QLabel(text("Controls.ButtonSize"), size_controls_);
+		sizes->addWidget(size_label);
+		button_size_ = new QSlider(Qt::Horizontal, size_controls_);
+		button_size_->setObjectName("viewsPanelButtonSize");
+		button_size_->setRange(40, 112);
+		button_size_->setSingleStep(4);
+		button_size_->setPageStep(12);
+		button_size_->setValue(48);
+		button_size_->setAccessibleName(text("Controls.ButtonSize"));
+		button_size_->setToolTip(text("Controls.ButtonSizeHelp"));
+		size_label->setBuddy(button_size_);
+		sizes->addWidget(button_size_, 1);
+		layout->addWidget(size_controls_);
 		status_ = note(this, {}, "viewsPanelStatus");
 		layout->addWidget(status_);
+		connect(scene_choice_, &QComboBox::activated, this, [this](int index) {
+			const QString id = scene_choice_->itemData(index).toString();
+			if (!id.isEmpty())
+				press(id);
+		});
+		connect(layout_choice_, &QComboBox::currentIndexChanged, this, [this] {
+			config_["layout"] = layout_choice_->currentData().toString();
+			apply_display();
+			if (loaded_)
+				obs_frontend_save();
+		});
+		connect(button_size_, &QSlider::valueChanged, this, [this](int value) {
+			config_["buttonSize"] = value;
+			for (auto *button : buttons_)
+				button->set_display_size(value);
+			reflow();
+			if (loaded_ && !button_size_->isSliderDown())
+				obs_frontend_save();
+		});
+		connect(button_size_, &QSlider::sliderReleased, this, [this] {
+			if (loaded_)
+				obs_frontend_save();
+		});
+		list_->activate = [this](QTreeWidgetItem *item) {
+			const QString id = item->data(0, Qt::UserRole).toString();
+			if (!id.isEmpty())
+				press(id);
+		};
+		connect(list_, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item, int) {
+			if (item->flags() & Qt::ItemIsEnabled)
+				list_->activate(item);
+		});
+		connect(list_, &QTreeWidget::itemExpanded, this, [this] { remember_collapsed(); });
+		connect(list_, &QTreeWidget::itemCollapsed, this, [this] { remember_collapsed(); });
+		apply_display();
 	}
 
 	void clear_collection()
@@ -1399,6 +1819,7 @@ public:
 		if (editor_)
 			editor_->close();
 		config_ = {};
+		apply_display();
 		set_inventory({}, false);
 	}
 
@@ -1406,12 +1827,13 @@ public:
 	{
 		OBSDataAutoRelease data = obs_data_get_obj(root, "stagekit.views.panel");
 		config_ = object(data);
+		apply_display();
 	}
 
 	void save(obs_data_t *root)
 	{
 		if (config_["customized"].toBool()) {
-			// Refresh only fallback names. Targets and custom labels keep their identities.
+			// Refresh fallback names without changing targets, icons or custom labels.
 			auto pins = config_["pins"].toArray();
 			for (int i = 0; i < pins.size(); ++i) {
 				auto pin = pins[i].toObject();
@@ -1433,7 +1855,10 @@ public:
 	{
 		inventory_ = inventory;
 		loaded_ = loaded;
+		refresh_scenes();
 		edit_->setEnabled(loaded && !editor_);
+		layout_choice_->setEnabled(loaded);
+		button_size_->setEnabled(loaded);
 		QJsonArray appearance;
 		for (const QJsonValue value : effective_pins()) {
 			const auto pin = value.toObject();
@@ -1441,7 +1866,8 @@ public:
 			appearance.append(QJsonObject{{"id", pin["id"]},
 						      {"target", pin["target"]},
 						      {"name", panel_title(pin, control)},
-						      {"section", panel_section(pin, control)}});
+						      {"section", panel_section(pin, control)},
+						      {"iconPng", pin["iconPng"]}});
 		}
 		if (appearance != appearance_) {
 			appearance_ = appearance;
@@ -1457,14 +1883,28 @@ public:
 			QFont font = button->font();
 			font.setBold(active);
 			button->setFont(font);
-			QString reason = available           ? QString()
-					 : control.isEmpty() ? text("Controls.Missing")
-							     : control["reason"].toString();
-			if (!available && reason.isEmpty())
-				reason = text("Controls.NotReady");
+			const QString reason = unavailable_reason(control, available);
 			const QString context = button->property("viewsControlContext").toString();
 			button->setToolTip(context + (reason.isEmpty() ? QString() : "\n" + reason));
 			button->setAccessibleDescription(context + "\n" + (active ? text("Controls.Active") : reason));
+		}
+		for (auto *item : list_items_) {
+			const auto control = find_id(inventory_, item->data(0, Qt::UserRole).toString());
+			const bool available = loaded && control["available"].toBool();
+			const bool active = available && control["active"].toBool();
+			item->setFlags(available ? Qt::ItemIsEnabled | Qt::ItemIsSelectable : Qt::NoItemFlags);
+			item->setData(0, Qt::UserRole + 2, active);
+			QFont font = item->font(0);
+			font.setBold(active);
+			item->setFont(0, font);
+			item->setBackground(0, active ? list_->palette().highlight() : QBrush());
+			item->setForeground(0, active ? list_->palette().highlightedText() : QBrush());
+			const QString reason = unavailable_reason(control, available);
+			const QString context = item->data(0, Qt::UserRole + 3).toString();
+			item->setToolTip(0, context + "\n" + item->text(0) +
+						    (reason.isEmpty() ? QString() : "\n" + reason));
+			item->setData(0, Qt::AccessibleDescriptionRole,
+				      context + "\n" + (active ? text("Controls.Active") : reason));
 		}
 		status_->setText(!loaded              ? text("Views.Loading")
 				 : buttons_.isEmpty() ? text(config_["customized"].toBool() ? "Controls.EmptyCustom"
@@ -1481,6 +1921,60 @@ protected:
 	}
 
 private:
+	void refresh_scenes()
+	{
+		QJsonArray appearance;
+		QString active;
+		for (const QJsonValue value : inventory_) {
+			const auto control = value.toObject();
+			if (control["target"].toObject()["kind"].toString() != "scene")
+				continue;
+			appearance.append(QJsonObject{{"id", control["id"]},
+						      {"name", control["name"]},
+						      {"target", control["target"]}});
+			if (control["active"].toBool())
+				active = control["id"].toString();
+		}
+		const QSignalBlocker blocker(scene_choice_);
+		if (appearance != scene_appearance_) {
+			scene_appearance_ = appearance;
+			scene_choice_->clear();
+			for (const QJsonValue value : appearance) {
+				const auto entry = value.toObject();
+				scene_choice_->addItem(entry["name"].toString(), entry["id"].toString());
+				scene_choice_->setItemData(scene_choice_->count() - 1,
+							   entry["target"].toObject().toVariantMap(), Qt::UserRole + 1);
+			}
+		}
+		scene_choice_->setCurrentIndex(active.isEmpty() ? -1 : scene_choice_->findData(active));
+		scene_choice_->setEnabled(loaded_ && scene_choice_->count() > 0);
+		const QString label =
+			text(obs_frontend_preview_program_mode_active() ? "Controls.Preview" : "Views.Scene");
+		scene_label_->setText(label);
+		scene_choice_->setAccessibleName(label);
+	}
+
+	QString unavailable_reason(const QJsonObject &control, bool available) const
+	{
+		if (available)
+			return {};
+		const QString reason = control.isEmpty() ? text("Controls.Missing") : control["reason"].toString();
+		return reason.isEmpty() ? text("Controls.NotReady") : reason;
+	}
+
+	void apply_display()
+	{
+		const bool buttons = config_["layout"].toString() == "buttons";
+		const QSignalBlocker layout_block(layout_choice_), size_block(button_size_);
+		layout_choice_->setCurrentIndex(buttons ? 1 : 0);
+		button_size_->setValue(std::clamp(config_["buttonSize"].toInt(48), 40, 112));
+		pages_->setCurrentWidget(buttons ? static_cast<QWidget *>(scroll_) : list_);
+		size_controls_->setVisible(buttons);
+		for (auto *button : buttons_)
+			button->set_display_size(button_size_->value());
+		reflow();
+	}
+
 	QJsonArray effective_pins() const
 	{
 		if (config_["customized"].toBool())
@@ -1494,13 +1988,22 @@ private:
 
 	void rebuild()
 	{
+		const QSignalBlocker tree_block(list_);
+		const QString current = list_->currentItem() ? list_->currentItem()->data(0, Qt::UserRole).toString()
+							     : QString();
+		const int scroll = list_->verticalScrollBar()->value();
 		buttons_.clear();
 		sections_.clear();
+		list_items_.clear();
+		list_->clear();
 		while (auto *item = content_layout_->takeAt(0)) {
 			if (auto *widget = item->widget())
 				delete widget;
 			delete item;
 		}
+		QSet<QString> collapsed;
+		for (const QJsonValue value : config_["collapsedSections"].toArray())
+			collapsed.insert(value.toString());
 		for (const QJsonValue value : appearance_) {
 			const auto entry = value.toObject();
 			const QString title = entry["section"].toString();
@@ -1523,8 +2026,13 @@ private:
 				grid->setSpacing(6);
 				layout->addLayout(grid);
 				content_layout_->addWidget(section);
-				sections_.append({title, grid, {}});
+				auto *heading = new QTreeWidgetItem(list_, {title});
+				heading->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+				heading->setFont(0, font);
+				heading->setToolTip(0, title);
+				sections_.append({title, grid, {}, heading});
 			}
+			const QIcon icon = panel_icon(entry);
 			auto *button = new ViewControlButton(entry["name"].toString(), content_);
 			button->setObjectName("viewsPanelButton-" + entry["id"].toString());
 			button->setProperty("viewsControlId", entry["id"].toString());
@@ -1532,40 +2040,68 @@ private:
 			button->setProperty("viewsControlContext", entry["section"].toString());
 			button->setAccessibleName(entry["name"].toString());
 			button->setCheckable(true);
+			button->setIcon(icon);
+			button->set_display_size(button_size_->value());
 			button->setStyleSheet(
 				"QPushButton:checked { background-color: palette(highlight); color: palette(highlighted-text); }");
-			// Let short labels use a shorter row than the preferred size hint;
-			// longer labels can grow through heightForWidth().
 			auto policy = QSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 			policy.setHeightForWidth(true);
 			button->setSizePolicy(policy);
-			button->setMinimumHeight(48);
 			sections_[at].buttons.append(button);
 			buttons_.append(button);
 			connect(button, &QPushButton::clicked, this, [this, button] {
-				// Only a native snapshot determines active state, including rejected presses.
-				const auto control = find_id(inventory_, button->property("viewsControlId").toString());
+				const QString id = button->property("viewsControlId").toString();
+				const auto control = find_id(inventory_, id);
 				button->setChecked(control["available"].toBool() && control["active"].toBool());
-				const auto target =
-					QJsonObject::fromVariantMap(button->property("viewsControlTarget").toMap());
-				const QByteArray json = QJsonDocument(target).toJson(QJsonDocument::Compact);
-				OBSDataAutoRelease data = obs_data_create_from_json(json.constData());
-				std::string why;
-				if (!view_control_press(data, why))
-					status_->setText(QString::fromStdString(why));
-				else {
-					status_->setText(text("Views.Applying"));
-					changed_();
-				}
+				press(id);
 			});
+			auto *item = new QTreeWidgetItem(sections_[at].heading, {entry["name"].toString()});
+			item->setData(0, Qt::UserRole, entry["id"].toString());
+			item->setData(0, Qt::UserRole + 1, entry["target"].toObject().toVariantMap());
+			item->setData(0, Qt::UserRole + 3, title);
+			item->setIcon(0, icon);
+			list_items_.append(item);
+			if (entry["id"].toString() == current)
+				list_->setCurrentItem(item);
 		}
+		for (const auto &section : sections_)
+			section.heading->setExpanded(!collapsed.contains(section.title));
 		content_layout_->addStretch(1);
+		list_->verticalScrollBar()->setValue(scroll);
 		reflow();
+	}
+
+	void remember_collapsed()
+	{
+		QJsonArray collapsed;
+		for (const auto &section : sections_)
+			if (!section.heading->isExpanded())
+				collapsed.append(section.title);
+		config_["collapsedSections"] = collapsed;
+		if (loaded_)
+			obs_frontend_save();
+	}
+
+	void press(const QString &id)
+	{
+		// Resolve again in the native catalog. UI focus/selection never decides
+		// whether a command is needed, and native state remains authoritative.
+		const auto control = find_id(inventory_, id);
+		const QByteArray json = QJsonDocument(control["target"].toObject()).toJson(QJsonDocument::Compact);
+		OBSDataAutoRelease data = obs_data_create_from_json(json.constData());
+		std::string why;
+		if (!view_control_press(data, why, config_["showScene"].toBool(true)))
+			status_->setText(QString::fromStdString(why));
+		else {
+			status_->setText(text("Views.Applying"));
+			changed_();
+		}
 	}
 
 	void reflow()
 	{
-		const int columns = std::clamp((scroll_->viewport()->width() + 6) / 150, 1, 6);
+		const int width = button_size_ ? button_size_->value() * 3 + 6 : 150;
+		const int columns = std::clamp((scroll_->viewport()->width() + 6) / width, 1, 6);
 		for (auto &section : sections_) {
 			for (auto *button : section.buttons)
 				section.grid->removeWidget(button);
@@ -1589,11 +2125,15 @@ private:
 		set_inventory(object(response)["controls"].toArray(), ready);
 		if (!ready)
 			return;
-		editor_ = new ViewPanelEditor(this, inventory_, effective_pins(), [this](QJsonArray pins, bool custom) {
-			config_ = {{"schema", 1}, {"customized", custom}, {"pins", pins}};
-			set_inventory(inventory_, loaded_);
-			obs_frontend_save();
-		});
+		editor_ = new ViewPanelEditor(this, inventory_, effective_pins(), config_["showScene"].toBool(true),
+					      [this](QJsonArray pins, bool custom, bool show_scene) {
+						      config_["schema"] = 1;
+						      config_["customized"] = custom;
+						      config_["pins"] = pins;
+						      config_["showScene"] = show_scene;
+						      set_inventory(inventory_, loaded_);
+						      obs_frontend_save();
+					      });
 		connect(editor_, &QDialog::finished, this, [this] {
 			editor_ = nullptr;
 			edit_->setEnabled(loaded_);
@@ -1606,17 +2146,23 @@ private:
 		QString title;
 		QGridLayout *grid;
 		QList<ViewControlButton *> buttons;
+		QTreeWidgetItem *heading;
 	};
 	QList<Section> sections_;
 	QList<ViewControlButton *> buttons_;
-	QJsonArray inventory_, appearance_;
+	QList<QTreeWidgetItem *> list_items_;
+	QJsonArray inventory_, appearance_, scene_appearance_;
 	QJsonObject config_;
 	std::function<void()> changed_;
 	QPushButton *edit_ = nullptr;
+	QComboBox *layout_choice_ = nullptr, *scene_choice_ = nullptr;
+	QStackedWidget *pages_ = nullptr;
+	ViewControlList *list_ = nullptr;
 	QScrollArea *scroll_ = nullptr;
-	QWidget *content_ = nullptr;
+	QWidget *content_ = nullptr, *size_controls_ = nullptr;
+	QSlider *button_size_ = nullptr;
 	QVBoxLayout *content_layout_ = nullptr;
-	QLabel *status_ = nullptr;
+	QLabel *status_ = nullptr, *scene_label_ = nullptr;
 	QPointer<ViewPanelEditor> editor_;
 	bool loaded_ = false;
 };
@@ -2357,7 +2903,9 @@ void frontend_event(obs_frontend_event event, void *)
 		dock->clear_collection();
 	else if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING || event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED)
 		dock->open_collection();
-	else if (event == OBS_FRONTEND_EVENT_SCENE_LIST_CHANGED || event == OBS_FRONTEND_EVENT_SCENE_CHANGED)
+	else if (event == OBS_FRONTEND_EVENT_SCENE_LIST_CHANGED || event == OBS_FRONTEND_EVENT_SCENE_CHANGED ||
+		 event == OBS_FRONTEND_EVENT_PREVIEW_SCENE_CHANGED || event == OBS_FRONTEND_EVENT_STUDIO_MODE_ENABLED ||
+		 event == OBS_FRONTEND_EVENT_STUDIO_MODE_DISABLED)
 		dock->queue_refresh();
 }
 
