@@ -1077,7 +1077,12 @@ void combo_items(QComboBox *box, const QList<QPair<QString, QString>> &items, co
 // A native button keeps the OBS theme while wrapping long, user-provided names.
 class ViewControlButton final : public QPushButton {
 public:
-	using QPushButton::QPushButton;
+	ViewControlButton(const QString &label, QWidget *parent) : QPushButton(label, parent)
+	{
+		// These wrapped size hints describe the full button. Native button
+		// layout margins must not place its last row outside the section.
+		setAttribute(Qt::WA_LayoutUsesWidgetRect);
+	}
 	QSize sizeHint() const override { return {150, 58}; }
 	QSize minimumSizeHint() const override { return {105, 48}; }
 	int heightForWidth(int width) const override

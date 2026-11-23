@@ -53,7 +53,7 @@ is an existing control and Keep current selection leaves it alone. Combined view
 presets; individual choices are directly available on the panel. Adding a controller returns to
 management so Import is immediately accessible instead of opening an empty configuration window.
 
-The real OBS frontend fixture is being extended for simultaneous controls across scenes, real state
+The real OBS frontend fixture covers simultaneous controls across scenes, real state
 after external changes, native mode/link/show actions, multi-pin customization, identity after rename
 and removal, atomic bulk import, collection isolation and restart persistence. Windows captures of
 the panel and its editor belong in the same PR. Local source checks and exact-head Windows/OBS frontend
@@ -76,6 +76,16 @@ No recurring work was added to ordinary legacy filter ticks.
 The first Windows build stopped before frontend execution because two new dock locals were named
 signals, which Qt expands to public. Both locals now use handler. No native runtime assertion was
 reached in that attempt; the corrected head must complete the Windows build and frontend gates.
+
+Corrected head e58084ea6eb130cb6ee19df2ae286b0d37bddbd3 passed Windows compilation and packaging.
+Its actual OBS 32.2.2 log reports PASS for core controllers, original removal and source-record reload,
+legacy migration and the controller editor. The panel fixture reported only two readiness failures:
+it clicked Edit panel before the newly loaded empty collection had enabled the button. The fixture now
+waits for that enabled state with its existing collection/draft checks, without sleeps or weaker
+assertions. Its actual Windows captures also revealed clipping on each section's last button row.
+The custom wrapped button now uses WA_LayoutUsesWidgetRect, and the fixture checks containment within
+the section at normal and resized dock widths. The next Windows run must verify both corrections and
+provide the updated panel capture; the editor capture is unchanged.
 
 ## Deferred platform follow-up after Windows beta253
 

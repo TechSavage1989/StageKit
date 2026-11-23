@@ -62,6 +62,20 @@ inline bool checked(QWidget *panel, const QString &id)
 	return found && found->isChecked();
 }
 
+inline bool buttons_fit_sections(QWidget *panel)
+{
+	bool found = false;
+	for (auto *candidate : panel->findChildren<QAbstractButton *>()) {
+		if (!candidate->property("viewsControlId").isValid())
+			continue;
+		found = true;
+		const auto *section = candidate->parentWidget();
+		if (!section || !section->rect().contains(candidate->geometry()))
+			return false;
+	}
+	return found;
+}
+
 inline bool press_button(QWidget *panel, const QString &id)
 {
 	auto *found = button_id(panel, id);
@@ -154,8 +168,10 @@ inline void check_collection_isolation(QWidget *panel, QStringList &issues)
 	if (!created)
 		return;
 	expect(until([&] {
+		       const auto *edit = panel->findChild<QAbstractButton *>("viewsPanelEdit");
 		       return (!draft || !draft->isVisible()) &&
-			      panel->findChild<QWidget *>("viewsOperatorBoard")->isVisible() && !button(panel, {});
+			      panel->findChild<QWidget *>("viewsOperatorBoard")->isVisible() && !button(panel, {}) &&
+			      edit && edit->isEnabled();
 	       }),
 	       "collection change retained a draft, management page or another collection's pins");
 	if (click(panel, "viewsPanelEdit") && until([&] { return dialog("viewsPanelEditor"); })) {
@@ -559,6 +575,8 @@ inline void check(QStringList &issues, bool restart)
 		scope->setCurrentIndex(scope->findData(old_scope));
 		expect(click(panel, "viewsBackToControls") && check_saved_panel(panel),
 		       "custom labels, sections or saved order changed while importing controls");
+		expect(until([&] { return buttons_fit_sections(panel); }),
+		       "a control button extended outside its section at the normal dock width");
 		obs_frontend_save();
 
 		const QString capture = qEnvironmentVariable("STAGEKIT_VIEWS_CAPTURE");
@@ -570,7 +588,8 @@ inline void check(QStringList &issues, bool restart)
 				dock = qobject_cast<QDockWidget *>(parent);
 			if (dock)
 				dock->resize(520, 600);
-			QCoreApplication::processEvents();
+			expect(until([&] { return buttons_fit_sections(panel); }),
+			       "a control button was clipped by its section after resizing the dock");
 			expect(panel->grab().save(directory.filePath("stagekit-controls.png")),
 			       "could not capture the real operator panel");
 			expect(click(panel, "viewsPanelEdit") && until([&] { return dialog("viewsPanelEditor"); }),
