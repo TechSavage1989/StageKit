@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | fix/headless-bounds-check, based on published beta251 (25ce0297450135924cbf26ddcfff006f297608b9). Test initialization follow-up only; no new release version. |
+| Working branch | fix/windows-render-regression, based on f973cac0b9e1e24c3e9e4ce7cb1993f72e27f51e. Windows-first correction after the owner's frame-time regression report. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -22,6 +22,18 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
+
+## Windows frame-time regression report
+
+After beta251 was published, the owner reported average frame render time around 1.5 ms, about 0.5 ms above the earlier result. The exact earlier installed version and a matched hardware capture are not available. Treat this as a reported regression requiring investigation. The completed Linux software-renderer comparison in PR273 does not establish performance on the owner's Windows GPU.
+
+The beta250-to-beta251 review found an extra full scene-item transition scan before reuse eligibility was known, and preparation-state bookkeeping in ordinary composition and Morph callers that never reused it. It found no added GPU pass or texture on the non-reuse path, no shader change, no automatic test polling, and no Windows build-mode or toolchain change. These are concrete unnecessary CPU costs, but the review does not attribute the complete reported 0.5 ms increase to them.
+
+This correction makes reuse preparation opt-in for an actual per-source Scene Blur redraw. Ordinary shadows, disabled or whole-scene Blur, Morph, multi-stage fallback and the forced reference path avoid unused reuse preparation. The eligible path retains the same frame, settings, size, color and transition guards, rendered appearance and source-input behavior. The bounds and Scene Fit changes remain; the audit found no concrete added recurring rendering work in those changes. The timer key and companion 0.42.0.0 remain unchanged.
+
+Windows validation includes the existing strict pixel and operation fixtures and a quiet normal-rendering timing comparison in disposable portable OBS. Timing samples must exclude fixture screenshots, readbacks and manual graphics-task renders. Save the adapter/backend identity, complete measurements and successful OBS logs. This compares prepared-shadow reuse with its forced original preparation path in the same candidate; it is not a complete beta250 binary comparison or a measurement of the owner's hardware. Missing coverage or incomplete measurements fail; timing variation has no arbitrary performance threshold.
+
+Publish and verify the corrected Windows installer after the exact-head Windows and shared release gates pass. Other platforms and Linux-only benchmarks follow. Do not report that the owner's original frame time has been restored without their actual result.
 
 ## Rendering overhead
 

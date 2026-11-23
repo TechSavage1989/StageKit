@@ -25,6 +25,11 @@ void register_scene_blur();
 // Whether a filter is a Scene Blur.
 bool is_scene_blur(obs_source_t *filter);
 
+// The per-item Scene Blur currently drawing this scene's input before
+// laying its Scene Shadow over a redrawn picture. Borrowed, graphics context
+// only; null outside that input draw. No source picture is retained here.
+obs_source_t *scene_blur_shadow_consumer(obs_source_t *scene);
+
 // For Scene Shadow, on the drawing thread: `item` as the Scene Blur `filter`
 // draws it this frame when its "Blur area" is "Each source by itself" (the
 // item's own picture blurred by itself, straight alpha, w by h) and `m`, the

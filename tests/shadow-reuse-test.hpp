@@ -127,6 +127,7 @@ template<typename Predicate> inline bool until(Predicate predicate)
 struct Counts {
 	bool available = false;
 	long long preparations = 0, reuses = 0, passes = 0, stages = 0, settings = 0;
+	long long retentions = 0, eligibility_checks = 0;
 };
 
 inline Counts counts(obs_source_t *filter, int bypass = -1)
@@ -141,6 +142,8 @@ inline Counts counts(obs_source_t *filter, int bypass = -1)
 	out.passes = calldata_int(&cd, "passes");
 	out.stages = calldata_int(&cd, "stages");
 	out.settings = calldata_int(&cd, "settings");
+	out.retentions = calldata_int(&cd, "retentions");
+	out.eligibility_checks = calldata_int(&cd, "eligibility_checks");
 	calldata_free(&cd);
 	return out;
 }
@@ -151,6 +154,8 @@ inline Counts difference(const Counts &after, const Counts &before)
 	out.preparations -= before.preparations;
 	out.reuses -= before.reuses;
 	out.passes -= before.passes;
+	out.retentions -= before.retentions;
+	out.eligibility_checks -= before.eligibility_checks;
 	return out;
 }
 
@@ -321,7 +326,8 @@ inline Sample sample(Fixture &fixture, bool linear = false)
 			const Counts repeated = difference(counts(fixture.shadows[0]), before);
 			job.out.repeated_equal = again == job.out.pixels[0];
 			job.out.repeated_idle = repeated.preparations == 0 && repeated.reuses == 0 &&
-						repeated.passes == 0;
+						repeated.passes == 0 && repeated.retentions == 0 &&
+						repeated.eligibility_checks == 0;
 			job.out.same_frame = frame == obs_get_video_frame_time();
 			fixture.last_sample = frame;
 			gs_set_linear_srgb(previous);
@@ -347,7 +353,9 @@ inline bool check_sample(const char *name, const Sample &s, bool reuse, QStringL
 					  b.reuses == 0 && b.passes == a.passes * 2
 				: a.preparations >= 2 && a.preparations == b.preparations && a.reuses == 0 &&
 					  b.reuses == 0 && a.passes > 0 && a.passes == b.passes;
-	const bool ok = equal && work && s.repeated_equal && s.repeated_idle;
+	const bool tracking = b.retentions == 0 && b.eligibility_checks == 0 &&
+			      (reuse ? a.retentions > 0 : a.retentions == 0 && a.eligibility_checks == 0);
+	const bool ok = equal && work && tracking && s.repeated_equal && s.repeated_idle;
 	if (!ok)
 		issues << QStringLiteral(
 				  "Shadow reuse %1: equal=%2 same frame=%3 repeat=%4/%5; current prep/reuse/passes/stages=%6/%7/%8/%9, reference=%10/%11/%12/%13")
@@ -364,9 +372,84 @@ inline bool check_sample(const char *name, const Sample &s, bool reuse, QStringL
 				  .arg(b.reuses)
 				  .arg(b.passes)
 				  .arg(b.stages);
+	if (!tracking)
+		issues << QStringLiteral("Shadow reuse %1: retention/checks current=%2/%3, reference=%4/%5")
+				  .arg(QString::fromUtf8(name))
+				  .arg(a.retentions)
+				  .arg(a.eligibility_checks)
+				  .arg(b.retentions)
+				  .arg(b.eligibility_checks);
 	blog(LOG_INFO, "Shadow reuse %s: exact=%d, prepared=%lld/%lld, reused=%lld/%lld, passes=%lld/%lld", name,
 	     int(equal), a.preparations, b.preparations, a.reuses, b.reuses, a.passes, b.passes);
 	return ok;
+}
+
+inline void check_no_consumer(const char *name, const Sample &s, QStringList &issues)
+{
+	const Counts &a = s.work[0], &b = s.work[1];
+	const bool exact = s.same_frame && s.pixels[0] == s.pixels[1] && visible(s.pixels[0]);
+	const bool work = a.preparations == 1 && b.preparations == 1 && a.reuses == 0 && b.reuses == 0 &&
+			  a.passes > 0 && a.passes == b.passes && a.retentions == 0 && b.retentions == 0 &&
+			  a.eligibility_checks == 0 && b.eligibility_checks == 0;
+	if (!exact || !work || !s.repeated_equal || !s.repeated_idle)
+		issues << QStringLiteral(
+				  "Shadow reuse %1: exact=%2 repeat=%3/%4; prep/reuse/passes/retention/checks current=%5/%6/%7/%8/%9, reference=%10/%11/%12/%13/%14")
+				  .arg(QString::fromUtf8(name))
+				  .arg(exact)
+				  .arg(s.repeated_equal)
+				  .arg(s.repeated_idle)
+				  .arg(a.preparations)
+				  .arg(a.reuses)
+				  .arg(a.passes)
+				  .arg(a.retentions)
+				  .arg(a.eligibility_checks)
+				  .arg(b.preparations)
+				  .arg(b.reuses)
+				  .arg(b.passes)
+				  .arg(b.retentions)
+				  .arg(b.eligibility_checks);
+	blog(LOG_INFO, "Shadow reuse %s: exact=%d, prepared=%lld/%lld, retention=%lld/%lld, checks=%lld/%lld", name,
+	     int(exact), a.preparations, b.preparations, a.retentions, b.retentions, a.eligibility_checks,
+	     b.eligibility_checks);
+}
+
+inline bool check_non_consumers(Fixture &fixture, QStringList &issues)
+{
+	for (size_t i = 0; i < fixture.scenes.size(); i++)
+		obs_source_filter_remove(fixture.scenes[i], fixture.blurs[i]);
+	check_no_consumer("no Scene Blur", sample(fixture), issues);
+	for (size_t i = 0; i < fixture.scenes.size(); i++)
+		obs_source_filter_add(fixture.scenes[i], fixture.blurs[i]);
+
+	for (auto *blur : fixture.blurs)
+		obs_source_set_enabled(blur, false);
+	check_no_consumer("disabled Scene Blur", sample(fixture), issues);
+	for (auto *blur : fixture.blurs)
+		obs_source_set_enabled(blur, true);
+
+	auto area = [&](int value) {
+		for (auto *blur : fixture.blurs) {
+			obs_data_t *settings = obs_source_get_settings(blur);
+			obs_data_set_int(settings, "blur_area", value);
+			obs_source_update(blur, settings);
+			obs_data_release(settings);
+		}
+	};
+	area(0);
+	Sample whole;
+	const bool whole_ready = until([&] {
+		whole = sample(fixture);
+		return whole.work[0].preparations == 1 && whole.work[1].preparations == 1;
+	});
+	check_no_consumer("whole-scene Scene Blur", whole, issues);
+	area(1);
+	const bool restored = until([&] {
+		const Sample ready = sample(fixture);
+		return ready.work[0].preparations == 1 && ready.work[0].reuses == 1 && ready.work[1].preparations == 2;
+	});
+	if (!whole_ready || !restored)
+		issues << QStringLiteral("Shadow reuse: changing Scene Blur area did not complete");
+	return whole_ready && restored;
 }
 
 inline void check_guards(Fixture &fixture, QStringList &issues)
@@ -494,6 +577,8 @@ inline void check(QStringList &issues)
 		issues << QStringLiteral("Shadow reuse: Scene Shadow and each-source Scene Blur did not become ready");
 		return;
 	}
+	if (!check_non_consumers(fixture, issues))
+		return;
 	struct Style {
 		const char *name;
 		bool outline, shadow, glow, picture;
@@ -621,7 +706,9 @@ inline void check(QStringList &issues)
 			if (!fading.same_frame || fading.work[0].reuses != 0 || fading.work[1].reuses != 0 ||
 			    fading.work[0].preparations < 2 ||
 			    fading.work[0].preparations != fading.work[1].preparations || fading.work[0].passes <= 0 ||
-			    fading.work[0].passes != fading.work[1].passes)
+			    fading.work[0].passes != fading.work[1].passes || fading.work[0].retentions != 0 ||
+			    fading.work[1].retentions != 0 || fading.work[0].eligibility_checks != 0 ||
+			    fading.work[1].eligibility_checks != 0)
 				issues << QStringLiteral(
 					"Shadow reuse: a source hide transition did not keep the original preparation path");
 		}

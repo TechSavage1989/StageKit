@@ -8,6 +8,9 @@
 #include "capture-settings-test.hpp"
 #include "visible-bounds-reuse-test.hpp"
 #include "shadow-reuse-test.hpp"
+#ifdef _WIN32
+#include "windows-render-timing-test.hpp"
+#endif
 #include "replacement-quick.hpp"
 #include "show-in-scenes-camera.hpp"
 #include <obs-module.h>
@@ -339,6 +342,10 @@ static void exercise()
 	shadow_reuse_test::check(issues);
 	check_plugin_manager(issues);
 	check_blur_output(issues);
+#ifdef _WIN32
+	if (issues.isEmpty())
+		windows_render_timing_test::check(issues);
+#endif
 	finish_probe(issues);
 }
 
