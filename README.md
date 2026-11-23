@@ -1220,7 +1220,8 @@ continue to use their original filters.
 **Choose a compact list or adjustable buttons.** Choose **List** or **Buttons** at the top of the dock.
 Both layouts use the same saved controls, labels, sections and order. List is the default and groups
 compact rows under collapsible headings. A single click applies a choice, including one that is already
-highlighted. Enter or Space applies the current row. Active indicators follow the real native state.
+highlighted. Collapsed headings are remembered when you switch collections or restart OBS. Enter or
+Space applies the current row. Active indicators follow the real native state.
 
 **Keep controls from several scenes together in a compact Windows OBS list.**
 

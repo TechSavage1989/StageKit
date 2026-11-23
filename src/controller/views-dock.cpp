@@ -1532,8 +1532,8 @@ public:
 		     {"Controls.Scenes", "Controls.SectionViews", "Controls.SectionCameras", "Controls.SectionCaptures",
 		      "Controls.SectionBackgrounds", "Controls.SectionOverlays", "Controls.SectionAudio"})
 			section_presets_.append(text(key));
-		for (const QJsonValue value : custom_sections)
-			remember_section(value.toString());
+		for (const auto &name : values(custom_sections))
+			remember_section(name);
 		for (const QJsonValue value : pins)
 			remember_section(value.toObject()["section"].toString());
 		fill_sections();
@@ -1665,12 +1665,12 @@ public:
 		connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 		connect(buttons, &QDialogButtonBox::accepted, this, [this] {
 			remember_pin_sections();
-			QJsonArray pins, sections;
+			QJsonArray pins;
 			for (int i = 0; i < pins_->count(); ++i)
 				pins.append(pin_data(pins_->item(i)));
-			for (const auto &name : custom_sections_)
-				sections.append(name);
-			apply_(pins, sections, !automatic_, switch_scene_->isChecked());
+			// OBS data arrays retain objects only, so names use the same
+			// value records as native scene and source lists.
+			apply_(pins, value_list(custom_sections_), !automatic_, switch_scene_->isChecked());
 			accept();
 		});
 		if (pins_->count())
@@ -2347,8 +2347,8 @@ private:
 			delete item;
 		}
 		QSet<QString> collapsed;
-		for (const QJsonValue value : config_["collapsedSections"].toArray())
-			collapsed.insert(value.toString());
+		for (const auto &name : values(config_["collapsedSections"]))
+			collapsed.insert(name);
 		for (const QJsonValue value : appearance_) {
 			const auto entry = value.toObject();
 			const QString title = entry["section"].toString();
@@ -2418,11 +2418,11 @@ private:
 
 	void remember_collapsed()
 	{
-		QJsonArray collapsed;
+		QStringList collapsed;
 		for (const auto &section : sections_)
 			if (!section.heading->isExpanded())
 				collapsed.append(section.title);
-		config_["collapsedSections"] = collapsed;
+		config_["collapsedSections"] = value_list(collapsed);
 		if (loaded_)
 			obs_frontend_save();
 	}

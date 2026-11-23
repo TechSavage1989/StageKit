@@ -703,7 +703,17 @@ inline void check_icon_library(QWidget *editor, QListWidget *pins, QStringList &
 		library->reject();
 }
 
-inline bool check_saved_panel(QWidget *panel, const char *layout = "list", bool navigate = true)
+inline QTreeWidgetItem *section_heading(QWidget *panel, const QString &name)
+{
+	auto *tree = control_list(panel);
+	for (int i = 0; tree && i < tree->topLevelItemCount(); ++i)
+		if (tree->topLevelItem(i)->text(0) == name)
+			return tree->topLevelItem(i);
+	return nullptr;
+}
+
+inline bool check_saved_panel(QWidget *panel, const char *layout = "list", bool navigate = true,
+			      bool require_collapsed = false)
 {
 	if (!click(panel, "viewsPanelEdit") || !until([&] { return dialog("viewsPanelEditor"); }))
 		return false;
@@ -718,6 +728,26 @@ inline bool check_saved_panel(QWidget *panel, const char *layout = "list", bool 
 		     sections->findData("Quick choices") >= 0 && sections->findData("Visibility") >= 0 &&
 		     sections->findData("Spare shortcuts") >= 0 && sections->findData("Discarded section") < 0 &&
 		     sections->findData("Uncommitted section") < 0;
+	if (require_collapsed) {
+		const auto *heading = section_heading(panel, "Visibility");
+		if (!heading || heading->isExpanded()) {
+			blog(LOG_WARNING,
+			     "[StageKit controls test] saved collapsed Visibility section was missing or expanded");
+			valid = false;
+		}
+	}
+	if (!valid) {
+		QStringList section_names;
+		for (int i = 0; sections && i < sections->count(); ++i)
+			section_names.append(sections->itemData(i).toString());
+		const auto *presentation = panel->findChild<QComboBox *>("viewsPanelLayout");
+		blog(LOG_WARNING,
+		     "[StageKit controls test] saved panel state mismatch: pins=%d/%d; layout=%s/%s; navigation=%d/%d; size=%d/64; sections=%s; require Quick choices, Visibility and unused Spare shortcuts, reject Discarded section and Uncommitted section",
+		     pins ? pins->count() : -1, int(names.size()),
+		     presentation ? presentation->currentData().toString().toUtf8().constData() : "missing", layout,
+		     show_scene ? int(show_scene->isChecked()) : -1, int(navigate), size ? size->value() : -1,
+		     section_names.join(" | ").toUtf8().constData());
+	}
 	for (int i = 0; valid && i < pins->count(); ++i) {
 		const auto pin = pins->item(i)->data(Qt::UserRole + 1).toMap();
 		const QString id = pin.value("id").toString();
@@ -736,6 +766,15 @@ inline bool check_saved_panel(QWidget *panel, const char *layout = "list", bool 
 			valid = !found->isEnabled() && !(row->flags() & Qt::ItemIsEnabled) && replacement &&
 				target(found).value("sourceUuid").toString() != uuid(replacement);
 		}
+		if (!valid)
+			blog(LOG_WARNING,
+			     "[StageKit controls test] saved pin mismatch: row=%d; id=%s; button=%s; list=%s; expected=%s; section=%s/%s; embedded=%d; buttonIcon=%d; listIcon=%d; buttonEnabled=%d; listEnabled=%d",
+			     i, id.toUtf8().constData(), found ? found->text().toUtf8().constData() : "missing",
+			     row ? row->text(0).toUtf8().constData() : "missing", names[i].toUtf8().constData(),
+			     pin.value("section").toString().toUtf8().constData(),
+			     saved_section(i).toUtf8().constData(), int(embedded_icon(pin)),
+			     int(found && !found->icon().isNull()), int(row && !row->icon(0).isNull()),
+			     int(found && found->isEnabled()), int(row && (row->flags() & Qt::ItemIsEnabled)));
 	}
 	editor->reject();
 	until([&] { return !editor || !editor->isVisible(); });
@@ -828,14 +867,14 @@ inline void check_collection_isolation(QWidget *panel, QStringList &issues)
 	obs_frontend_save();
 	obs_frontend_set_current_scene_collection(original.toUtf8().constData());
 	expect(until([&] { return collection_name() == original && panel_ready(panel) && button(panel, {}); }) &&
-		       check_saved_panel(panel, "buttons", false),
+		       check_saved_panel(panel, "buttons", false, true),
 	       "original pins, labels or order did not return after switching collections");
 	obs_frontend_set_current_scene_collection(temporary.toUtf8().constData());
 	expect(until([&] { return collection_name() == temporary && panel_ready(panel) && !button(panel, {}); }),
 	       "the second collection did not retain its intentionally empty panel");
 	obs_frontend_set_current_scene_collection(original.toUtf8().constData());
 	expect(until([&] { return collection_name() == original && panel_ready(panel) && button(panel, {}); }) &&
-		       check_saved_panel(panel, "buttons", false),
+		       check_saved_panel(panel, "buttons", false, true),
 	       "collection round trip changed the saved panel");
 	obs_frontend_save();
 }
@@ -1067,13 +1106,14 @@ inline void check(QStringList &issues, bool restart)
 	expect(board && board->isVisible(), "operator panel was not visible");
 	if (restart) {
 		expect(until([&] { return panel_ready(panel) && button(panel, {}); }) &&
-			       check_saved_panel(panel, "buttons", false),
+			       check_saved_panel(panel, "buttons", false, true),
 		       "saved pins, target identities, labels, sections or order did not survive restart");
-		expect(select_layout(panel, "list") && set_show_scene(panel, true) && check_saved_panel(panel),
+		expect(select_layout(panel, "list") && set_show_scene(panel, true) &&
+			       check_saved_panel(panel, "list", true, true),
 		       "restored layout or scene navigation could not be changed after OBS restart");
 		if (issues.size() == before)
 			blog(LOG_INFO,
-			     "[StageKit controls test] PASS: saved nondefault layout and navigation, custom sections, embedded icons, button size, renamed source and disabled missing target restored after OBS restart");
+			     "[StageKit controls test] PASS: saved nondefault layout and navigation, custom and collapsed sections, embedded icons, button size, renamed source and disabled missing target restored after OBS restart");
 		return;
 	}
 
@@ -1914,8 +1954,15 @@ inline void check(QStringList &issues, bool restart)
 		}
 		// Persist nondefault values so the collection and restart assertions
 		// cannot pass merely by falling back to the defaults.
+		expect(select_layout(panel, "list"), "could not show the list before saving a collapsed section");
+		auto *heading = section_heading(panel, "Visibility");
+		if (heading) {
+			control_list(panel)->expandItem(heading);
+			control_list(panel)->collapseItem(heading);
+		}
+		expect(heading && !heading->isExpanded(), "the native list section did not collapse");
 		expect(select_layout(panel, "buttons") && set_show_scene(panel, false) &&
-			       check_saved_panel(panel, "buttons", false),
+			       check_saved_panel(panel, "buttons", false, true),
 		       "could not persist nondefault presentation and navigation settings for restart");
 		obs_frontend_save();
 	}

@@ -130,6 +130,10 @@ does not erase them. Seed an older panel's choices from its existing pin section
 own newly created names until Save; Cancel and collection changes discard them. Block both the section
 combo and its line edit while showing a selection or mixed values. Do not register every prefix typed
 into the field. Reset clears the selected pins' override without deleting a reusable name.
+OBS data arrays retain objects, not primitive strings. Store customSections and collapsedSections using
+value_list records and read them with values; otherwise the OBS save callback silently drops unused
+custom names and collapsed list-section preferences. Keep both assertions across actual collection
+reload and OBS restart.
 
 Show in Scenes catalog captions identify the owning source. Append the filter name only when that source
 has multiple Show in Scenes controls. Keep UUID identities and actions unchanged, and preserve explicit

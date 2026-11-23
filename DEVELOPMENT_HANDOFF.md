@@ -33,6 +33,25 @@ Visual review found clipped icon captions despite the functional pass. Each nati
 the full tile size hint, with three lines of label space; new native-style text bounds assertions and
 another actual Windows capture are required. Do not publish the clipped initial library capture.
 
+Head 531c799275780cb854cb2a05d6f1db04870d24a2 passed all seven shared/Windows package gates.
+Windows frontend job 138039901014 in run 45273713475 passed the new shared-scope regression but failed
+the two saved-panel checks after collection switching; restart did not run. This exposed a production
+section persistence bug: customSections was an array of primitive strings, which OBS's JSON importer
+skips because its data arrays contain objects. Assigned names could be recovered from pins, but an
+unused reusable name disappeared. The editor now writes the existing value_list object records and
+reads them through values, which also accepts primitive draft input. The strict unused-name collection
+and restart assertions remain required. The adjacent collapsedSections preference had the same string
+array defect and now uses the same object-record helpers, with one collapsed list section also checked
+after collection switching and restart. The corrected source still needs another Windows run.
+
+Artifact 14866029226 has SHA-256 6331fff3e98453a032426a47ec274954a736ff8a9e993830b3528b77837a05c1.
+Its actual Windows captures were visually reviewed: all icon captions fit, the editable Section row
+and icon choices fit the panel editor, and the controller editor shows Apply changes and pending edits.
+The five affected captures are now in docs/images. These captures precede the serialization correction,
+which changes saved data only; inspect the next run's captures for any visible difference before merge.
+The imported-group core test and actual Other scenes editor/management/pinned-choice regression both
+passed on this revision. That verifies the supported workflow, not the owner's unexamined current file.
+
 The owner subsequently reported that the imported Captures group responds in its home layout but
 not in Component-Capture-Scene. The screenshots do not show the saved Other scenes scope. A historical
 collection contains all five capture sources in both layouts, but predates the controller setup and
