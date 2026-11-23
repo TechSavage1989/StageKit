@@ -74,11 +74,13 @@ bool staying_in(obs_source_t *current, const std::vector<std::string> &stay_in)
 
 obs_source_t *scene_to_go_to(obs_source_t *current, const GoTo &go)
 {
-	obs_source_t *scene = obs_get_source_by_name(go.target.c_str());
+	obs_source_t *scene = go.target_uuid.empty() ? obs_get_source_by_name(go.target.c_str())
+						     : obs_get_source_by_uuid(go.target_uuid.c_str());
 	if (!scene)
 		return nullptr;
-	if (!obs_scene_from_source(scene) || obs_source_is_group(scene) || scene == current ||
-	    staying_in(current, go.stay_in) || scene_has_any(current, go.sources)) {
+	if ((!go.target_uuid.empty() && obs_source_removed(scene)) || !obs_scene_from_source(scene) ||
+	    obs_source_is_group(scene) || scene == current || staying_in(current, go.stay_in) ||
+	    scene_has_any(current, go.sources)) {
 		obs_source_release(scene);
 		return nullptr;
 	}
@@ -95,7 +97,7 @@ void go_to_scene(GoTo go)
 			if (scene) {
 				if (!g_test_switched.empty())
 					g_test_switched += "|";
-				g_test_switched += go.target;
+				g_test_switched += obs_source_get_name(scene);
 				obs_source_release(scene);
 			}
 			obs_source_release(current);
@@ -118,7 +120,7 @@ void go_to_scene(GoTo go)
 				else
 					obs_frontend_set_current_scene(scene);
 				obs_log(LOG_INFO, "%s '%s': switched to scene '%s'", go->kind.c_str(),
-					go->filter.c_str(), go->target.c_str());
+					go->filter.c_str(), obs_source_get_name(scene));
 				obs_source_release(scene);
 			}
 			obs_source_release(current);

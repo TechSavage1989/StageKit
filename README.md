@@ -71,7 +71,7 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
 - **Apply Layout** (scene filter): saves an arrangement of a scene's items and glides back to it.
 - **Scene Modes** (scene filter): named modes (Game, Window, Be right back...), one on at a time, a key
   each. Turning one on shows its sources and hides the other modes'.
-- **StageKit Views control panel**: keep buttons for modes, linked visibility, Show in Scenes and saved
+- **StageKit Views control panel**: keep a compact list or buttons for modes, linked visibility, Show in Scenes and saved
   views from different scenes together in one dock. Choose the buttons, labels, sections and order.
   Scene Controller holds independent groups and combined views for the panel and matching Stream Deck
   keys. [Set up the control panel](#scene-controller-and-stagekit-views)
@@ -1199,32 +1199,63 @@ there is also [Show in Scenes](#show-in-scenes).
 
 ### Scene Controller and StageKit Views
 
-Open **Docks > StageKit Views** for one control panel with buttons from across the scene collection.
+Open **Docks > StageKit Views** for one control panel with choices from across the scene collection.
 Existing Scene Modes, Link Visibility and Show in Scenes controls appear automatically, together with
-Scene Controller choices and combined views. Select a button directly without first choosing its
-scene or controller. Keep the dock open while switching scenes; its buttons stay available.
+Scene Controller choices and combined views. Select a row or button directly without first choosing
+its scene or controller. Keep the dock open while switching scenes; its controls stay available.
 
-**Where the rules live.** StageKit Views is the button panel. A Scene Controller filter stores its
+**Switch scenes directly.** Use the **Scene** selector at the top of the panel. It follows the order
+in OBS's Scenes dock and shows the actual selected scene. In Studio Mode, the selector is **Preview**
+and changes Preview without changing Program. To keep specific scenes available with one click, open
+**Edit panel...** and check them under **Scenes**. They can appear as list rows or buttons alongside
+your other controls. These scene controls work without a mode or combined view.
+
+**Where the rules live.** StageKit Views is the control panel. A Scene Controller filter stores its
 groups and combined views. A button for an existing standalone filter still uses that filter's rules.
 Import can move Scene Modes and Link Visibility rules into Scene Controller. Show in Scenes buttons
 continue to use their original filters.
 
-**Keep controls from several scenes together in one Windows OBS dock.**
+**Choose a compact list or adjustable buttons.** Choose **List** or **Buttons** at the top of the dock.
+Both layouts use the same saved controls, labels, sections and order. List is the default and groups
+compact rows under collapsible headings. A single click applies a choice, including one that is already
+highlighted. Enter or Space applies the current row. Active indicators follow the real native state.
 
-<p align="center"><img src="docs/images/stagekit-controls.png" width="560" alt="StageKit Views control panel in Windows OBS with source, mode and visibility buttons from several scenes"></p>
+**Keep controls from several scenes together in a compact Windows OBS list.**
 
-**Choose what stays visible.** Open **Edit panel...**, select one or more entries under **Available
-controls**, then choose **Add selected**. The list also includes ordinary source and OBS Sources group
-visibility controls. Remove unwanted buttons, move them up or down, and optionally enter a **Button
-label** and **Section**. A blank label or section follows the control's current name and location.
-Save to keep this panel for the current scene collection. **Use automatic controls** restores automatic
-discovery when saved. Another collection has its own panel.
+<p align="center"><img src="docs/images/stagekit-controls-list.png" width="560" alt="Compact StageKit Views list in Windows OBS with controls grouped under collapsible scene and section headings"></p>
+
+In **Buttons**, use **Button size** to fit more choices or make them larger. The grid adjusts to the
+dock's width, and labels wrap as needed. Optional custom icons appear on buttons and as small images
+beside list rows. Layout and size are remembered for each scene collection.
+
+**Use icons and choose the button size that fits your dock.**
+
+<p align="center"><img src="docs/images/stagekit-controls.png" width="560" alt="StageKit Views buttons in Windows OBS with custom icons and a button-size control"></p>
+
+**Choose what stays visible.** Open **Edit panel...** and check the controls you want under **Available
+controls**. Check a group to include its choices together. Search narrows the available list without
+removing choices you have already selected. Ordinary source and OBS Sources group visibility controls
+are available too.
+
+The right-hand list shows **Controls on this panel**. Select several entries to remove them together,
+or use **Remove all** to start a small panel from scratch. Use the ordering controls to arrange your
+choices. Enter a short **Button label** for an individual control, and give related controls the same
+**Section**. A section can be applied to several selected controls at once. A blank label or section
+follows the control's current name and location.
+
+Select one control to choose or remove its icon. A small copy of the image is saved with the scene
+collection, so the original image file is not required afterward. Icons change the control's appearance
+without changing what it operates.
+
+**Save** keeps the selection and settings; **Cancel** leaves the saved panel alone. **Use automatic
+controls** restores automatic discovery when saved. It replaces the customized selection rather than
+temporarily showing all controls. Another collection has its own panel.
 
 **Arrange the panel's buttons, labels and sections.**
 
-<p align="center"><img src="docs/images/stagekit-controls-editor.png" width="900" alt="Edit panel in Windows OBS, showing available controls beside the selected buttons and their label, section and order controls"></p>
+<p align="center"><img src="docs/images/stagekit-controls-editor.png" width="900" alt="Edit panel in Windows OBS with grouped checkboxes, bulk removal, labels, sections and custom icon controls"></p>
 
-Highlighted buttons reflect OBS's actual state, including changes made with the Sources eye, a hotkey
+Highlighted rows and buttons reflect OBS's actual state, including changes made with the Sources eye, a hotkey
 or Stream Deck. Unavailable controls are disabled. Renaming a control keeps its saved button. Removing
 that button's target leaves it unavailable; a new target with the same name does not replace it.
 Ordinary source buttons toggle the specific item in its owning scene or OBS Sources group. Show in
@@ -1258,8 +1289,18 @@ preset should leave the overlays alone. That setting leaves the whole group's cu
 unchanged.
 
 Checking **Also change scene** adds an explicit destination to the preset. In Studio Mode, it opens in
-Preview; otherwise it changes Program. Without a configured destination, a group or view selection
-keeps the current scene. Individual group buttons are available without creating combined views.
+Preview; otherwise it changes Program. Individual group controls are available without creating
+combined views.
+
+**Display the selected mode or view.** The panel's **Switch to selection's scene** option is on by
+default. A mode or view uses its configured destination, or its owning scene when no destination is
+set. Pressing an already-selected mode or view from another scene brings its scene back into view.
+In Studio Mode, this changes Preview and leaves Program alone. Choose one and Show together groups,
+ordinary source toggles, direct Link Visibility controls and Show in Scenes keep their existing behavior.
+Turning this option off retains
+the native rules, including any destination explicitly configured in the mode or view. Existing
+Stream Deck and hotkey behavior is unchanged. The all-modes-off control has no automatic parent-scene
+destination.
 
 **Configure independent groups and named modes in OBS.**
 

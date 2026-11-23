@@ -273,10 +273,12 @@ struct Runtime {
 };
 struct Command {
 	std::string group, choice, view, how;
+	bool show_scene = false;
+	std::string scene_uuid;
 };
 struct Plan {
 	std::vector<std::pair<Group *, std::string>> selections;
-	std::string scene;
+	std::string scene, scene_uuid;
 	bool combined = false;
 };
 
@@ -450,7 +452,38 @@ Group *find_group(Runtime &runtime, const std::string &id)
 	return nullptr;
 }
 
-bool make_plan(Runtime &runtime, const Command &command, Plan &plan, std::string &why)
+bool plan_navigation(const Command &command, Plan &plan, obs_source_t *parent, std::string &why)
+{
+	if (!command.show_scene)
+		return true;
+	if (!plan.combined) {
+		const auto &[group, choice] = plan.selections.front();
+		if (group->kind != "modes" || choice.empty())
+			return true;
+		plan.scene = text(group->settings.get(), mode_key(choice, "go_to").c_str());
+	}
+	if (!parent || obs_source_removed(parent)) {
+		why = "The controller's scene is unavailable";
+		return false;
+	}
+	SourceRef scene(plan.scene.empty() ? obs_source_get_ref(parent) : obs_get_source_by_name(plan.scene.c_str()));
+	if (!scene.source || obs_source_removed(scene.source) || !obs_scene_from_source(scene.source) ||
+	    obs_source_is_group(scene.source)) {
+		why = "The selection's destination scene is unavailable";
+		return false;
+	}
+	// A definition can be edited while a press is queued. Keep renames, but
+	// never apply the new selection with the previous destination attached.
+	if (!command.scene_uuid.empty() && command.scene_uuid != obs_source_get_uuid(scene.source)) {
+		why = "The selection's destination changed before the command could run";
+		return false;
+	}
+	plan.scene = obs_source_get_name(scene.source);
+	plan.scene_uuid = obs_source_get_uuid(scene.source);
+	return true;
+}
+
+bool make_plan(Runtime &runtime, const Command &command, Plan &plan, std::string &why, obs_source_t *parent = nullptr)
 {
 	if (!runtime.error.empty()) {
 		why = runtime.error;
@@ -480,7 +513,7 @@ bool make_plan(Runtime &runtime, const Command &command, Plan &plan, std::string
 		}
 		plan.combined = true;
 		plan.scene = text(view.get(), "scene");
-		if (!plan.scene.empty() && !scene_exists(plan.scene)) {
+		if (!plan.scene.empty() && command.scene_uuid.empty() && !scene_exists(plan.scene)) {
 			why = "The view's destination scene is unavailable";
 			return false;
 		}
@@ -496,7 +529,7 @@ bool make_plan(Runtime &runtime, const Command &command, Plan &plan, std::string
 			}
 			plan.selections.emplace_back(group, choice);
 		}
-		return true;
+		return plan_navigation(command, plan, parent, why);
 	}
 	Group *group = find_group(runtime, command.group);
 	if (!group) {
@@ -546,7 +579,7 @@ bool make_plan(Runtime &runtime, const Command &command, Plan &plan, std::string
 	if (!choice_available(*group, choice, why))
 		return false;
 	plan.selections.emplace_back(group, choice);
-	return true;
+	return plan_navigation(command, plan, parent, why);
 }
 
 class Controller;
@@ -908,8 +941,12 @@ public:
 			return false;
 		}
 		Plan plan;
-		if (!make_plan(*running, command, plan, why))
+		if (!make_plan(*running, command, plan, why, parent.source))
 			return false;
+		// Keep a clicked selection's destination identity through both queues.
+		// Next/Toggle still resolve the mode at execution, as native keys do.
+		if (command.how == "select" || command.how == "on")
+			command.scene_uuid = plan.scene_uuid;
 		std::lock_guard lock(mutex_);
 		if (!attached(epoch) || runtime_ != running) {
 			why = "Scene Controller changed before the command could be queued";
@@ -1436,7 +1473,7 @@ void Controller::tick(float seconds)
 			return;
 		std::string why;
 		Plan plan;
-		if (!obs_source_enabled(source_) || !make_plan(*running, command, plan, why)) {
+		if (!obs_source_enabled(source_) || !make_plan(*running, command, plan, why, parent.source)) {
 			std::lock_guard lock(mutex_);
 			last_error_ = why.empty() ? "Scene Controller is disabled" : why;
 			publish = true;
@@ -1448,7 +1485,9 @@ void Controller::tick(float seconds)
 		bool staged = true;
 		for (const auto &[group, choice] : plan.selections)
 			if (group->modes)
-				staged = group->modes->runtime_stage(choice.c_str(), !plan.combined, why) && staged;
+				staged = group->modes->runtime_stage(choice.c_str(),
+								     !plan.combined && !command.show_scene, why) &&
+					 staged;
 		if (staged) {
 			for (auto &group : running->groups)
 				if (group.modes)
@@ -1463,11 +1502,14 @@ void Controller::tick(float seconds)
 			for (auto &group : running->groups)
 				for (auto &link : group.links)
 					link.engine->tick(0.0f);
-			if (!plan.scene.empty()) {
+			if (!plan.scene.empty() && attached(epoch) &&
+			    (!command.show_scene || (obs_source_enabled(source_) && !obs_source_removed(source_) &&
+						     !obs_source_removed(parent.source) && scenes_loaded()))) {
 				GoTo go;
 				go.kind = "Scene Controller";
 				go.filter = obs_source_get_name(source_);
 				go.target = plan.scene;
+				go.target_uuid = plan.scene_uuid;
 				go_to_scene(std::move(go));
 			}
 		}
@@ -1725,7 +1767,7 @@ bool scene_controller_configure(const char *controller_id, obs_data_t *config, s
 }
 
 bool scene_controller_command(const char *controller_id, const char *group_id, const char *choice_id,
-			      const char *view_id, const char *command, std::string &why)
+			      const char *view_id, const char *command, std::string &why, bool show_scene)
 {
 	SourceRef held(nullptr);
 	Controller *self = find_controller(controller_id, held, why);
@@ -1735,7 +1777,8 @@ bool scene_controller_command(const char *controller_id, const char *group_id, c
 		why = "command is required";
 		return false;
 	}
-	return self->command({group_id ? group_id : "", choice_id ? choice_id : "", view_id ? view_id : "", command},
+	return self->command({group_id ? group_id : "", choice_id ? choice_id : "", view_id ? view_id : "", command,
+			      show_scene},
 			     why);
 }
 
