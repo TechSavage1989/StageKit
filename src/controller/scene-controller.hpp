@@ -44,6 +44,14 @@ bool scene_controller_get(const char *controller_id, obs_data_t *response, std::
 // The owner's scene is implicit in scope; listed scenes are additional.
 bool scene_controller_configure(const char *controller_id, obs_data_t *config, std::string &why);
 
+// Existing native panel pins retain these identities while an imported group
+// supplies their operation. Revalidate them at acceptance and queued execution;
+// a detached original or a replacement member cannot inherit a pending press.
+// Ordinary controller commands leave this empty.
+struct SceneControllerAliasTarget {
+	std::string filter_uuid, parent_uuid, source_uuid;
+};
+
 // Exactly one target: view_id, or group_id (with choice_id for select/on).
 // "select"/"on" selects a choice or view. "next" selects the next choice of
 // modes/one. "toggle"/"none" uses a modes group's existing previous/allow-none
@@ -56,7 +64,8 @@ bool scene_controller_configure(const char *controller_id, obs_data_t *config, s
 // hotkey defaults remain false. Choose one, Show together and clearing a modes
 // group do not add navigation.
 bool scene_controller_command(const char *controller_id, const char *group_id, const char *choice_id,
-			      const char *view_id, const char *command, std::string &why, bool show_scene = false);
+			      const char *view_id, const char *command, std::string &why, bool show_scene = false,
+			      const SceneControllerAliasTarget &alias = {});
 
 // Frontend editing helpers. create adds one real scene filter and returns its
 // snapshot. import copies the full legacy configuration; activate transfers

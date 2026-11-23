@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | feat/compact-views-panel, PR278 for beta256. Beta255 is published. Compact controls and direct scene switching passed the complete Windows OBS run; the final guide/capture revision is awaiting its exact-head release gates. |
+| Working branch | feat/views-icon-library, PR279 for beta257. Beta256 is published. Shared scene controls and all other requested panel changes passed the eight Windows/shared gates at 5a09f8b8. Binary comparison then found icon resource timestamps made independent builds differ. The icon QRC now omits those timestamps; new exact-head gates and matching package/frontend DLLs are required before merge. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -22,6 +22,144 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
+
+## Shared scene controls, reusable sections and built-in icons
+
+Head 5a09f8b897fcb60471508d86098aa7fa797faf4d passed all seven shared/Windows package gates plus
+actual Windows frontend job 138074428418 in run 45283704146. Its first-run report and real restart
+report are PASS, and all four timing trials completed 450 frames. Artifact 14872015251 has SHA-256
+002bd3a540a5e17e7d7ea99ef7277c9d0dd01d2a0c12a0f3ce117f92323eb806. All seven guide captures match
+the committed screenshots pixel-for-pixel in RGB, including the new shared-manager capture.
+
+Final package comparison exposed a separate build reproducibility issue before merge. The frontend
+DLL was 6cb4615247408a9b4690219fbafda50fbe2fbc3e29c5c32e462c1b8437d19b1f, while the independent
+Windows package artifact 14870883597 contained DLL 640e818bf597c745678b3ffc7f83d9452feed17f8255fc5d1bdb13530ec9df1f
+at the same source head. Qt resource formats 2 and later embed input file modification times; the new
+icon library therefore incorporated checkout-specific metadata despite /Brepro. CMake now applies
+--format-version 1 only to the icon QRC. A local Qt 6.11.1 probe with the actual 781 inputs at 2021 and
+2025 mtimes reproduced the default difference, generated identical format-1 C++ output with SHA-256
+b325fcda26478165796bd8a8a91630ac8b66e290788831cf3f508575213e82af, and loaded all 781 resource byte
+streams unchanged. All 780 PNGs decoded across the six palettes. SOURCE_DATE_EPOCH=0 did not remove
+timestamps, so the explicit resource format avoids an environment-dependent workaround. No icon,
+configuration or runtime behavior changed. Re-run the exact-head Windows/shared gates and require
+matching independent package and frontend DLLs before merging. Public Windows downloads must match
+that tested DLL as well; do not relax the binary comparison.
+
+The owner's latest instruction is to fix the implementation because selecting additional scenes did
+not make their controls accessible. Two production defects are confirmed by source inspection:
+
+- The manager filtered controllers only by their owning scene UUID. Saved group scope did not make a
+  controller discoverable while browsing another covered scene.
+- Existing panel pins for an actively imported Link Visibility filter still dispatched the original
+  compatibility alias, whose native link command targets its first scene. The group could already
+  apply a controller command across its saved scope, but an original panel pin bypassed that command.
+
+The fix keeps one controller and one group definition. Manager discovery includes effective group
+scope, inherited Scene Modes share_scenes and explicit combined-view destinations. Additional-scene
+browsing shows applicable groups/views and retains valid controller/group selection. A visible Applies
+to summary distinguishes a group's coverage from the browsed scene. Import and Remove still target
+that controller's actual owning scene. The group editor includes inherited mode scope and only
+normalizes it when the scene list is edited. Program/Preview must not change while browsing management.
+
+The catalog maps existing active-import pins to their owning controller group while preserving the
+original stable IDs and saved labels, sections, icons and order. Active/available state comes from the
+complete group. Original filter, parent, type and member identities remain guarded at acceptance and
+again before queued execution through the optional SceneControllerAliasTarget. Inactive imports
+and removed groups return to original behavior. External native filter-targeted keys and hotkeys keep
+their prior semantics; StageKit View keys target the controller scope. No all-scene defaults, duplicate
+controllers or name-based group merging are introduced.
+
+The actual OBS regression must pin an original choice before import, apply additional scope through
+the real editor, browse the second scene and find the same controller/group, and select captures with
+the owner offscreen through both the manager and original pin. Check complete actual visibility and
+state, unchanged Program, missing/disabled members, and loss of remote access after scope removal.
+The earlier regression only proved explicit controller commands and did not exercise these failed
+paths. A current user export is not a release prerequisite for these confirmed implementation fixes.
+Do not claim the user's physical capture output was tested; use the fictional Windows fixture.
+
+Read-only UI review found no further concrete defect. One follow-up timing risk remains unproven:
+a scene rename can refresh its new frontend name before the native scope-name reconciliation. Access
+recovers afterward, but a selected non-first shared group might briefly fall back to the default.
+The current fixture checks recovered access and stable identities; no additional preference-cache
+mechanism was added to this focused fix.
+
+Head 937d433dda463cea86e1a2779016356ff35df9d9 passed all seven required shared/Windows package
+gates. Actual Windows frontend job 138069639431 in run 45282308407 completed the expanded scope
+fixture with one failure: a new assertion expected saved pin metadata to change from link to
+controller. The panel deliberately retains the original metadata and resolves the stable ID against
+the current catalog when pressed. The assertion now checks that original identity; all actual
+cross-scene commands, mixed-state repair, disabled/missing-source checks, queued-original detachment,
+inherited scope, remote import owner, rename and scope-removal assertions remain unchanged. Native
+fallback also now requires actual presses of both original pins after the imported group is removed.
+No production code was changed to satisfy the metadata assertion. Restart and timing trials did not
+run after the failed assertion, so a complete new final-head run remains required.
+
+Artifact 14869253156 has SHA-256 81a4bbe04123f3c8372a0b8bd1ac88f33cc589a296c4596654499f43ddf998b7.
+Its plugin DLL SHA-256 is cba45c5cee15bb4d74eb440459d079469daec2c7a51f9426adfe614ff8805381. The new
+stagekit-shared-controls.png shows the same controller under the additional scene, the owner label
+and the complete Applies to summary. This and the updated stagekit-views.png were visually reviewed
+as actual Windows captures and copied unchanged into docs/images. RGB pixel comparison confirms the
+other five existing panel/editor/icon captures are unchanged. Compare the final run's captures again.
+
+Head 6557fe21aa3c64779cc8f07969f30fac4c474238 passed all seven shared/Windows package gates and
+actual Windows frontend job 138046845530 in run 45275714525, including first run and a real restart.
+The tested DLL SHA-256 was 142b9c243ee3a2bca7f7c483dfba34a472c46056f032cf3ef0cb2f8c1dd816c3.
+Artifact 14868731546 has SHA-256 b60b24359197cd60c46a1682521e10ee7a4f24888f80730a36c6a7360c01a082.
+All four timing trials completed their requested 450 frames; these software diagnostics do not prove
+hardware performance. The new shared-access changes require another exact-head Windows/shared run,
+actual affected UI captures and visual review before merge. Beta257 still belongs to PR279; check main
+for the next release number immediately before pushing and merging. Follow the Windows-first release
+policy and publish through the normal main workflow once the required gates pass.
+
+Earlier head 531c799275780cb854cb2a05d6f1db04870d24a2 passed the seven package/shared gates and the
+original scoped-controller tests, but Windows job 138039901014 failed unused-section persistence on
+collection switching. OBS data arrays retain objects, so primitive customSections and collapsedSections
+arrays silently lost their values. Both now use value_list object records and values readers. Strict
+unused-name and collapsed-heading assertions passed collection switching and restart at 6557fe21.
+Artifact 14866029226 has SHA-256 6331fff3e98453a032426a47ec274954a736ff8a9e993830b3528b77837a05c1.
+Its actual Windows captures were visually reviewed and committed in docs/images. Four were pixel
+identical in the 6557fe21 run; the panel editor only differed in inventory order. The scope UI now needs
+new actual captures. Never substitute diagnostic or generated screenshots for the real frontend.
+
+Initial head c1ecf5954ac8d0b0941874051ef2dd4cca6da0ec passed Windows and shared checks, but visual
+review caught clipped icon captions. Each native item now receives the full tile size hint with label
+space. Native text-bounds checks and actual Windows review at the later heads confirm the correction.
+The initial artifact 14864182586 has SHA-256 af0fd330dbe2c04fb79ce5befeaddd0f05f8ed2b778cebae453bb616cbe33653;
+its DLL was 85a8f98159fa14ad9af10e726a2792c52f78cf398f8c722549dcbcc8d7051fc5. Do not publish its clipped capture.
+
+The nested editor workflow was easy to mistake for a completed save. Inner group, mode and view
+buttons now say Done; the outer configuration uses Apply changes and shows pending edits. Changes
+remain an atomic draft until the outer action; Cancel still discards them. The guide names both steps.
+
+The panel editor now has an editable Section preset/custom dropdown and Add section action. Saved
+customSections are separate from pins, including unused names, and older pin strings seed the list.
+New names remain in the draft until Save; Cancel and collection changes discard them. Show in Scenes
+captions use the owning source, adding the filter name only when the source has several such controls.
+UUID targets and explicit custom labels remain intact. Actual frontend coverage verifies both changes.
+
+The icon library offers 148 semantic choices: 47 scenes, 86 sources and 15 controls. It reuses 780
+tracked companion PNG resources across Mono, Violet, Ocean, Forest, Ember and Neon, totaling 3,195,075
+bytes. scripts/make-view-icon-library.py deterministically generates the catalog, Qt resource list and
+locale block; repository checks run its --check mode. The native plugin needs no installed companion
+or external image directory. Library and Custom image choices retain bounded embedded iconPng data.
+Actual frontend coverage verifies searching, categories, palettes, no-match clearing, selection,
+cancellation, custom images, collection switching and a real restart. Library changes add no scene
+commands, per-frame inventory or saved paths. The companion remains 0.43.0.0.
+
+For independent scene/layout and camera/content choices, clear the panel's Switch to selection's scene
+option and any explicit mode/view destinations, then include the required layouts in one group's
+Applies to list. Choose-one members must exist in every covered scene; named-mode members may be
+spread across that set. Separate same-named groups remain independent. Direct scene buttons change
+the layout without changing the selected group. Native Sources eye changes keep their established
+per-scene behavior. No user OBS configuration or private screenshots have been published or changed.
+
+Beta256 completed PR278, squash merge 9eb3bfae43e5c8bb806eed95d108cfd243219368. The final reviewed
+head d76590808b4a1683d03ceeeab8b4907eb257813e passed all eight required Windows/shared jobs, including
+Windows frontend run 45262275085, job 137999890749, first run and real restart. Its tree exactly
+matches the merge tree. The public Windows installer and ZIP matched their release checksums; the
+packaged DLL matched tested SHA-256 6baed41e0be60cfc90b01dc1870cb39f52b514e4f0e9962cddda0619b3b26f16.
+Publisher 45264409185 supplied the release. The next turn confirmed that all seven platform assets
+are listed; beta256's initial Windows announcement did not wait for the other platforms.
 
 ## Compact panel layout and selection navigation
 

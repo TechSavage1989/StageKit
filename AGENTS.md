@@ -92,6 +92,20 @@ missing target must stay unavailable rather than binding to another source with 
 Imported originals remain resolvable for existing pins but are not duplicated on an automatic panel.
 An explicitly customized empty panel is different from automatic discovery.
 
+The manager lists a controller in its owning scene and in every scene covered by its groups, including
+inherited Scene Modes share_scenes and explicit combined-view destinations. When browsing a covered
+scene, show its applicable groups and views, retain the same controller/group identities where valid,
+and identify the actual owner. Import and Remove still operate on that owner, never the browsed scene.
+Show the selected group's effective Applies to scope. The owner is always included; additional scenes
+remain explicit. Only an actual scope edit normalizes inherited Scene Modes scope into the draft.
+Do not create per-scene copies, merge same-named groups or silently extend scope to the whole collection.
+
+Existing Views panel pins for actively imported native controls dispatch the owning controller group
+and read its complete scoped state. Preserve their legacy stable IDs and saved appearance, and still
+validate the original filter, parent, type and source identity. Disabled or missing members must not
+permit a partial scoped command. Inactive imports and removed groups retain the original fallback
+behavior. This panel mapping does not change ordinary external native filter keys or hotkey scope.
+
 The panel reads actual active and available state, never just the last button pressed. Coalesce
 native change signals on the frontend, retain the visible-only fallback, and avoid rebuilding the
 button widgets for state-only changes. Do not add per-frame inventories or render work. Close panel
@@ -112,6 +126,44 @@ remove hidden selections. Cancel preserves the saved panel, including its presen
 custom icons as bounded embedded thumbnails so collection exports and restarts do not depend on the
 original file. Reject invalid images without losing an existing icon, and decode icons only when their
 appearance changes. Button sizing must include wrapped text and icons and retain the OBS theme cap fix.
+
+The Views icon library reuses the companion's generic scene/source types and original unmarked artwork.
+Run scripts/make-view-icon-library.py after changing the canonical type lists or selected picture paths;
+its --check mode validates the committed catalog, Qt resource list and generated ViewIcons locale block.
+The resource list references existing tracked PNGs rather than copying them. Include it only with Qt.
+Compile this static icon QRC with source-specific AUTORCC_OPTIONS --format-version 1. Later resource
+formats embed each input's checkout modification time, making independent Windows builds differ even
+with /Brepro. The library only reads bytes and does not need resource timestamps. A controlled probe
+of the complete QRC at two input mtimes produced identical format-1 output and decoded every PNG.
+Keep the final Windows package DLL identical to the DLL exercised by the actual frontend test.
+Keep normal bright key art, not status/on or status/off variants, so native active highlighting remains
+the state indicator. The native plugin must not depend on an installed Stream Deck companion or an
+external icon directory. Both library and Custom image choices save the same bounded iconPng thumbnail.
+Search/category changes must clear a hidden selection, and Cancel must preserve the previous icon.
+IconMode grid spacing does not enlarge the native item's painting rectangle. Give each thumbnail
+item an explicit tile size hint and space for wrapped labels; inspect the actual Windows capture.
+
+Panel section presets and customSections belong to the scene collection. Keep reusable custom names
+separate from pins so removing their last control, clearing the panel or choosing automatic discovery
+does not erase them. Seed an older panel's choices from its existing pin section strings. Editor drafts
+own newly created names until Save; Cancel and collection changes discard them. Block both the section
+combo and its line edit while showing a selection or mixed values. Do not register every prefix typed
+into the field. Reset clears the selected pins' override without deleting a reusable name.
+OBS data arrays retain objects, not primitive strings. Store customSections and collapsedSections using
+value_list records and read them with values; otherwise the OBS save callback silently drops unused
+custom names and collapsed list-section preferences. Keep both assertions across actual collection
+reload and OBS restart.
+
+Show in Scenes catalog captions identify the owning source. Append the filter name only when that source
+has multiple Show in Scenes controls. Keep UUID identities and actions unchanged, and preserve explicit
+panel button labels across source/filter renames and refreshed fallback names.
+
+Nested group, mode and combined-view editors update the outer configuration draft. Their Done action
+does not publish native settings. Keep Apply changes on the outer editor, a pending-change notice,
+and atomic Cancel behavior. Exercise scope through the actual Applies to editor, then reopen it after
+applying. Scoped imported groups must be discoverable from each covered scene and accept choices with
+their owning scene offscreen. Test both controller choices and original pins saved before import;
+both apply to every covered scene without changing Program. Removing scope removes remote access.
 
 Panel scene navigation belongs in the native queued command, after successful validation and application.
 An explicit mode or view destination takes priority over the parent scene. Studio Mode changes Preview.
@@ -408,7 +460,7 @@ notice and the confirmation are what there is. This is recorded in the handoff.
 | `data/effects/` | Shaders in OBS `.effect` format. `stagekit-looks.effect` holds the newer looks (mosaic shapes, trail, bloom) apart from the older files |
 | `data/locale/en-US.ini` | Every user-visible string |
 | `tests/` | Headless libobs tests, test-image generators, `run-tests.sh` |
-| `streamdeck/` | The Stream Deck plugin (TypeScript, Elgato's SDK 3, Node): `src/` (the link to OBS over obs-websocket, the key types), `com.techsavage1989.stagekit.sdPlugin/` (manifest, settings pages, icons), `tests/`, `tools/make-icons.py`. It has its own `package.json`; nothing in the OBS plugin depends on it |
+| `streamdeck/` | The Stream Deck plugin (TypeScript, Elgato's SDK 3, Node): `src/` (the link to OBS over obs-websocket, the key types), `com.techsavage1989.stagekit.sdPlugin/` (manifest, settings pages, icons), `tests/`, `tools/make-icons.py`. It has its own `package.json`. The native Views library embeds a selected set of its tracked artwork; the OBS plugin has no dependency on the installed companion |
 | `scripts/` | Repository checks (`check-root.sh`, `root-allowlist.txt`); `rebuild-collection.py` writes a StageKit collection from an old one and `upgrade-collection.py` brings a StageKit collection up to date; `merge-capture-scenes.py` adds the two layout scenes (Live, Chat Live) and `merge-holding-scenes.py` the holding scene (Standby) to a StageKit collection for a side-by-side trial. All four read one file and write another; the owner's collections are private and never committed |
 | `docs/images/` | README imagery, produced by the tests |
 | `.claude/settings.json` | Claude Code's project settings: allows the Workflow tool without a prompt (the owner, 2026-11-18). Only this file is tracked; `settings.local.json` stays ignored |

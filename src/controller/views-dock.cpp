@@ -20,6 +20,7 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
 #include <QDockWidget>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -45,6 +46,7 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <QScrollBar>
 #include <QSlider>
 #include <QStackedWidget>
+#include <QStringList>
 #include <QShowEvent>
 #include <QStylePainter>
 #include <QStyleOptionButton>
@@ -123,6 +125,61 @@ QJsonArray value_list(const QStringList &names)
 	for (const auto &name : names)
 		result.append(QJsonObject{{"value", name}});
 	return result;
+}
+
+QStringList additional_group_scenes(const QJsonObject &group)
+{
+	auto result = values(group["scope"]);
+	if (group["kind"].toString() == "modes")
+		for (const auto &name : values(group["settings"].toObject()["share_scenes"]))
+			if (!result.contains(name))
+				result.append(name);
+	return result;
+}
+
+QStringList group_scenes(const QJsonObject &controller, const QJsonObject &group)
+{
+	QStringList result;
+	const auto owner = controller["scene"].toString();
+	if (!owner.isEmpty())
+		result.append(owner);
+	for (const auto &name : additional_group_scenes(group))
+		if (!result.contains(name))
+			result.append(name);
+	return result;
+}
+
+QStringList view_scenes(const QJsonObject &controller, const QJsonObject &view)
+{
+	QStringList result;
+	const auto groups = controller["config"].toObject()["groups"].toArray();
+	for (const QJsonValue value : view["selections"].toArray()) {
+		const auto group = find_id(groups, value.toObject()["groupId"].toString());
+		if (!group.isEmpty())
+			for (const auto &name : group_scenes(controller, group))
+				if (!result.contains(name))
+					result.append(name);
+	}
+	const auto destination = view["scene"].toString();
+	if (!destination.isEmpty() && !result.contains(destination))
+		result.append(destination);
+	return result;
+}
+
+bool controller_covers_scene(const QJsonObject &controller, const QString &uuid, const QString &name)
+{
+	if (controller["sceneUuid"].toString() == uuid)
+		return true;
+	if (name.isEmpty())
+		return false;
+	const auto config = controller["config"].toObject();
+	for (const QJsonValue value : config["groups"].toArray())
+		if (group_scenes(controller, value.toObject()).contains(name))
+			return true;
+	for (const QJsonValue value : config["views"].toArray())
+		if (value.toObject()["scene"].toString() == name)
+			return true;
+	return false;
 }
 
 struct Scene {
@@ -280,6 +337,10 @@ void edit_group(QWidget *parent, const QString &scene_uuid, QJsonObject group, s
 	if (creating)
 		group = {{"id", fresh_id()}, {"kind", "modes"}, {"enabled", true}, {"settings", QJsonObject{}}};
 	const QJsonObject original = group["settings"].toObject();
+	OBSSourceAutoRelease owner = obs_get_source_by_uuid(scene_uuid.toUtf8().constData());
+	const QString owner_name = owner ? QString::fromUtf8(obs_source_get_name(owner)) : QString();
+	auto initial_scope = additional_group_scenes(group);
+	initial_scope.removeAll(owner_name);
 	auto *dialog = new QDialog(parent);
 	dialog->setObjectName("viewsGroupEditor");
 	dialog->setAttribute(Qt::WA_DeleteOnClose);
@@ -332,14 +393,14 @@ void edit_group(QWidget *parent, const QString &scene_uuid, QJsonObject group, s
 	rules_layout->addWidget(mode_help);
 	auto *members_label = note(rules, text("Views.Members"));
 	rules_layout->addWidget(members_label);
-	auto *members = checks(rules, "viewsGroupItems", source_names(scene_uuid, values(group["scope"])),
-			       values(original["items"]));
+	auto *members =
+		checks(rules, "viewsGroupItems", source_names(scene_uuid, initial_scope), values(original["items"]));
 	members->setDragDropMode(QAbstractItemView::InternalMove);
 	rules_layout->addWidget(members, 1);
 	auto *leaders_label = note(rules, text("Views.Leaders"));
 	rules_layout->addWidget(leaders_label);
-	auto *leaders = checks(rules, "viewsGroupLeads", source_names(scene_uuid, values(group["scope"])),
-			       values(original["leads"]));
+	auto *leaders =
+		checks(rules, "viewsGroupLeads", source_names(scene_uuid, initial_scope), values(original["leads"]));
 	rules_layout->addWidget(leaders, 1);
 	auto *lead_rule = new QComboBox(rules);
 	lead_rule->setObjectName("viewsLeadRule");
@@ -355,17 +416,28 @@ void edit_group(QWidget *parent, const QString &scene_uuid, QJsonObject group, s
 	auto *scope_page = new QWidget(tabs);
 	auto *scope_layout = new QVBoxLayout(scope_page);
 	scope_layout->addWidget(note(scope_page, text("Views.ScopeHelp")));
+	scope_layout->addWidget(
+		note(scope_page, text("Views.OwnerSceneIncluded").arg(owner_name), "viewsGroupOwnerScene"));
 	QStringList other_scenes;
 	for (const auto &scene : scenes())
 		if (scene.uuid != scene_uuid)
 			other_scenes.append(scene.name);
-	auto *scope = checks(scope_page, "viewsGroupScope", other_scenes, values(group["scope"]));
+	auto *scope = checks(scope_page, "viewsGroupScope", other_scenes, initial_scope);
 	scope_layout->addWidget(scope, 1);
+	auto *applies = note(scope_page, {}, "viewsGroupAppliesTo");
+	scope_layout->addWidget(applies);
+	auto show_scope = [=] {
+		auto names = checked_names(scope);
+		if (!owner_name.isEmpty() && !names.contains(owner_name))
+			names.prepend(owner_name);
+		applies->setText(text("Views.AppliesTo").arg(names.join(", ")));
+	};
+	show_scope();
 	auto *elsewhere_label = note(scope_page, text("Views.Elsewhere"));
 	scope_layout->addWidget(elsewhere_label);
 	auto *elsewhere = checks(scope_page, "viewsGroupElsewhere", all_source_names(), values(original["elsewhere"]));
 	scope_layout->addWidget(elsewhere, 1);
-	tabs->addTab(scope_page, text("Views.OtherScenes"));
+	tabs->addTab(scope_page, text("Views.AppliesToTab"));
 	auto *transition_page = new QWidget(tabs);
 	auto *transition_form = new QFormLayout(transition_page);
 	auto *show =
@@ -392,10 +464,12 @@ void edit_group(QWidget *parent, const QString &scene_uuid, QJsonObject group, s
 	transition_form->addRow(text("Views.Duration"), hide_ms);
 	transition_form->addRow(note(transition_page, text("Views.TransitionHelp")));
 	tabs->addTab(transition_page, text("Views.Transitions"));
+	layout->addWidget(note(dialog, text("Views.DraftHelp"), "viewsNestedDraftHelp"));
 	auto *error = note(dialog, {}, "viewsGroupError");
 	layout->addWidget(error);
 	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, dialog);
 	buttons->button(QDialogButtonBox::Save)->setObjectName("viewsGroupSave");
+	buttons->button(QDialogButtonBox::Save)->setText(text("Views.Done"));
 	layout->addWidget(buttons);
 	auto update_kind = [=] {
 		const QString selected = kind->currentData().toString();
@@ -412,9 +486,11 @@ void edit_group(QWidget *parent, const QString &scene_uuid, QJsonObject group, s
 	};
 	QObject::connect(kind, &QComboBox::currentIndexChanged, dialog, update_kind);
 	QObject::connect(scope, &QListWidget::itemChanged, dialog, [=] {
+		scope->setProperty("viewsEdited", true);
 		const auto available = source_names(scene_uuid, checked_names(scope));
 		fill_checks(members, available, checked_names(members));
 		fill_checks(leaders, available, checked_names(leaders));
+		show_scope();
 	});
 	QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
 	QObject::connect(buttons, &QDialogButtonBox::accepted, dialog, [=]() mutable {
@@ -443,6 +519,8 @@ void edit_group(QWidget *parent, const QString &scene_uuid, QJsonObject group, s
 			settings["hide_ms"] = hide_ms->value();
 		if (selected == "modes") {
 			settings["allow_none"] = allow_none->isChecked();
+			if (scope->property("viewsEdited").toBool())
+				settings["share_scenes"] = value_list(checked_names(scope));
 		} else {
 			settings["items"] = value_list(checked_names(members));
 			settings["leads"] = value_list(checked_names(leaders));
@@ -465,7 +543,8 @@ void edit_group(QWidget *parent, const QString &scene_uuid, QJsonObject group, s
 			origin["activate"] = ownership->isChecked();
 			group["origin"] = origin;
 		}
-		group["scope"] = value_list(checked_names(scope));
+		if (creating || scope->property("viewsEdited").toBool())
+			group["scope"] = value_list(checked_names(scope));
 		group["settings"] = settings;
 		accept(group);
 		dialog->accept();
@@ -495,12 +574,12 @@ void edit_mode(QWidget *parent, const QString &scene_uuid, const QJsonObject &gr
 	form->addRow(text("Views.Name"), name);
 	layout->addLayout(form);
 	layout->addWidget(note(dialog, text("Views.ModeHelp")));
-	auto *members = checks(dialog, "viewsModeItems", source_names(scene_uuid, values(group["scope"])),
+	auto *members = checks(dialog, "viewsModeItems", source_names(scene_uuid, additional_group_scenes(group)),
 			       values(original[prefix + "sources"]));
 	layout->addWidget(members, 1);
 	auto *hide_label = note(dialog, text("Views.ModeHide"));
 	layout->addWidget(hide_label);
-	auto *hide = checks(dialog, "viewsModeHide", source_names(scene_uuid, values(group["scope"])),
+	auto *hide = checks(dialog, "viewsModeHide", source_names(scene_uuid, additional_group_scenes(group)),
 			    values(original[prefix + "hide"]));
 	layout->addWidget(hide, 1);
 	auto *change_scene = new QCheckBox(text("Views.ChangeScene"), dialog);
@@ -518,10 +597,12 @@ void edit_mode(QWidget *parent, const QString &scene_uuid, const QJsonObject &gr
 	destination->setEnabled(change_scene->isChecked());
 	layout->addWidget(destination);
 	QObject::connect(change_scene, &QCheckBox::toggled, destination, &QWidget::setEnabled);
+	layout->addWidget(note(dialog, text("Views.DraftHelp"), "viewsNestedDraftHelp"));
 	auto *error = note(dialog, {}, "viewsModeError");
 	layout->addWidget(error);
 	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, dialog);
 	buttons->button(QDialogButtonBox::Save)->setObjectName("viewsModeSave");
+	buttons->button(QDialogButtonBox::Save)->setText(text("Views.Done"));
 	layout->addWidget(buttons);
 	QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
 	QObject::connect(buttons, &QDialogButtonBox::accepted, dialog, [=] {
@@ -644,10 +725,12 @@ void edit_view(QWidget *parent, const QJsonArray &groups, QJsonObject view, std:
 	destination->setEnabled(change_scene->isChecked());
 	layout->addWidget(destination);
 	QObject::connect(change_scene, &QCheckBox::toggled, destination, &QWidget::setEnabled);
+	layout->addWidget(note(dialog, text("Views.DraftHelp"), "viewsNestedDraftHelp"));
 	auto *error = note(dialog, {}, "viewsViewError");
 	layout->addWidget(error);
 	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, dialog);
 	buttons->button(QDialogButtonBox::Save)->setObjectName("viewsViewSave");
+	buttons->button(QDialogButtonBox::Save)->setText(text("Views.Done"));
 	layout->addWidget(buttons);
 	QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
 	QObject::connect(buttons, &QDialogButtonBox::accepted, dialog, [=]() mutable {
@@ -752,10 +835,14 @@ public:
 			view_layout, "View", [this] { view_edit(true); }, [this] { view_edit(false); },
 			[this] { view_remove(); }, [this](int direction) { move("views", views_, direction); });
 		tabs->addTab(view_page, text("Views.CombinedViews"));
+		pending_ = note(this, text("Views.PendingChanges"), "viewsEditorPending");
+		pending_->setVisible(false);
+		layout->addWidget(pending_);
 		error_ = note(this, {}, "viewsEditorError");
 		layout->addWidget(error_);
 		auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
 		buttons->button(QDialogButtonBox::Save)->setObjectName("viewsEditorSave");
+		buttons->button(QDialogButtonBox::Save)->setText(text("Views.ApplyChanges"));
 		layout->addWidget(buttons);
 		connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 		connect(buttons, &QDialogButtonBox::accepted, this, [this] { save(); });
@@ -842,6 +929,8 @@ private:
 				button->setEnabled(modes);
 	}
 
+	void update_pending() { pending_->setVisible(editable_definition(config_) != original_); }
+
 	void put(const char *field, const QJsonObject &entry)
 	{
 		QJsonArray array = config_[field].toArray();
@@ -855,6 +944,7 @@ private:
 		if (!replaced)
 			array.append(entry);
 		config_[field] = array;
+		update_pending();
 	}
 
 	bool referenced(const QString &group, const QString &choice, bool whole_group)
@@ -882,6 +972,7 @@ private:
 				break;
 			}
 		config_[field] = array;
+		update_pending();
 		redraw();
 	}
 
@@ -894,6 +985,7 @@ private:
 		const auto entry = array.takeAt(from);
 		array.insert(to, entry);
 		config_[field] = array;
+		update_pending();
 		redraw();
 	}
 
@@ -1015,7 +1107,7 @@ private:
 	QString id_, scene_uuid_;
 	QJsonObject config_, original_;
 	QListWidget *groups_ = nullptr, *modes_ = nullptr, *views_ = nullptr;
-	QLabel *mode_help_ = nullptr, *error_ = nullptr;
+	QLabel *mode_help_ = nullptr, *error_ = nullptr, *pending_ = nullptr;
 };
 
 obs_source_t *controller_source(const QJsonObject &state)
@@ -1189,6 +1281,205 @@ QIcon panel_icon(const QJsonObject &pin)
 	return QIcon(QPixmap::fromImage(reader.read()));
 }
 
+QString embedded_panel_icon(QImage image)
+{
+	if (image.isNull())
+		return {};
+	image = image.scaled(128, 128, Qt::KeepAspectRatio, Qt::SmoothTransformation)
+			.convertToFormat(QImage::Format_ARGB32);
+	QByteArray png;
+	QBuffer buffer(&png);
+	buffer.open(QIODevice::WriteOnly);
+	if (!image.save(&buffer, "PNG"))
+		return {};
+	const auto encoded = QString::fromLatin1(png.toBase64());
+	return encoded.size() <= 128 * 1024 ? encoded : QString();
+}
+
+class ViewIconLibrary final : public QDialog {
+public:
+	ViewIconLibrary(QWidget *parent, std::function<void(const QString &)> apply)
+		: QDialog(parent),
+		  apply_(std::move(apply))
+	{
+		setObjectName("viewsPanelIconLibraryDialog");
+		setWindowTitle(text("Controls.IconLibraryTitle"));
+		setAttribute(Qt::WA_DeleteOnClose);
+		setWindowModality(Qt::WindowModal);
+		auto *layout = new QVBoxLayout(this);
+		layout->addWidget(note(this, text("Controls.IconLibraryHelp")));
+		search_ = new QLineEdit(this);
+		search_->setObjectName("viewsPanelIconLibrarySearch");
+		search_->setPlaceholderText(text("Controls.IconSearch"));
+		search_->setClearButtonEnabled(true);
+		layout->addWidget(search_);
+		auto *filters = new QHBoxLayout;
+		category_ = new QComboBox(this);
+		category_->setObjectName("viewsPanelIconLibraryCategory");
+		category_->setAccessibleName(text("Controls.IconCategory"));
+		category_->addItem(text("Controls.IconAllCategories"), QString());
+		auto *category_label = new QLabel(text("Controls.IconCategory"), this);
+		category_label->setBuddy(category_);
+		filters->addWidget(category_label);
+		filters->addWidget(category_, 1);
+		palette_ = new QComboBox(this);
+		palette_->setObjectName("viewsPanelIconLibraryPalette");
+		palette_->setAccessibleName(text("Controls.IconColour"));
+		auto *palette_label = new QLabel(text("Controls.IconColour"), this);
+		palette_label->setBuddy(palette_);
+		filters->addWidget(palette_label);
+		filters->addWidget(palette_, 1);
+		layout->addLayout(filters);
+		icons_ = new QListWidget(this);
+		icons_->setObjectName("viewsPanelIconLibraryItems");
+		icons_->setViewMode(QListView::IconMode);
+		icons_->setMovement(QListView::Static);
+		icons_->setResizeMode(QListView::Adjust);
+		icons_->setSelectionMode(QAbstractItemView::SingleSelection);
+		icons_->setIconSize(QSize(64, 64));
+		icons_->ensurePolished();
+		icons_->setGridSize(QSize(144, 64 + icons_->fontMetrics().lineSpacing() * 3 + 12));
+		icons_->setSpacing(4);
+		icons_->setWordWrap(true);
+		icons_->setTextElideMode(Qt::ElideRight);
+		icons_->setUniformItemSizes(true);
+		icons_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+		layout->addWidget(icons_, 1);
+		status_ = note(this, {}, "viewsPanelIconLibraryStatus");
+		layout->addWidget(status_);
+		auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, this);
+		use_ = buttons->addButton(text("Controls.UseIcon"), QDialogButtonBox::AcceptRole);
+		use_->setObjectName("viewsPanelIconLibraryUse");
+		use_->setEnabled(false);
+		buttons->button(QDialogButtonBox::Cancel)->setObjectName("viewsPanelIconLibraryCancel");
+		layout->addWidget(buttons);
+		connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+		connect(buttons, &QDialogButtonBox::accepted, this, [this] { use_selection(); });
+		connect(icons_, &QListWidget::itemActivated, this, [this] { use_selection(); });
+		connect(icons_, &QListWidget::itemSelectionChanged, this, [this] { show_selection(); });
+		connect(search_, &QLineEdit::textChanged, this, [this] { filter_icons(); });
+		connect(category_, &QComboBox::currentIndexChanged, this, [this] { filter_icons(); });
+		connect(palette_, &QComboBox::currentIndexChanged, this, [this] { update_palette(); });
+		load_icons();
+		resize(680, 560);
+	}
+
+private:
+	void load_icons()
+	{
+		QFile file(":/stagekit/view-icons/catalog.json");
+		if (!file.open(QIODevice::ReadOnly)) {
+			status_->setText(text("Controls.IconLibraryError"));
+			return;
+		}
+		const auto catalog = QJsonDocument::fromJson(file.readAll()).object();
+		const QSignalBlocker category_block(category_), palette_block(palette_);
+		for (const QJsonValue value : catalog["groups"].toArray()) {
+			const auto group = value.toObject();
+			const auto label = text(group["labelKey"].toString().toUtf8().constData());
+			groups_.insert(group["id"].toString(), label);
+			category_->addItem(label, group["id"].toString());
+		}
+		for (const QJsonValue value : catalog["palettes"].toArray()) {
+			const auto palette = value.toObject();
+			palette_->addItem(text(palette["labelKey"].toString().toUtf8().constData()),
+					  palette["id"].toString());
+		}
+		for (const QJsonValue value : catalog["icons"].toArray()) {
+			const auto icon = value.toObject();
+			const auto label = text(icon["labelKey"].toString().toUtf8().constData());
+			auto *item = new QListWidgetItem(label, icons_);
+			// IconMode's grid controls placement, not the item's painting rect.
+			// Give the native delegate the full tile for wrapped labels.
+			item->setSizeHint(icons_->gridSize());
+			item->setData(Qt::UserRole, icon["id"].toString());
+			item->setData(Qt::UserRole + 1, icon.toVariantMap());
+			item->setToolTip(label + "\n" + groups_.value(icon["group"].toString()));
+			item->setTextAlignment(Qt::AlignHCenter);
+		}
+		update_palette();
+		filter_icons();
+	}
+
+	QString image_path(const QListWidgetItem *item) const
+	{
+		if (!item)
+			return {};
+		const auto icon = QJsonObject::fromVariantMap(item->data(Qt::UserRole + 1).toMap());
+		const auto path = icon["paths"].toObject()[palette_->currentData().toString()].toString();
+		return path.startsWith(":/stagekit/view-icons/") ? path : QString();
+	}
+
+	void update_palette()
+	{
+		for (int i = 0; i < icons_->count(); ++i) {
+			auto *item = icons_->item(i);
+			item->setIcon(QIcon(image_path(item)));
+		}
+		show_selection();
+	}
+
+	void filter_icons()
+	{
+		const auto query = search_->text().simplified();
+		const auto words = query.split(' ', Qt::SkipEmptyParts);
+		const auto group = category_->currentData().toString();
+		int visible = 0;
+		for (int i = 0; i < icons_->count(); ++i) {
+			auto *item = icons_->item(i);
+			const auto icon = QJsonObject::fromVariantMap(item->data(Qt::UserRole + 1).toMap());
+			QString searchable = item->text() + " " + groups_.value(icon["group"].toString());
+			for (const QJsonValue keyword : icon["keywords"].toArray())
+				searchable += " " + keyword.toString();
+			bool matches = group.isEmpty() || group == icon["group"].toString();
+			for (const auto &word : words)
+				matches = matches && searchable.contains(word, Qt::CaseInsensitive);
+			item->setHidden(!matches);
+			if (matches)
+				++visible;
+		}
+		if (icons_->currentItem() && icons_->currentItem()->isHidden()) {
+			icons_->clearSelection();
+			icons_->setCurrentItem(nullptr);
+		}
+		visible_ = visible;
+		show_selection();
+	}
+
+	void show_selection()
+	{
+		auto *item = icons_->currentItem();
+		const bool selected = item && item->isSelected() && !item->isHidden() && !item->icon().isNull();
+		use_->setEnabled(selected);
+		status_->setText(selected   ? item->toolTip().replace('\n', " - ")
+				 : visible_ ? text("Controls.IconCount").arg(visible_)
+					    : text("Controls.IconNoMatches"));
+	}
+
+	void use_selection()
+	{
+		auto *item = icons_->currentItem();
+		if (!item || !item->isSelected() || item->isHidden() || !use_->isEnabled())
+			return;
+		const auto encoded = embedded_panel_icon(QImage(image_path(item)));
+		if (encoded.isEmpty()) {
+			status_->setText(text("Controls.IconError"));
+			return;
+		}
+		apply_(encoded);
+		accept();
+	}
+
+	std::function<void(const QString &)> apply_;
+	QMap<QString, QString> groups_;
+	QLineEdit *search_ = nullptr;
+	QComboBox *category_ = nullptr, *palette_ = nullptr;
+	QListWidget *icons_ = nullptr;
+	QLabel *status_ = nullptr;
+	QPushButton *use_ = nullptr;
+	int visible_ = 0;
+};
+
 // A click and a keyboard activation have the same meaning, including when the
 // current row already represents an active native selection. A double-click is
 // one command, not two visibility toggles.
@@ -1236,8 +1527,9 @@ private:
 
 class ViewPanelEditor final : public QDialog {
 public:
-	ViewPanelEditor(QWidget *parent, const QJsonArray &inventory, const QJsonArray &pins, bool show_scene,
-			std::function<void(QJsonArray, bool, bool)> apply)
+	ViewPanelEditor(QWidget *parent, const QJsonArray &inventory, const QJsonArray &pins,
+			const QJsonArray &custom_sections, bool show_scene,
+			std::function<void(QJsonArray, QJsonArray, bool, bool)> apply)
 		: QDialog(parent),
 		  inventory_(inventory),
 		  apply_(std::move(apply))
@@ -1302,10 +1594,29 @@ public:
 		label_->setObjectName("viewsPanelLabel");
 		label_->setPlaceholderText(text("Controls.UseName"));
 		form->addRow(text("Controls.Label"), label_);
-		section_ = new QLineEdit(this);
+		section_choice_ = new QComboBox(this);
+		section_choice_->setObjectName("viewsPanelSectionChoice");
+		section_choice_->setEditable(true);
+		section_choice_->setInsertPolicy(QComboBox::NoInsert);
+		section_choice_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+		section_choice_->setMinimumContentsLength(12);
+		section_choice_->setToolTip(text("Controls.SectionHelp"));
+		section_ = section_choice_->lineEdit();
 		section_->setObjectName("viewsPanelSection");
+		for (const char *key :
+		     {"Controls.Scenes", "Controls.SectionViews", "Controls.SectionCameras", "Controls.SectionCaptures",
+		      "Controls.SectionBackgrounds", "Controls.SectionOverlays", "Controls.SectionAudio"})
+			section_presets_.append(text(key));
+		for (const auto &name : values(custom_sections))
+			remember_section(name);
+		for (const QJsonValue value : pins)
+			remember_section(value.toObject()["section"].toString());
+		fill_sections();
 		auto *section_row = new QHBoxLayout;
-		section_row->addWidget(section_, 1);
+		section_row->addWidget(section_choice_, 1);
+		add_section_ = new QPushButton(text("Controls.AddSection"), this);
+		add_section_->setObjectName("viewsPanelAddSection");
+		section_row->addWidget(add_section_);
 		reset_section_ = new QToolButton(this);
 		reset_section_->setObjectName("viewsPanelResetSection");
 		reset_section_->setText(text("Controls.ResetSection"));
@@ -1318,6 +1629,9 @@ public:
 		icon_preview_->setFixedSize(32, 32);
 		icon_preview_->setAlignment(Qt::AlignCenter);
 		icons->addWidget(icon_preview_);
+		icon_library_ = new QPushButton(text("Controls.IconLibrary"), this);
+		icon_library_->setObjectName("viewsPanelIconLibrary");
+		icons->addWidget(icon_library_, 1);
 		choose_icon_ = new QPushButton(text("Controls.ChooseIcon"), this);
 		choose_icon_->setObjectName("viewsPanelChooseIcon");
 		icons->addWidget(choose_icon_, 1);
@@ -1347,6 +1661,7 @@ public:
 		connect(available_, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem *item, int column) {
 			if (column != 0)
 				return;
+			remember_pin_sections();
 			mark_custom();
 			const bool checked = item->checkState(0) == Qt::Checked;
 			if (item->childCount()) {
@@ -1361,6 +1676,7 @@ public:
 			show_pin();
 		});
 		connect(remove_, &QPushButton::clicked, this, [this] {
+			remember_pin_sections();
 			mark_custom();
 			{
 				const QSignalBlocker blocker(pins_);
@@ -1371,6 +1687,7 @@ public:
 			show_pin();
 		});
 		connect(clear_, &QPushButton::clicked, this, [this] {
+			remember_pin_sections();
 			mark_custom();
 			pins_->clear();
 			sync_checks();
@@ -1379,12 +1696,24 @@ public:
 		connect(pins_, &QListWidget::itemSelectionChanged, this, [this] { show_pin(); });
 		connect(pins_->model(), &QAbstractItemModel::rowsMoved, this, [this] { mark_custom(); });
 		connect(label_, &QLineEdit::textChanged, this, [this] { edit_labels(); });
-		connect(section_, &QLineEdit::textChanged, this, [this] { edit_sections(); });
-		connect(reset_section_, &QToolButton::clicked, this, [this] {
-			section_->clear();
-			edit_sections();
+		connect(section_, &QLineEdit::textChanged, this, [this] {
+			// The editable combo can publish its label before activated. The
+			// original-section placeholder must never become a saved section.
+			const bool original = section_->text() == section_choice_->itemText(0);
+			edit_sections(original ? QString() : section_->text());
+		});
+		connect(section_, &QLineEdit::editingFinished, this, [this] { remember_pin_sections(); });
+		connect(section_choice_, &QComboBox::activated, this, [this](int index) {
+			edit_sections(section_choice_->itemData(index).toString());
 			show_pin();
 		});
+		connect(add_section_, &QPushButton::clicked, this, [this] { add_section(); });
+		connect(reset_section_, &QToolButton::clicked, this, [this] {
+			remember_pin_sections();
+			edit_sections({});
+			show_pin();
+		});
+		connect(icon_library_, &QPushButton::clicked, this, [this] { choose_library_icon(); });
 		connect(choose_icon_, &QPushButton::clicked, this, [this] { choose_icon(); });
 		connect(remove_icon_, &QPushButton::clicked, this, [this] {
 			const auto selected = pins_->selectedItems();
@@ -1397,6 +1726,7 @@ public:
 			show_pin();
 		});
 		connect(automatic_button, &QPushButton::clicked, this, [this] {
+			remember_pin_sections();
 			automatic_ = true;
 			pins_->clear();
 			remembered_.clear();
@@ -1409,10 +1739,13 @@ public:
 		});
 		connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 		connect(buttons, &QDialogButtonBox::accepted, this, [this] {
+			remember_pin_sections();
 			QJsonArray pins;
 			for (int i = 0; i < pins_->count(); ++i)
 				pins.append(pin_data(pins_->item(i)));
-			apply_(pins, !automatic_, switch_scene_->isChecked());
+			// OBS data arrays retain objects only, so names use the same
+			// value records as native scene and source lists.
+			apply_(pins, value_list(custom_sections_), !automatic_, switch_scene_->isChecked());
 			accept();
 		});
 		if (pins_->count())
@@ -1550,19 +1883,22 @@ private:
 
 	void show_pin()
 	{
-		const QSignalBlocker label_block(label_), section_block(section_);
+		remember_pin_sections();
+		const QSignalBlocker label_block(label_), section_block(section_),
+			section_choice_block(section_choice_);
 		const auto selected = pins_->selectedItems();
 		const bool one = selected.size() == 1;
 		const auto pin = one ? pin_data(selected.front()) : QJsonObject{};
 		label_->setEnabled(one);
 		label_->setText(pin["label"].toString());
-		section_->setEnabled(!selected.isEmpty());
+		section_choice_->setEnabled(!selected.isEmpty());
 		reset_section_->setEnabled(!selected.isEmpty());
 		QString section = selected.isEmpty() ? QString() : pin_data(selected.front())["section"].toString();
 		bool same_section = true;
 		for (auto *item : selected)
 			same_section = same_section && pin_data(item)["section"].toString() == section;
 		section_->setPlaceholderText(text(same_section ? "Controls.UseSection" : "Controls.MixedSections"));
+		section_choice_->setCurrentIndex(same_section ? section_choice_->findData(section) : -1);
 		section_->setText(same_section ? section : QString());
 		const auto control = find_id(inventory_, pin["id"].toString());
 		context_->setText(one ? control["section"].toString(pin["context"].toString()) + "\n" +
@@ -1571,6 +1907,7 @@ private:
 						       : text("Controls.EditSelection").arg(selected.size()));
 		remove_->setEnabled(!selected.isEmpty());
 		choose_icon_->setEnabled(one);
+		icon_library_->setEnabled(one);
 		remove_icon_->setEnabled(one && !pin["iconPng"].toString().isEmpty());
 		icon_preview_->clear();
 		if (one)
@@ -1588,7 +1925,78 @@ private:
 		update_pin(selected.front(), pin);
 	}
 
-	void edit_sections()
+	bool remember_section(const QString &value)
+	{
+		const auto name = value.trimmed();
+		if (name.isEmpty() || section_presets_.contains(name) || custom_sections_.contains(name))
+			return false;
+		custom_sections_.append(name);
+		return true;
+	}
+
+	void fill_sections()
+	{
+		const QSignalBlocker section_block(section_), choice_block(section_choice_);
+		const auto current = section_->text();
+		section_choice_->clear();
+		section_choice_->addItem(text("Controls.UseSection"), QString());
+		for (const auto &name : section_presets_)
+			section_choice_->addItem(name, name);
+		for (const auto &name : custom_sections_)
+			section_choice_->addItem(name, name);
+		section_choice_->setCurrentIndex(section_choice_->findData(current));
+		section_->setText(current);
+	}
+
+	void remember_pin_sections()
+	{
+		bool added = false;
+		for (int i = 0; i < pins_->count(); ++i)
+			added = remember_section(pin_data(pins_->item(i))["section"].toString()) || added;
+		if (added)
+			fill_sections();
+	}
+
+	void add_section()
+	{
+		remember_pin_sections();
+		auto *dialog = new QDialog(this);
+		dialog->setObjectName("viewsPanelNewSectionDialog");
+		dialog->setWindowTitle(text("Controls.AddSectionTitle"));
+		dialog->setAttribute(Qt::WA_DeleteOnClose);
+		dialog->setWindowModality(Qt::WindowModal);
+		auto *layout = new QVBoxLayout(dialog);
+		layout->addWidget(note(dialog, text("Controls.AddSectionHelp")));
+		auto *name = new QLineEdit(dialog);
+		name->setObjectName("viewsPanelNewSectionName");
+		name->setPlaceholderText(text("Controls.SectionName"));
+		name->setAccessibleName(text("Controls.SectionName"));
+		layout->addWidget(name);
+		auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, dialog);
+		auto *save = buttons->addButton(text("Controls.AddSectionTitle"), QDialogButtonBox::AcceptRole);
+		save->setObjectName("viewsPanelNewSectionSave");
+		save->setEnabled(false);
+		buttons->button(QDialogButtonBox::Cancel)->setObjectName("viewsPanelNewSectionCancel");
+		layout->addWidget(buttons);
+		connect(name, &QLineEdit::textChanged, dialog,
+			[name, save] { save->setEnabled(!name->text().trimmed().isEmpty()); });
+		connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+		connect(buttons, &QDialogButtonBox::accepted, dialog, [this, dialog, name] {
+			const auto value = name->text().trimmed();
+			if (value.isEmpty())
+				return;
+			remember_section(value);
+			fill_sections();
+			edit_sections(value);
+			show_pin();
+			dialog->accept();
+		});
+		dialog->resize(400, 150);
+		dialog->open();
+		name->setFocus();
+	}
+
+	void edit_sections(const QString &section)
 	{
 		const auto selected = pins_->selectedItems();
 		if (selected.isEmpty())
@@ -1596,7 +2004,7 @@ private:
 		mark_custom();
 		for (auto *item : selected) {
 			auto pin = pin_data(item);
-			pin["section"] = section_->text();
+			pin["section"] = section;
 			update_pin(item, pin);
 		}
 	}
@@ -1619,6 +2027,28 @@ private:
 			item->setSelected(true);
 		}
 		pins_->setCurrentItem(current, QItemSelectionModel::NoUpdate);
+	}
+
+	void set_icon(const QString &id, const QString &encoded)
+	{
+		auto *item = pin_item(id);
+		if (!item || encoded.isEmpty())
+			return;
+		mark_custom();
+		auto pin = pin_data(item);
+		pin["iconPng"] = encoded;
+		update_pin(item, pin);
+		show_pin();
+	}
+
+	void choose_library_icon()
+	{
+		const auto selected = pins_->selectedItems();
+		if (selected.size() != 1)
+			return;
+		const QString id = selected.front()->data(Qt::UserRole).toString();
+		auto *picker = new ViewIconLibrary(this, [this, id](const QString &encoded) { set_icon(id, encoded); });
+		picker->open();
 	}
 
 	void choose_icon()
@@ -1652,37 +2082,27 @@ private:
 				return;
 			}
 			reader.setScaledSize(size.scaled(128, 128, Qt::KeepAspectRatio));
-			QImage image = reader.read();
-			if (image.isNull()) {
+			const auto encoded = embedded_panel_icon(reader.read());
+			if (encoded.isEmpty()) {
 				status_->setText(text("Controls.IconError"));
 				return;
 			}
-			image = image.scaled(128, 128, Qt::KeepAspectRatio, Qt::SmoothTransformation)
-					.convertToFormat(QImage::Format_ARGB32);
-			QByteArray png;
-			QBuffer buffer(&png);
-			buffer.open(QIODevice::WriteOnly);
-			if (!image.save(&buffer, "PNG")) {
-				status_->setText(text("Controls.IconError"));
-				return;
-			}
-			mark_custom();
-			auto pin = pin_data(item);
-			pin["iconPng"] = QString::fromLatin1(png.toBase64());
-			update_pin(item, pin);
-			show_pin();
+			set_icon(id, encoded);
 		});
 		picker->open();
 	}
 
 	QJsonArray inventory_;
 	QMap<QString, QJsonObject> remembered_;
-	std::function<void(QJsonArray, bool, bool)> apply_;
+	std::function<void(QJsonArray, QJsonArray, bool, bool)> apply_;
+	QStringList section_presets_, custom_sections_;
+	QComboBox *section_choice_ = nullptr;
 	QLineEdit *search_ = nullptr, *label_ = nullptr, *section_ = nullptr;
 	QTreeWidget *available_ = nullptr;
 	QListWidget *pins_ = nullptr;
 	QLabel *context_ = nullptr, *status_ = nullptr, *selected_heading_ = nullptr, *icon_preview_ = nullptr;
-	QPushButton *remove_ = nullptr, *clear_ = nullptr, *choose_icon_ = nullptr, *remove_icon_ = nullptr;
+	QPushButton *remove_ = nullptr, *clear_ = nullptr, *choose_icon_ = nullptr, *remove_icon_ = nullptr,
+		    *icon_library_ = nullptr, *add_section_ = nullptr;
 	QCheckBox *switch_scene_ = nullptr;
 	QToolButton *reset_section_ = nullptr;
 	QSet<QString> expanded_before_search_;
@@ -2002,8 +2422,8 @@ private:
 			delete item;
 		}
 		QSet<QString> collapsed;
-		for (const QJsonValue value : config_["collapsedSections"].toArray())
-			collapsed.insert(value.toString());
+		for (const auto &name : values(config_["collapsedSections"]))
+			collapsed.insert(name);
 		for (const QJsonValue value : appearance_) {
 			const auto entry = value.toObject();
 			const QString title = entry["section"].toString();
@@ -2073,11 +2493,11 @@ private:
 
 	void remember_collapsed()
 	{
-		QJsonArray collapsed;
+		QStringList collapsed;
 		for (const auto &section : sections_)
 			if (!section.heading->isExpanded())
 				collapsed.append(section.title);
-		config_["collapsedSections"] = collapsed;
+		config_["collapsedSections"] = value_list(collapsed);
 		if (loaded_)
 			obs_frontend_save();
 	}
@@ -2125,15 +2545,18 @@ private:
 		set_inventory(object(response)["controls"].toArray(), ready);
 		if (!ready)
 			return;
-		editor_ = new ViewPanelEditor(this, inventory_, effective_pins(), config_["showScene"].toBool(true),
-					      [this](QJsonArray pins, bool custom, bool show_scene) {
-						      config_["schema"] = 1;
-						      config_["customized"] = custom;
-						      config_["pins"] = pins;
-						      config_["showScene"] = show_scene;
-						      set_inventory(inventory_, loaded_);
-						      obs_frontend_save();
-					      });
+		editor_ =
+			new ViewPanelEditor(this, inventory_, effective_pins(), config_["customSections"].toArray(),
+					    config_["showScene"].toBool(true),
+					    [this](QJsonArray pins, QJsonArray sections, bool custom, bool show_scene) {
+						    config_["schema"] = 1;
+						    config_["customized"] = custom;
+						    config_["pins"] = pins;
+						    config_["customSections"] = sections;
+						    config_["showScene"] = show_scene;
+						    set_inventory(inventory_, loaded_);
+						    obs_frontend_save();
+					    });
 		connect(editor_, &QDialog::finished, this, [this] {
 			editor_ = nullptr;
 			edit_->setEnabled(loaded_);
@@ -2224,6 +2647,8 @@ public:
 		scope_ = new QComboBox(this);
 		scope_->setObjectName("viewsScope");
 		form->addRow(text("Views.Show"), scope_);
+		applies_ = note(this, {}, "viewsAppliesTo");
+		layout->addWidget(applies_);
 		list_ = new QListWidget(this);
 		list_->setObjectName("viewsList");
 		list_->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -2253,9 +2678,9 @@ public:
 		layout->addLayout(actions);
 		connect(scenes_, &QComboBox::currentIndexChanged, this, [this] {
 			selected_scene_ = scenes_->currentData().toString();
-			selected_controller_.clear();
-			selected_scope_.clear();
 			refresh(true);
+			if (scope_is_views_ && visible_views().isEmpty() && scope_->count() > 1)
+				scope_->setCurrentIndex(1);
 			persist_selection();
 		});
 		connect(controllers_, &QComboBox::currentIndexChanged, this, [this] {
@@ -2280,6 +2705,7 @@ public:
 		});
 		connect(list_, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) { select(item); });
 		connect(list_, &QListWidget::itemActivated, this, [this](QListWidgetItem *item) { select(item); });
+		connect(list_, &QListWidget::currentItemChanged, this, [this] { show_applies_to(); });
 		connect(create_, &QToolButton::clicked, this, [this] { create(); });
 		connect(configure_, &QPushButton::clicked, this, [this] { configure(); });
 		connect(import_, &QPushButton::clicked, this, [this] { import_legacy(); });
@@ -2542,6 +2968,7 @@ private:
 			scene_items.append({scene.name, scene.uuid});
 		combo_items(scenes_, scene_items, selected_scene_);
 		selected_scene_ = scenes_->currentData().toString();
+		selected_scene_name_ = scenes_->currentText();
 		OBSDataAutoRelease response = obs_data_create();
 		if (loaded_)
 			scene_controller_list(response);
@@ -2549,16 +2976,21 @@ private:
 		QList<QPair<QString, QString>> controller_items;
 		for (const QJsonValue entry : object(response)["controllers"].toArray()) {
 			const auto controller = entry.toObject();
-			if (controller["sceneUuid"].toString() != selected_scene_)
+			if (!controller_covers_scene(controller, selected_scene_, selected_scene_name_))
 				continue;
-			controller_items.append({controller["name"].toString(), controller["controllerId"].toString()});
+			const QString name =
+				controller["sceneUuid"].toString() == selected_scene_
+					? controller["name"].toString()
+					: text("Views.ControllerFromScene")
+						  .arg(controller["name"].toString(), controller["scene"].toString());
+			controller_items.append({name, controller["controllerId"].toString()});
 			if (controller["controllerId"].toString() == selected_controller_ || next.isEmpty())
 				next = controller;
 		}
-		if (!next.isEmpty())
-			selected_controller_ = next["controllerId"].toString();
-		else
-			selected_controller_.clear();
+		const QString next_id = next["controllerId"].toString();
+		if (next_id != selected_controller_)
+			selected_scope_.clear();
+		selected_controller_ = next_id;
 		combo_items(controllers_, controller_items, selected_controller_);
 		const bool changed_state = force || next != state_;
 		state_ = next;
@@ -2572,10 +3004,16 @@ private:
 		QList<QPair<QString, QString>> scope_items{{text("Views.CombinedViews"), "views"}};
 		for (const QJsonValue entry : state_["groups"].toArray()) {
 			const auto group = entry.toObject();
+			if (!group_covers_browsed_scene(group["id"].toString()))
+				continue;
 			scope_items.append({group["name"].toString(), group["id"].toString()});
 		}
+		if (!scope_is_views_ &&
+		    std::none_of(scope_items.cbegin() + 1, scope_items.cend(),
+				 [this](const auto &item) { return item.second == selected_scope_; }))
+			selected_scope_.clear();
 		if (selected_scope_.isEmpty()) {
-			scope_is_views_ = !state_["views"].toArray().isEmpty() || scope_items.size() == 1;
+			scope_is_views_ = !visible_views().isEmpty() || scope_items.size() == 1;
 			selected_scope_ = scope_is_views_ ? QStringLiteral("views") : scope_items[1].second;
 		}
 		combo_items(scope_, scope_items, selected_scope_);
@@ -2598,11 +3036,60 @@ private:
 			redraw_state();
 	}
 
+	bool group_covers_browsed_scene(const QString &id) const
+	{
+		if (state_["sceneUuid"].toString() == selected_scene_)
+			return true;
+		const auto group = find_id(state_["config"].toObject()["groups"].toArray(), id);
+		return !group.isEmpty() && group_scenes(state_, group).contains(selected_scene_name_);
+	}
+
+	QJsonArray visible_views() const
+	{
+		if (state_["sceneUuid"].toString() == selected_scene_)
+			return state_["views"].toArray();
+		QJsonArray result;
+		const auto definitions = state_["config"].toObject()["views"].toArray();
+		for (const QJsonValue value : state_["views"].toArray()) {
+			const auto view = value.toObject();
+			const auto definition = find_id(definitions, view["id"].toString());
+			if (view_scenes(state_, definition).contains(selected_scene_name_))
+				result.append(view);
+		}
+		return result;
+	}
+
+	void show_applies_to()
+	{
+		applies_->setVisible(loaded_ && !state_.isEmpty());
+		if (!loaded_ || state_.isEmpty()) {
+			applies_->clear();
+			return;
+		}
+		const auto config = state_["config"].toObject();
+		QStringList names;
+		if (scope_is_views_) {
+			const auto *item = list_->currentItem();
+			const auto view = item ? find_id(config["views"].toArray(), item->data(Qt::UserRole).toString())
+					       : QJsonObject{};
+			if (view.isEmpty()) {
+				applies_->setText(text("Views.ViewScopeHelp"));
+				return;
+			}
+			names = view_scenes(state_, view);
+		} else {
+			const auto group = find_id(config["groups"].toArray(), selected_scope_);
+			names = group_scenes(state_, group);
+		}
+		applies_->setText(text("Views.AppliesTo").arg(names.join(", ")));
+	}
+
 	void redraw_state()
 	{
 		const QSignalBlocker block(list_);
 		list_->clear();
 		if (!loaded_ || state_.isEmpty()) {
+			show_applies_to();
 			status_->setText(text(loaded_ ? "Views.NoController" : "Views.Loading"));
 			return;
 		}
@@ -2612,7 +3099,7 @@ private:
 		const auto group = is_views ? QJsonObject{} : find_id(state_["groups"].toArray(), selected_scope_);
 		const bool group_enabled = is_views || group["enabled"].toBool();
 		const bool group_available = is_views || group["available"].toBool();
-		QJsonArray entries = is_views ? state_["views"].toArray() : group["choices"].toArray();
+		QJsonArray entries = is_views ? visible_views() : group["choices"].toArray();
 		if (!is_views && group["kind"].toString() == "modes" && group["allowNone"].toBool())
 			entries.append(QJsonObject{{"id", ""},
 						   {"name", text("Views.None")},
@@ -2644,6 +3131,7 @@ private:
 			if (active)
 				list_->setCurrentItem(item);
 		}
+		show_applies_to();
 		if (!enabled)
 			status_->setText(text("Views.ControllerOff"));
 		else if (!group_enabled)
@@ -2749,7 +3237,8 @@ private:
 	{
 		const auto current = state_;
 		auto *confirm = new QMessageBox(QMessageBox::Question, text("Views.RemoveController"),
-						text("Views.RemoveControllerPrompt").arg(current["name"].toString()),
+						text("Views.RemoveControllerPrompt")
+							.arg(current["name"].toString(), current["scene"].toString()),
 						QMessageBox::Yes | QMessageBox::No, this);
 		confirm->setObjectName("viewsRemoveControllerConfirm");
 		confirm->setAttribute(Qt::WA_DeleteOnClose);
@@ -2781,15 +3270,22 @@ private:
 		if (raise_import())
 			return;
 		const QString controller_id = selected_controller_;
+		const auto current = snapshot(controller_id);
+		if (current.isEmpty()) {
+			status_->setText(text("Views.ControllerMissing"));
+			return;
+		}
 		auto *dialog = new QDialog(this);
 		dialog->setObjectName("viewsImportDialog");
 		dialog->setAttribute(Qt::WA_DeleteOnClose);
 		dialog->setWindowTitle(text("Views.ImportTitle"));
 		auto *layout = new QVBoxLayout(dialog);
-		layout->addWidget(note(dialog, text("Views.ImportHelp")));
+		layout->addWidget(
+			note(dialog, text("Views.ImportHelp").arg(current["scene"].toString()), "viewsImportHelp"));
 		auto *filters = new QComboBox(dialog);
 		filters->setObjectName("viewsImportFilter");
-		OBSSourceAutoRelease scene = obs_get_source_by_uuid(selected_scene_.toUtf8().constData());
+		OBSSourceAutoRelease scene =
+			obs_get_source_by_uuid(current["sceneUuid"].toString().toUtf8().constData());
 		if (scene)
 			obs_source_enum_filters(
 				scene,
@@ -2873,14 +3369,14 @@ private:
 	QComboBox *scenes_ = nullptr, *controllers_ = nullptr, *scope_ = nullptr;
 	QCheckBox *enabled_ = nullptr;
 	QListWidget *list_ = nullptr;
-	QLabel *status_ = nullptr;
+	QLabel *status_ = nullptr, *applies_ = nullptr;
 	QToolButton *create_ = nullptr;
 	QPushButton *configure_ = nullptr, *import_ = nullptr;
 	QAction *rename_ = nullptr, *remove_ = nullptr;
 	QPointer<ViewsEditor> editor_;
 	QTimer fallback_;
 	QJsonObject state_;
-	QString selected_scene_, selected_controller_, selected_scope_;
+	QString selected_scene_, selected_scene_name_, selected_controller_, selected_scope_;
 	bool loaded_ = false, closed_ = false, pending_ = false, force_refresh_ = false, scope_is_views_ = true;
 };
 

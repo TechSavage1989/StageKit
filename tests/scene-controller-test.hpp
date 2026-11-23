@@ -541,6 +541,116 @@ inline OBSDataAutoRelease imported_group(const std::string &controller, obs_sour
 	return nullptr;
 }
 
+inline void check_shared_import(QStringList &issues)
+{
+	const auto before = issues.size();
+	auto expect = [&](bool value, const char *message) {
+		if (!value)
+			issues.append(QStringLiteral("Scene Controller shared import: ") + QString::fromUtf8(message));
+	};
+	Fixture f;
+	if (!f.controller) {
+		expect(false, "controller was unavailable");
+		return;
+	}
+	auto *first = f.add("Shared import first capture", true);
+	auto *second = f.add("Shared import second capture");
+	auto *shared_first = obs_scene_add(f.shared, obs_sceneitem_get_source(first));
+	auto *shared_second = obs_scene_add(f.shared, obs_sceneitem_get_source(second));
+	obs_sceneitem_set_visible(shared_first, false);
+	obs_sceneitem_set_visible(shared_second, true);
+	OBSDataAutoRelease link_settings = obs_data_create();
+	list(link_settings, "items", {"Shared import first capture", "Shared import second capture"});
+	obs_data_set_int(link_settings, "mode", 0);
+	obs_data_set_bool(link_settings, "lock_hidden", true);
+	obs_data_set_string(link_settings, "transition", "none");
+	obs_data_set_string(link_settings, "hide_transition", "none");
+	OBSSourceAutoRelease legacy =
+		obs_source_create("stagekit_visibility_link", "Shared import original", link_settings, nullptr);
+	OBSSourceAutoRelease other_legacy =
+		obs_source_create("stagekit_visibility_link", "Other layout original", link_settings, nullptr);
+	obs_source_filter_add(obs_scene_get_source(f.scene), legacy);
+	obs_source_filter_add(obs_scene_get_source(f.shared), other_legacy);
+	settle();
+	OBSDataAutoRelease imported = import_legacy(f.id, legacy, true);
+	expect(obs_data_get_bool(imported, "success") && until([&] { return bool(imported_group(f.id, legacy)); }),
+	       "active Choose-one import was rejected");
+	OBSDataAutoRelease definition = imported_group(f.id, legacy);
+	const std::string group = obs_data_get_string(definition, "id");
+	const std::string first_id = choice(f.id, group.c_str(), "Shared import first capture");
+	const std::string second_id = choice(f.id, group.c_str(), "Shared import second capture");
+	if (group.empty() || first_id.empty() || second_id.empty()) {
+		expect(false, "imported choices were unavailable");
+		return;
+	}
+	OBSDataAutoRelease state = get(f.id);
+	OBSDataAutoRelease config = obs_data_get_obj(state, "config");
+	definition = row(config, "groups", group);
+	list(definition, "scope", {obs_source_get_name(obs_scene_get_source(f.shared))});
+	expect(configure(f.id, config) && until([&] {
+		       OBSDataAutoRelease next = imported_group(f.id, legacy);
+		       OBSDataArrayAutoRelease scope = obs_data_get_array(next, "scope");
+		       return obs_data_array_count(scope) == 1 && current(f.id, group.c_str()).empty();
+	       }),
+	       "saved Other scenes scope did not include the differing secondary selection");
+	{
+		// The controller's owner is offscreen while the scoped layout is
+		// showing. Normal OBS ticks, not an explicit runtime tick, must drain
+		// commands and update both layouts. The frontend fixture separately
+		// exercises this with the actual Program scene selector.
+		struct Showing {
+			obs_source_t *owner, *other;
+			Showing(obs_source_t *owner, obs_source_t *other) : owner(owner), other(other)
+			{
+				obs_source_dec_showing(owner);
+				obs_source_inc_showing(other);
+			}
+			~Showing()
+			{
+				obs_source_dec_showing(other);
+				obs_source_inc_showing(owner);
+			}
+		} showing(obs_scene_get_source(f.scene), obs_scene_get_source(f.shared));
+		expect(until([&] { return !obs_source_showing(showing.owner) && obs_source_showing(showing.other); }),
+		       "could not make the controller owner offscreen and its other layout visible");
+		auto selected = [&](bool want_first) {
+			return obs_sceneitem_visible(first) == want_first &&
+			       obs_sceneitem_visible(shared_first) == want_first &&
+			       obs_sceneitem_visible(second) != want_first &&
+			       obs_sceneitem_visible(shared_second) != want_first &&
+			       current(f.id, group.c_str()) == (want_first ? first_id : second_id);
+		};
+		expect(press(f.id, group.c_str(), first_id.c_str()) && until([&] { return selected(true); }),
+		       "an offscreen imported controller did not select its current source in the other layout");
+		expect(press(f.id, group.c_str(), second_id.c_str()) && until([&] { return selected(false); }),
+		       "an offscreen imported controller did not change the choice in both layouts");
+		settle();
+		expect(selected(false), "the existing secondary Link Visibility rule reverted the shared choice");
+		obs_sceneitem_set_visible(shared_first, true);
+		expect(until([&] { return !obs_sceneitem_visible(shared_second); }) &&
+			       press(f.id, group.c_str(), second_id.c_str()) && until([&] { return selected(false); }),
+		       "reselecting a source did not repair a differing secondary eye selection");
+		OBSDataAutoRelease saved = obs_save_source(f.controller);
+		f.remove_controller();
+		settle();
+		f.controller = obs_load_source(saved);
+		if (f.controller) {
+			obs_source_filter_add(showing.owner, f.controller);
+			obs_source_load(f.controller);
+		}
+		expect(f.controller && f.id == obs_source_get_uuid(f.controller) &&
+			       until([&] { return bool(imported_group(f.id, legacy)); }) &&
+			       choice(f.id, group.c_str(), "Shared import first capture") == first_id &&
+			       press(f.id, group.c_str(), first_id.c_str()) && until([&] { return selected(true); }),
+		       "source-record reload lost the shared import scope or offscreen command handling");
+	}
+	obs_source_filter_remove(obs_scene_get_source(f.scene), legacy);
+	obs_source_filter_remove(obs_scene_get_source(f.shared), other_legacy);
+	if (issues.size() == before)
+		blog(LOG_INFO,
+		     "[Scene Controller test] PASS: imported Choose-one group covers both layouts while its owner is offscreen, preserves secondary native rules, repairs mixed visibility and reloads stable choices");
+}
+
 inline void check_original_removal(QStringList &issues)
 {
 	const auto before = issues.size();
@@ -691,6 +801,7 @@ inline void check_original_removal(QStringList &issues)
 
 inline void check_migration(QStringList &issues)
 {
+	check_shared_import(issues);
 	check_original_removal(issues);
 	const auto before = issues.size();
 	auto expect = [&](bool value, const char *message) {

@@ -1207,8 +1207,10 @@ its scene or controller. Keep the dock open while switching scenes; its controls
 **Switch scenes directly.** Use the **Scene** selector at the top of the panel. It follows the order
 in OBS's Scenes dock and shows the actual selected scene. In Studio Mode, the selector is **Preview**
 and changes Preview without changing Program. To keep specific scenes available with one click, open
-**Edit panel...** and check them under **Scenes**. They can appear as list rows or buttons alongside
-your other controls. These scene controls work without a mode or combined view.
+**Edit panel...**, expand **Scenes**, and check the scenes you want. Save, then choose **Buttons** at
+the top of the dock. Each checked scene becomes its own button alongside your other controls. Choose
+**List** for the same scene shortcuts as compact rows. These scene controls work without a mode or
+combined view, and the dropdown stays available in either layout.
 
 **Where the rules live.** StageKit Views is the control panel. A Scene Controller filter stores its
 groups and combined views. A button for an existing standalone filter still uses that filter's rules.
@@ -1218,14 +1220,15 @@ continue to use their original filters.
 **Choose a compact list or adjustable buttons.** Choose **List** or **Buttons** at the top of the dock.
 Both layouts use the same saved controls, labels, sections and order. List is the default and groups
 compact rows under collapsible headings. A single click applies a choice, including one that is already
-highlighted. Enter or Space applies the current row. Active indicators follow the real native state.
+highlighted. Collapsed headings are remembered when you switch collections or restart OBS. Enter or
+Space applies the current row. Active indicators follow the real native state.
 
 **Keep controls from several scenes together in a compact Windows OBS list.**
 
 <p align="center"><img src="docs/images/stagekit-controls-list.png" width="560" alt="Compact StageKit Views list in Windows OBS with controls grouped under collapsible scene and section headings"></p>
 
 In **Buttons**, use **Button size** to fit more choices or make them larger. The grid adjusts to the
-dock's width, and labels wrap as needed. Optional custom icons appear on buttons and as small images
+dock's width, and labels wrap as needed. Optional icons appear on buttons and as small images
 beside list rows. Layout and size are remembered for each scene collection.
 
 **Use icons and choose the button size that fits your dock.**
@@ -1239,13 +1242,37 @@ are available too.
 
 The right-hand list shows **Controls on this panel**. Select several entries to remove them together,
 or use **Remove all** to start a small panel from scratch. Use the ordering controls to arrange your
-choices. Enter a short **Button label** for an individual control, and give related controls the same
-**Section**. A section can be applied to several selected controls at once. A blank label or section
-follows the control's current name and location.
+choices. Enter a short **Button label** for an individual control. Show in Scenes controls use their
+source's name by default, with the filter name added when a source has more than one such control.
+Your own button label takes priority.
 
-Select one control to choose or remove its icon. A small copy of the image is saved with the scene
-collection, so the original image file is not required afterward. Icons change the control's appearance
-without changing what it operates.
+**Reuse sections.** Choose a **Section** preset, such as Scenes, Cameras, Captures or Overlays, or use
+**Add section...** to create a custom name. Custom sections appear in the same dropdown for every
+control in this collection. You can still type a section name directly. Select several controls to
+apply the same section to all of them. **Use scene and control group** or **Reset** returns them to
+their original grouping.
+
+Save the panel to keep new section names. Names already used by an older panel appear in the choices
+automatically. A saved custom section stays available after its last control is removed or assigned
+elsewhere, and after **Use automatic controls**. Canceling the editor discards new names from that draft.
+A blank button label follows the control's current name.
+
+**Choose an icon.** Select one entry under **Controls on this panel**, then choose either:
+
+- **Icon library...** opens StageKit's built-in artwork from the Stream Deck plugin. Search by name,
+  narrow the selection to scenes, sources or controls, and choose a color palette. Select a thumbnail
+  and choose **Use icon**.
+- **Custom image...** opens an image file from your computer.
+
+Use **Remove icon** to return to a text-only control. A small copy of either kind of image is saved
+with the scene collection, so the original image file and an installed Stream Deck plugin are not
+required afterward. Icons work for scene shortcuts, modes, combined views and the other controls.
+They change a control's appearance without changing what it operates. Canceling either picker keeps
+the previous icon.
+
+**Browse built-in scene, source and control icons.**
+
+<p align="center"><img src="docs/images/stagekit-controls-icon-library.png" width="680" alt="StageKit's built-in icon library in Windows OBS, with searchable thumbnails, category and color choices"></p>
 
 **Save** keeps the selection and settings; **Cancel** leaves the saved panel alone. **Use automatic
 controls** restores automatic discovery when saved. It replaces the customized selection rather than
@@ -1264,9 +1291,16 @@ An OBS Sources group is one selectable item; its children retain their own eye s
 
 **Create or edit controller rules.** Open **Manage controllers...**, choose a scene, and select **Add**
 to create **Scene Filter: Scene Controller (StageKit)**. **Configure...** opens its independent groups
-and combined views. The management scene selector keeps Program on its current scene. Use **Back to
-controls** to return to the panel. The same controller definition is used by the panel and the Stream
-Deck **StageKit View** action.
+and combined views. A controller is available from its own scene and from additional scenes included
+in its groups or combined views. When browsing an additional scene, the manager shows the groups and
+views that apply there and identifies the controller's owning scene. These are the same saved rules,
+not separate copies. The management scene selector keeps Program on its current scene. Use **Back to
+controls** to return to the panel. The panel and the Stream Deck **StageKit View** action use the same
+controller definition.
+
+Group, mode and combined-view windows edit the open configuration draft. Choose **Done** to return
+to **Configure**, then **Apply changes** to update the controller. The configuration window shows a
+notice while changes are pending. Canceling it leaves the controller's saved rules unchanged.
 
 | Group type | Behavior |
 | --- | --- |
@@ -1280,6 +1314,43 @@ Each selection group works independently. For example, a **Camera** group can se
 visible together. Choosing a different capture changes only that group's members, provided the groups
 do not control overlapping sources. Importing Link Visibility preserves its original behavior: only
 one, together or follow.
+
+**Switch scenes while keeping the same group choice.** Use one controller group across the scenes
+that should share a selection:
+
+1. In **Edit panel...**, uncheck **Switch to selection's scene** and save.
+2. Open **Manage controllers...**, choose the controller, then **Configure...**. Select the group and
+   choose **Edit group**. Under **Applies to**, check the layout scenes that should share it.
+   The controller's own scene is always included. For **Choose one source**, add each choice as an
+   existing source to every covered scene. Named modes can select sources spread across those scenes.
+   Choose **Done**, then **Apply changes** in the configuration window. The manager's **Applies to**
+   summary shows the covered scenes. You can select any of those scenes in the manager and access
+   this same controller and group.
+3. For named modes or combined views, leave **Also change scene** unchecked so those choices do not
+   have their own destination.
+4. Add the direct scene shortcuts and this controller group's choices to the panel. Existing panel
+   buttons for an actively imported filter automatically use that group's complete scope, retaining
+   their labels, icons, sections and order.
+
+**Access the same shared group from an additional scene.**
+
+<p align="center"><img src="docs/images/stagekit-shared-controls.png" width="520" alt="StageKit Views in Windows OBS browsing an additional scene, showing the original controller owner and both covered scenes under Applies to"></p>
+
+Select a scene, select a camera or content choice, then switch scenes using the scene buttons or
+dropdown. The shared group's selection remains in place; selecting a different member applies it
+to the covered scenes. Separate groups in separate controllers remain separate, even with identical
+names. A manual Sources eye change still follows that scene's native rules and can leave scenes with
+different selections until the shared controller choice is pressed again.
+
+The **Applies to** summary distinguishes the scenes covered by a group from the scene currently being
+browsed. Selecting a scene in the dock does not add it to the group's scope. Other enabled rules
+controlling the same sources can change visibility afterward.
+
+For an existing standalone Scene Modes filter, **Same modes in scenes** provides its shared scope.
+A standalone Link Visibility filter's **Also in other scenes** has different native behavior and does
+not replace the controller's **Applies to** scope for selecting a source across scenes. Existing
+native filter-targeted Stream Deck keys and hotkeys retain their native scope; choose the **StageKit
+View** action when a key should select the complete controller group.
 
 **Combined views are optional presets.** They save several group choices under one button. In **Add
 combined view**, the **Control** column names an existing group, and **Set to** chooses what that group
@@ -1325,7 +1396,8 @@ both the OBS plugin and companion for this action; companion 0.43.0.0 adds it.
 **Import existing scene controls.** Import is optional for using existing filters from the panel. To
 manage their rules within a controller, open **Manage controllers...**, select its scene and controller,
 then choose **Import...**. Import one selected filter, or choose **Import all** to copy every supported
-Scene Modes and Link Visibility filter on that scene in one action. Filters already imported into this
+Scene Modes and Link Visibility filter on the controller's owning scene in one action, including when
+you access that controller from an additional scene. Filters already imported into this
 controller, or assigned to an active import in another controller, are skipped. An inactive review copy
 in another controller does not block importing the filter. The result shows imported and skipped
 counts. The complete batch is validated before it is applied, so a rejected batch leaves the controller

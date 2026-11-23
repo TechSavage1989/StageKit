@@ -52,6 +52,10 @@ if(ENABLE_QT)
     ${CMAKE_PROJECT_NAME}
     PROPERTIES AUTOMOC ON AUTOUIC ON AUTORCC ON
   )
+  target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/controller/view-icons/view-icons.qrc)
+  # Resource format 2+ embeds checkout-dependent modification times. The icon
+  # library only reads resource bytes, so omit timestamps from the compiled data.
+  set_property(SOURCE src/controller/view-icons/view-icons.qrc PROPERTY AUTORCC_OPTIONS "--format-version;1")
 endif()
 
 target_sources(
