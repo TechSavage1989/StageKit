@@ -1,8 +1,16 @@
 # Exercise the installed plugin in a disposable portable OBS 32.2.2 profile.
-param([Parameter(Mandatory)][string] $PackageDirectory, [Parameter(Mandatory)][string] $ProbePath)
+param(
+    [Parameter(Mandatory)][string] $PackageDirectory,
+    [Parameter(Mandatory)][string] $ProbePath,
+    [string] $ResultDirectory = (Join-Path $PWD 'frontend-results')
+)
 $ErrorActionPreference = 'Stop'
 $package = (Resolve-Path -LiteralPath $PackageDirectory).Path
 $probe = (Resolve-Path -LiteralPath $ProbePath).Path
+$null = New-Item -ItemType Directory -Path $ResultDirectory -Force
+$results = (Resolve-Path -LiteralPath $ResultDirectory).Path
+$env:STAGEKIT_WINDOWS_TIMING = Join-Path $results 'windows-render-timing.json'
+'{"complete":false,"trials":[]}' | Set-Content -LiteralPath $env:STAGEKIT_WINDOWS_TIMING -Encoding utf8
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('stagekit-obs-' + [guid]::NewGuid().ToString('N'))
 $null = New-Item -ItemType Directory -Path $scratch
 $zip = Join-Path $scratch 'obs.zip'
@@ -18,6 +26,17 @@ $dataDir = Join-Path $obsRoot 'data/obs-plugins/stagekit'
 Copy-Item -LiteralPath (Join-Path $package 'bin/64bit/stagekit.dll') -Destination $pluginDir
 Copy-Item -LiteralPath (Join-Path $package 'data') -Destination $dataDir -Recurse
 Copy-Item -LiteralPath $probe -Destination (Join-Path $pluginDir 'stagekit-replacement-probe.dll')
+$metadata = [ordered]@{
+    obsVersion = '32.2.2'
+    obsArchiveSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+    pluginSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $pluginDir 'stagekit.dll')).Hash.ToLowerInvariant()
+    probeSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $probe).Hash.ToLowerInvariant()
+    testedCommit = (& git rev-parse HEAD)
+    requestedHead = $env:STAGEKIT_WINDOWS_HEAD
+    comparison = 'One candidate binary, Scene Shadow bypass/reuse/reuse/bypass; not a release-to-release comparison.'
+    rendererEvidence = 'windows-render-timing.json and complete obs-logs; software D3D cannot establish hardware gains.'
+}
+$metadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $results 'windows-render-metadata.json') -Encoding utf8
 $null = New-Item -ItemType Directory -Path (Join-Path $obsRoot 'data/obs-plugins/stagekit-replacement-probe')
 $report = Join-Path $scratch 'result.txt'
 & python (Join-Path $PSScriptRoot 'replacement-images.py') $scratch
@@ -54,11 +73,14 @@ $env:STAGEKIT_TEST_NDI = 'upgrade'
 $bin = Join-Path $obsRoot 'bin/64bit'
 $process = Start-Process -FilePath (Join-Path $bin 'obs64.exe') -WorkingDirectory $bin -PassThru -WindowStyle Hidden -ArgumentList @('--portable', '--multi', '--disable-shutdown-check', '--disable-missing-files-check', '--disable-updater', '--verbose')
 try {
-    if (!$process.WaitForExit(120000)) { throw 'Portable OBS did not exit within 120 seconds.' }
+    if (!$process.WaitForExit(600000)) { throw 'Portable OBS did not finish its functional and quiet rendering checks within 600 seconds.' }
     if ($process.ExitCode -ne 0) { throw "Portable OBS exited with code $($process.ExitCode)." }
     if (!(Test-Path -LiteralPath $report)) { throw 'The OBS frontend probe did not run.' }
     $result = (Get-Content -Raw -LiteralPath $report).Trim()
     if ($result -ne 'PASS') { throw $result }
+    if (!(Test-Path -LiteralPath $env:STAGEKIT_WINDOWS_TIMING)) { throw 'The Windows timing diagnostic did not run.' }
+    $timing = Get-Content -Raw -LiteralPath $env:STAGEKIT_WINDOWS_TIMING | ConvertFrom-Json
+    if (!$timing.complete -or $timing.trials.Count -ne 4) { throw 'The Windows timing diagnostic did not complete all four trials.' }
     $modules = Get-Content -LiteralPath $moduleFile -Raw | ConvertFrom-Json
     foreach ($name in $moduleLabels.Keys) {
         $entries = @($modules | Where-Object { $_.module_name -ceq $name })
@@ -86,7 +108,7 @@ try {
     }
     Write-Output 'PASS: OBS recognizes the native StageKit sources, filters and transition and the bundled Composite Blur filter.'
     $testLog = Get-ChildItem -LiteralPath (Join-Path $obsRoot 'config/obs-studio/logs') -Filter '*.txt' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    Select-String -LiteralPath $testLog.FullName -SimpleMatch -Pattern '[camera transition test]', '[Quick Access test]', '[Studio transition test]', '[Auto Frame detection test]', '[window morph test]', '[capture settings test]', 'StageKit timer layout:', 'StageKit timer at ', 'StageKit timer dock:' | ForEach-Object { Write-Output $_.Line }
+    Select-String -LiteralPath $testLog.FullName -SimpleMatch -Pattern '[camera transition test]', '[Quick Access test]', '[Studio transition test]', '[Auto Frame detection test]', '[window morph test]', '[capture settings test]', '[Windows render timing]', 'Loading up D3D11 on adapter', 'StageKit timer layout:', 'StageKit timer at ', 'StageKit timer dock:' | ForEach-Object { Write-Output $_.Line }
     Write-Output 'PASS: source and scene filters, six Tools entries, catalog search, three visible Composite Blur modes and clean Windows OBS shutdown.'
     $env:STAGEKIT_TEST_NDI = 'restart'
     $env:STAGEKIT_TEST_REPORT = Join-Path $scratch 'ndi-restart.txt'
@@ -109,4 +131,13 @@ try {
     throw
 } finally {
     if (!$process.HasExited) { $process.Kill(); $process.WaitForExit() }
+    $logDirectory = Join-Path $obsRoot 'config/obs-studio/logs'
+    if (Test-Path -LiteralPath $logDirectory) {
+        $null = New-Item -ItemType Directory -Path (Join-Path $results 'obs-logs') -Force
+        Get-ChildItem -LiteralPath $logDirectory -Filter '*.txt' -File | Copy-Item -Destination (Join-Path $results 'obs-logs')
+    }
+    foreach ($name in @('result.txt', 'ndi-restart.txt')) {
+        $source = Join-Path $scratch $name
+        if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination (Join-Path $results $name) }
+    }
 }

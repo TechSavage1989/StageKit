@@ -98,6 +98,10 @@ namespace stagekit {
 
 namespace {
 
+// Only the active per-item input draw can consume Scene Shadow's prepared
+// stage. Restore the enclosing consumer after nested scene draws.
+thread_local obs_source_t *shadow_consumer = nullptr;
+
 // Which sources are blurred. Kept by number: new ones go at the end.
 enum class Cover : int {
 	All = 0,
@@ -971,7 +975,15 @@ bool SceneBlur::render_each(obs_source_t *parent, uint32_t cx, uint32_t cy)
 	}
 	// (Made before the scene is drawn: a Scene Shadow drawn with it takes the
 	// same pictures.)
-	if (!any || !draw_filter_input(source_, tr_scene_, cx, cy) || !gs_texrender_get_texture(tr_scene_)) {
+	if (!any) {
+		release_items(items);
+		return false;
+	}
+	obs_source_t *previous_consumer = shadow_consumer;
+	shadow_consumer = source_;
+	const bool input_drawn = draw_filter_input(source_, tr_scene_, cx, cy);
+	shadow_consumer = previous_consumer;
+	if (!input_drawn || !gs_texrender_get_texture(tr_scene_)) {
 		release_items(items);
 		return false;
 	}
@@ -1224,6 +1236,11 @@ bool is_scene_blur(obs_source_t *filter)
 {
 	const char *id = filter ? obs_source_get_unversioned_id(filter) : nullptr;
 	return id && std::strcmp(id, kSceneBlurId) == 0;
+}
+
+obs_source_t *scene_blur_shadow_consumer(obs_source_t *scene)
+{
+	return shadow_consumer && obs_filter_get_parent(shadow_consumer) == scene ? shadow_consumer : nullptr;
 }
 
 gs_texture_t *scene_blur_item_picture(obs_source_t *filter, obs_sceneitem_t *item, matrix4 &m, uint32_t &w, uint32_t &h)

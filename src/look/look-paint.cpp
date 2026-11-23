@@ -745,7 +745,7 @@ bool LookPaint::compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *m
 			uint32_t cx, uint32_t cy, gs_texrender_t *into, bool scene_straight, gs_texture_t *ring,
 			gs_texture_t *presence)
 {
-	return compose_impl(scene, cast, mask, look, cx, cy, into, scene_straight, ring, presence, nullptr);
+	return compose_impl(scene, cast, mask, look, cx, cy, into, scene_straight, ring, presence, nullptr, false);
 }
 
 bool LookPaint::compose_again(gs_texture_t *scene, uint32_t cx, uint32_t cy, gs_texrender_t *into)
@@ -757,12 +757,12 @@ bool LookPaint::compose_again(gs_texture_t *scene, uint32_t cx, uint32_t cy, gs_
 	}
 	const Prepared kept = prepared_;
 	return compose_impl(scene, kept.stage.cast, kept.stage.mask, kept.look, cx, cy, into, false, kept.stage.ring,
-			    kept.stage.presence, &kept);
+			    kept.stage.presence, &kept, true);
 }
 
 bool LookPaint::compose_impl(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *mask, const ShadowLook &look,
 			     uint32_t cx, uint32_t cy, gs_texrender_t *into, bool scene_straight, gs_texture_t *ring,
-			     gs_texture_t *presence, const Prepared *reuse)
+			     gs_texture_t *presence, const Prepared *reuse, bool retain_preparation)
 {
 	// Any fresh composition can overwrite outlined_ and the blur outputs.
 	// Reuse takes a value copy first, so a failed draw cannot leave a valid
@@ -771,8 +771,10 @@ bool LookPaint::compose_impl(gs_texture_t *scene, gs_texture_t *cast, gs_texture
 	gs_texrender_t *out = into ? into : out_;
 	if (!effect_ || !scene || !cast || !cx || !cy)
 		return false;
-	const uint64_t frame = obs_get_video_frame_time();
-	const bool linear = gs_get_linear_srgb();
+	// Ordinary composition, including Morph and multi-stage fallbacks, has
+	// no consumer for a retained preparation. It only invalidates old state.
+	const uint64_t frame = retain_preparation ? obs_get_video_frame_time() : 0;
+	const bool linear = retain_preparation && gs_get_linear_srgb();
 	if (reuse && (reuse->frame != frame || reuse->linear != linear))
 		return false;
 	// The passes work on raw colour values, as Shadow, Glow & Outline's do.
@@ -877,7 +879,7 @@ bool LookPaint::compose_impl(gs_texture_t *scene, gs_texture_t *cast, gs_texture
 	gs_enable_framebuffer_srgb(previous_srgb);
 	if (reuse && frame != obs_get_video_frame_time())
 		return false;
-	if (drawn) {
+	if (drawn && retain_preparation) {
 		prepared_.look = look;
 		prepared_.stage = {cast, mask, ring, presence};
 		prepared_.softened = softened;
@@ -887,6 +889,7 @@ bool LookPaint::compose_impl(gs_texture_t *scene, gs_texture_t *cast, gs_texture
 		prepared_.frame = frame;
 		prepared_.linear = linear;
 		prepared_.valid = softened && !presence && frame == obs_get_video_frame_time();
+		retentions_++;
 		if (reuse)
 			reuses_++;
 	}
@@ -1200,11 +1203,12 @@ bool LookPaint::compose_layers(gs_texture_t *scene, const std::vector<gs_texture
 }
 
 bool LookPaint::compose_stages(gs_texture_t *scene, const std::vector<Stage> &stages, const ShadowLook &look,
-			       uint32_t cx, uint32_t cy, gs_texrender_t *into)
+			       uint32_t cx, uint32_t cy, gs_texrender_t *into, bool retain_preparation)
 {
 	prepared_.valid = false;
 	if (!scene || stages.empty())
 		return false;
+	retain_preparation = retain_preparation && stages.size() == 1 && !stages[0].presence;
 	gs_texture_t *under = scene;
 	bool straight = false;
 	int turn = 0;
@@ -1217,7 +1221,8 @@ bool LookPaint::compose_stages(gs_texture_t *scene, const std::vector<Stage> &st
 			turn ^= 1;
 		}
 		const Stage &s = stages[i];
-		if (!compose(under, s.cast, s.mask, look, cx, cy, to, straight, s.ring, s.presence))
+		if (!compose_impl(under, s.cast, s.mask, look, cx, cy, to, straight, s.ring, s.presence, nullptr,
+				  retain_preparation))
 			return false;
 		under = gs_texrender_get_texture(to);
 		straight = true;

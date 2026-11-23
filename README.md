@@ -2542,7 +2542,9 @@ to (the two update choices are kept with the plugin instead). Replacing the plug
   Visible-pixel placement reuses its first measurement when an unfiltered source has the same
   complete and base dimensions. Scene Fit keeps its entry list between ticks. When Scene Blur
   redraws a single Scene Shadow layer in the same frame, it can reuse the prepared shadow and
-  glow. These remove repeated work without changing measurement accuracy, blur quality or the
+  glow. Reuse preparation is limited to an actual per-source blur redraw. Ordinary shadows,
+  Morph transitions and multi-layer fallback keep the normal rendering path without that
+  preparation. These remove repeated work without changing measurement accuracy, blur quality or the
   update schedule, and without adding retained graphics textures. The saving depends on which
   filters and sources the scene uses.
 <!-- ==== end scene-filters:perf (Frame time) ==== -->
@@ -2587,6 +2589,12 @@ commit identities and renderer details are saved under `build-ports/performance-
 uploaded by the native CI check. The summaries separate whole OBS frame, render and tick
 distributions from per-filter inclusive times. Missing or incomplete measurements fail the
 check; timing variation on a shared software renderer does not establish a hardware speedup.
+
+The Windows portable OBS check also records quiet normal-rendering measurements with prepared
+shadow reuse and its original preparation path in the same build. It saves OBS's average frame
+time, completed frames and graphics-adapter logs. Its timed intervals exclude screenshots and
+manual fixture renders. These diagnostics identify the tested backend and do not establish a
+speedup on another Windows GPU.
 <!-- ==== end scene-filters:perf (Measuring) ==== -->
 
 Windows and macOS builds come from GitHub Actions, based on the official

@@ -212,10 +212,10 @@ public:
 
 private:
 	void look_again(obs_source_t *parent);
-	bool render_layers(const std::vector<obs_sceneitem_t *> &items,
-			   const std::function<uint8_t(obs_sceneitem_t *)> &flags_of,
-			   const std::function<void(obs_sceneitem_t *)> &draw, const ShadowLook &look, uint32_t cx,
-			   uint32_t cy);
+	bool build_layers(const std::vector<obs_sceneitem_t *> &items,
+			  const std::function<uint8_t(obs_sceneitem_t *)> &flags_of,
+			  const std::function<void(obs_sceneitem_t *)> &draw, const ShadowLook &look, uint32_t cx,
+			  uint32_t cy);
 	void finish(const ShadowLook &look, uint64_t frame, uint32_t cx, uint32_t cy, bool linear, bool each,
 		    uint64_t settings_revision, bool steady);
 	bool has_new_items(obs_source_t *parent);
@@ -281,6 +281,7 @@ private:
 	uint64_t last_settings_revision_ = 0;
 	bool last_steady_ = false;
 	bool test_reuse_bypass_ = false; // the render fixture only; never saved
+	uint64_t eligibility_checks_ = 0;
 	std::atomic<int> draws_{0};
 	std::atomic<int> layers_{0}; // the layers the last frame was drawn in
 };
@@ -309,7 +310,7 @@ SceneShadow::SceneShadow(obs_data_t *settings, obs_source_t *source) : source_(s
 		this);
 	proc_handler_add(
 		obs_source_get_proc_handler(source),
-		"void shadow_reuse_test(in bool bypass, in bool redraw, in bool refresh, out ptr texture, out int preparations, out int reuses, out int passes, out int stages, out int settings)",
+		"void shadow_reuse_test(in bool bypass, in bool redraw, in bool refresh, out ptr texture, out int preparations, out int reuses, out int passes, out int stages, out int settings, out int retentions, out int eligibility_checks)",
 		[](void *data, calldata_t *cd) {
 			auto *self = static_cast<SceneShadow *>(data);
 			obs_enter_graphics();
@@ -333,6 +334,8 @@ SceneShadow::SceneShadow(obs_data_t *settings, obs_source_t *source) : source_(s
 			calldata_set_int(cd, "passes", (long long)self->paint_->preparation_passes());
 			calldata_set_int(cd, "stages", (long long)self->stages_.size());
 			calldata_set_int(cd, "settings", (long long)self->settings_revision_.load());
+			calldata_set_int(cd, "retentions", (long long)self->paint_->retentions());
+			calldata_set_int(cd, "eligibility_checks", (long long)self->eligibility_checks_);
 			obs_leave_graphics();
 		},
 		this);
@@ -571,6 +574,8 @@ void SceneShadow::render()
 	const uint32_t cx = target ? obs_source_get_base_width(target) : 0;
 	const uint32_t cy = target ? obs_source_get_base_height(target) : 0;
 	wanted_ns_ = os_gettime_ns();
+	obs_source_t *consumer = test_reuse_bypass_ ? nullptr
+						    : scene_blur_shadow_consumer(obs_filter_get_parent(source_));
 	ShadowLook look;
 	bool usable, each;
 	uint64_t settings_revision;
@@ -579,7 +584,9 @@ void SceneShadow::render()
 		look = look_;
 		usable = classified_ && !blocked_ && !wide_ && !on_group_;
 		each = from_ == From::Each;
-		settings_revision = settings_revision_.load();
+		// Read the revision with the look it describes, but only for an
+		// actual upcoming redraw. Bypass and ordinary draws need no key.
+		settings_revision = consumer ? settings_revision_.load() : 0;
 	}
 	const double level = ramp_.level();
 	look = scaled_look(look, level);
@@ -624,10 +631,6 @@ void SceneShadow::render()
 			return true;
 		},
 		&items);
-	// Borrow the prepared shadow only while no source is in a transition
-	// and the filter's own ramp is settled. A fading stage keeps its original
-	// preparation path, including a transient Morph layer.
-	const bool steady = level == 1.0 && std::none_of(items.begin(), items.end(), LookPaint::may_fade);
 	auto flags_of = [&](obs_sceneitem_t *item) -> uint8_t {
 		const auto found = flags.find(obs_sceneitem_get_id(item));
 		if (found != flags.end())
@@ -651,6 +654,22 @@ void SceneShadow::render()
 				x->blur = obs_source_get_ref(f);
 		},
 		&find_blur);
+	// Check only after the actual stages exist. Most compositions have no
+	// immediate redraw consumer; multi-stage and fading paths cannot reuse
+	// one preparation. The scene path already checks every casting item.
+	auto can_retain = [&](bool casters_checked) {
+		if (!consumer || consumer != find_blur.blur || level != 1.0 || stages_.size() != 1 ||
+		    stages_[0].presence)
+			return false;
+		for (obs_sceneitem_t *item : items) {
+			if (casters_checked && (flags_of(item) & kShadowCasts))
+				continue;
+			eligibility_checks_++;
+			if (LookPaint::may_fade(item))
+				return false;
+		}
+		return true;
+	};
 	auto draw = [&](obs_sceneitem_t *item) {
 		matrix4 m;
 		uint32_t w = 0, h = 0;
@@ -665,7 +684,10 @@ void SceneShadow::render()
 	pool_used_ = 0;
 	stages_.clear();
 	if (each) {
-		const bool drawn = render_layers(items, flags_of, draw, look, cx, cy);
+		const bool built = build_layers(items, flags_of, draw, look, cx, cy);
+		const bool steady = built && can_retain(false);
+		const bool drawn = built && paint_->compose_stages(gs_texrender_get_texture(tr_scene_), stages_, look,
+								   cx, cy, nullptr, steady);
 		obs_source_release(find_blur.blur);
 		for (obs_sceneitem_t *item : items)
 			obs_sceneitem_release(item);
@@ -713,10 +735,11 @@ void SceneShadow::render()
 			stages_[0].mask = gs_texrender_get_texture(tr);
 		}
 	}
+	const bool steady = !fading && can_retain(true);
 	obs_source_release(find_blur.blur);
 	for (obs_sceneitem_t *item : items)
 		obs_sceneitem_release(item);
-	if (!paint_->compose_stages(gs_texrender_get_texture(tr_scene_), stages_, look, cx, cy)) {
+	if (!paint_->compose_stages(gs_texrender_get_texture(tr_scene_), stages_, look, cx, cy, nullptr, steady)) {
 		skip_filter_input(source_);
 		return;
 	}
@@ -826,17 +849,18 @@ void SceneShadow::finish(const ShadowLook &look, uint64_t frame, uint32_t cx, ui
 	last_cx_ = cx;
 	last_cy_ = cy;
 	last_linear_ = linear;
-	last_settings_revision_ = settings_revision;
+	if (steady)
+		last_settings_revision_ = settings_revision;
 	last_steady_ = steady;
 }
 
 // Each source by itself: the items in layers whose shadows cannot reach one
 // another, each layer's shadow laid over the picture from the bottom up and
 // kept off that layer and every one above it.
-bool SceneShadow::render_layers(const std::vector<obs_sceneitem_t *> &items,
-				const std::function<uint8_t(obs_sceneitem_t *)> &flags_of,
-				const std::function<void(obs_sceneitem_t *)> &draw, const ShadowLook &look, uint32_t cx,
-				uint32_t cy)
+bool SceneShadow::build_layers(const std::vector<obs_sceneitem_t *> &items,
+			       const std::function<uint8_t(obs_sceneitem_t *)> &flags_of,
+			       const std::function<void(obs_sceneitem_t *)> &draw, const ShadowLook &look, uint32_t cx,
+			       uint32_t cy)
 {
 	// Only the sources that are not background are in the stack: the
 	// background lies under every one of them and takes every shadow.
@@ -875,7 +899,7 @@ bool SceneShadow::render_layers(const std::vector<obs_sceneitem_t *> &items,
 	// or out by itself: add_stages).
 	for (size_t l = 0; l < n; l++)
 		add_stages(items, flags_of, draw, &boxes, starts[l], end_of(l), masks[l], look, cx, cy);
-	return paint_->compose_stages(gs_texrender_get_texture(tr_scene_), stages_, look, cx, cy);
+	return !stages_.empty();
 }
 
 // The shadow drawn this frame, from the same shapes, over another picture of

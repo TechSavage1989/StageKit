@@ -348,8 +348,10 @@ public:
 	struct Stage {
 		gs_texture_t *cast = nullptr, *mask = nullptr, *ring = nullptr, *presence = nullptr;
 	};
+	// Retention is opt-in for a proven same-frame consumer of one steady stage.
+	// Morph and ordinary/multi-stage compositions keep the original preparation path.
 	bool compose_stages(gs_texture_t *scene, const std::vector<Stage> &stages, const ShadowLook &look, uint32_t cx,
-			    uint32_t cy, gs_texrender_t *into = nullptr);
+			    uint32_t cy, gs_texrender_t *into = nullptr, bool retain_preparation = false);
 	// Scene Blur's redraw of a single, unchanged stage in this same frame.
 	// The exact look and shapes are kept from compose_stages; only the scene
 	// underneath changes. Borrows the existing private blur pictures, with no
@@ -359,6 +361,7 @@ public:
 	// Cumulative work, read in a graphics context by the render tests.
 	uint64_t preparations() const { return preparations_; }
 	uint64_t reuses() const { return reuses_; }
+	uint64_t retentions() const { return retentions_; }
 	uint64_t preparation_passes() const
 	{
 		return outline_passes_ + blur_->passes() + (halo_blur_ ? halo_blur_->passes() : 0);
@@ -416,9 +419,9 @@ private:
 	};
 	bool compose_impl(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *mask, const ShadowLook &look,
 			  uint32_t cx, uint32_t cy, gs_texrender_t *into, bool scene_straight, gs_texture_t *ring,
-			  gs_texture_t *presence, const Prepared *reuse);
+			  gs_texture_t *presence, const Prepared *reuse, bool retain_preparation);
 	Prepared prepared_;
-	uint64_t preparations_ = 0, reuses_ = 0, outline_passes_ = 0;
+	uint64_t preparations_ = 0, reuses_ = 0, retentions_ = 0, outline_passes_ = 0;
 
 	gs_effect_t *effect_ = nullptr;
 	gs_eparam_t *p_image_ = nullptr;
