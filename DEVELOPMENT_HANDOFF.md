@@ -49,8 +49,20 @@ The follow-up pins the native/frontend prerequisite to the official OBS 32.2.2 U
 verified with SHA-256 b6557ca2059287210332accc94c267094050489cffffc5c832e746e3a418dab0 before install.
 Its archive contains the SDK exports, headers, pkg-config metadata, runtime and the required modules.
 The package installs under /usr/local. Two guarded CI-only aliases retain the module/data paths expected
-by the existing headless harnesses. No fixtures or production Linux dependency policy are weakened or
-changed. The native check must confirm the installed package/SDK version before building the plugin.
+by the existing headless harnesses. No fixture assertions are weakened. The native check must confirm
+the installed package/SDK version before building the plugin.
+
+PR276's first Ubuntu packaging attempt also hit the PPA outage through the separate setup_ubuntu path.
+The resumed follow-up pins that CI-only path to the same verified OBS package and SDK. Local developer
+dependency installation keeps its existing PPA path. The official package has no shlibs metadata, so
+the CI build adds an explicit obs-studio (>= 32.2.2) dependency while retaining CPack's normal automatic
+system-library dependencies. Ubuntu pull requests now produce an actual DEB and check its OBS, libc
+and Qt dependency fields before publication. The README states this Linux package requirement.
+
+The final corrected head must pass the Windows/shared gates, macOS compilation and Ubuntu DEB packaging
+before this platform follow-up is merged. Native Linux runtime results are recorded separately from
+package compilation and software-renderer timing; an infrastructure failure is never a passing runtime
+result. Windows beta253 remains available during these checks.
 
 ## Scene Controller and StageKit Views
 
