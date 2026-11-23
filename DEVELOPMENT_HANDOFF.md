@@ -62,14 +62,25 @@ under engine locks.
 The first Windows candidate compiled and passed the native/controller migration and callback-removal
 fixtures. Its real dock click test caught a mixed-target request for saved views; the dock now sends only
 the view ID in that case. A bounded source-lifetime review also moved API presence/visibility reads into
-retained scene enumeration. The next Windows candidate must exercise both changes before release.
+retained scene enumeration.
 
-Validation is in progress. The shared native fixture exercises independent groups, nested items, shared
-scenes, Together and Follow rules, combined selections, invalid/disabled requests, renames, source reload,
-complete import settings, copied-import ownership, old key forwarding and removal from a visibility callback. The real frontend fixture edits the
-groups and views, clicks the dock, checks same-scene defaults and explicit destinations, captures the UI,
-and saves for the existing OBS restart check. Windows and shared gates must pass on the final head before
-publication. Do not claim this feature restores the owner's earlier hardware frame time.
+The corrected candidate ffabe11ec5d00358ec240ede0f67b4872b477573 passed all eight Windows/shared gates,
+including Windows OBS 32.2.2 frontend job 137847546382. The native fixture passed independent groups,
+nested items, shared scenes, Together and Follow rules, combined selections, invalid/disabled requests,
+renames, source reload, complete import settings, copied-import ownership, old key forwarding and removal
+from a visibility callback. The real frontend fixture passed group/view editing and reordering, actual
+dock clicks, same-scene defaults, explicit Program and Studio Preview destinations, and an actual OBS
+restart restoring saved configuration and dock selection. The guide uses that run's unedited Windows
+dock and editor captures. Its tested DLL SHA-256 is
+fa038de340de7728cd45086f7826fe79b8880f0e1d9c496fab806061c81d28a3.
+
+The screenshot/documentation follow-up still requires all Windows/shared gates on the final head before
+publication. macOS currently rejects QJsonArray reference iteration under Clang's range-loop warning;
+resolve that platform-specific compile issue after Windows is public, following the owner's standing
+priority. The Linux package build passes. Its separate native check stops before compilation because
+the OBS dependency server returns HTTP 503; it provides no Linux runtime result or shared code failure.
+The quiet Windows timing trials use Microsoft Basic Render Driver and compare bypass/reuse in one
+candidate binary. They cannot establish the owner's hardware frame time or a release-to-release gain.
 
 ## Windows frame-time regression report
 

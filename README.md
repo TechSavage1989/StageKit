@@ -115,8 +115,9 @@ does not point anywhere. Release notes are kept in [docs/releases](docs/releases
 
 - OBS Studio 31 or newer. Builds are compiled against OBS 31.1.1.
 - Windows x64, macOS (Apple silicon and Intel) or Ubuntu 24.04 x86_64.
-- Automated tests run on Linux with OpenGL only. Nothing has been verified in OBS on Windows or macOS
-  yet, including whether the shaders compile under Direct3D.
+- Automated tests exercise Linux OpenGL and the Windows OBS 32.2.2 frontend with software Direct3D 11.
+  Those results do not establish frame times on a physical Windows GPU. macOS runtime testing remains
+  unverified.
 - Optional: obs-websocket (bundled with OBS) for remote control.
 
 ## Getting started
@@ -1201,10 +1202,14 @@ camera views. One controller holds independent selection groups and visibility r
 can select several groups together. Changing only the camera group keeps the content group's current
 selection.
 
-Open **Docks > StageKit Views**, choose the scene to configure, and select **Add Scene Controller**.
+Open **Docks > StageKit Views**, choose the scene to configure, and select **Add**.
 The scene selector is for browsing controllers and keeps Program on its current scene. **Configure...**
 opens the controller's groups and combined views. The same configuration is used by the dock and the
 Stream Deck **StageKit View** action.
+
+**Select a saved view from the Windows OBS dock.**
+
+<p align="center"><img src="docs/images/stagekit-views.png" width="350" alt="StageKit Views in Windows OBS, showing the Stream views controller and Browser and close camera as the active combined view"></p>
 
 | Group type | Behavior |
 | --- | --- |
@@ -1219,6 +1224,12 @@ camera by selecting the desired choice in each group. Leave any group on **Keep 
 when that view should leave it alone. Checking **Also change scene** adds an explicit scene
 destination. In Studio Mode, it opens in Preview; otherwise it changes Program. Ordinary views keep
 the existing scene.
+
+**Configure independent groups and named modes in OBS.**
+
+<p align="center"><img src="docs/images/stagekit-views-editor.png" width="760" alt="StageKit Views configuration in Windows OBS, showing independent Camera and Main content groups with Game and Browser modes"></p>
+
+Both screenshots are unedited captures from the Windows frontend test with fictional sample sources.
 
 Back in the dock, **Show** selects a group or **Combined views**. Click a row to select it. Active rows
 reflect OBS's actual controller state. Disabled or unavailable targets cannot be selected. Renaming a
