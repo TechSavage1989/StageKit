@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | feat/views-icon-library for beta257. Beta256 is published with compact controls, custom icons and direct scene switching. The native icon library is implemented and awaiting Windows and shared release checks. |
+| Working branch | feat/views-icon-library, PR279 for beta257. Beta256 is published. The first icon-library revision passed Windows and shared checks; reusable sections, source captions, editor clarity and shared-scope regressions now require a new exact-head run. The owner's Component-Capture-Scene report remains under investigation. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -24,6 +24,35 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
 ## Built-in icons for StageKit Views
+
+PR279 head c1ecf5954ac8d0b0941874051ef2dd4cca6da0ec passed the seven shared/Windows package gates
+and actual Windows frontend job 138021598025 in run 45268464499, including first run and real restart.
+The tested DLL SHA-256 was 85a8f98159fa14ad9af10e726a2792c52f78cf398f8c722549dcbcc8d7051fc5.
+Artifact 14864182586 has SHA-256 af0fd330dbe2c04fb79ce5befeaddd0f05f8ed2b778cebae453bb616cbe33653.
+Visual review found clipped icon captions despite the functional pass. Each native list item now gets
+the full tile size hint, with three lines of label space; new native-style text bounds assertions and
+another actual Windows capture are required. Do not publish the clipped initial library capture.
+
+The owner subsequently reported that the imported Captures group responds in its home layout but
+not in Component-Capture-Scene. The screenshots do not show the saved Other scenes scope. A historical
+collection contains all five capture sources in both layouts, but predates the controller setup and
+cannot establish current scope, ownership or overlapping rules. No production backend defect is yet
+confirmed. New regressions save and reopen scope through the actual editor and exercise an imported
+choose-one group with its owner offscreen, including a secondary native exclusive filter and reload.
+Do not claim the reported setup is fixed until its saved scope or current collection is verified.
+
+The nested editor workflow was easy to mistake for a completed save. Inner group, mode and view
+buttons now say Done; the outer configuration uses Apply changes and shows pending edits. Changes
+remain an atomic draft until the outer action; Cancel still discards them. The guide names both steps.
+
+The same update now also covers reusable section presets and Show in Scenes captions. The owner asked
+for a selectable Section list and custom names offered to other controls after creation. The editor
+uses an editable preset/custom dropdown and Add section action; customSections is saved separately
+from pins in stagekit.views.panel, including unused names. Existing plain section strings seed the
+choices. Cancel keeps additions in the draft, and collection changes discard them. The owner also
+showed a source control displaying its generic Show in Scenes filter name. Catalog captions now use
+the owning source, adding the filter name only for multiple controls on that source. UUID targets and
+explicit custom labels stay unchanged. Frontend coverage checks reuse, persistence and naming.
 
 The owner asked whether scenes can be buttons as well as a dropdown, and expected both custom images
 and an integrated library using the Stream Deck artwork. Beta256 already supports direct scene pins
@@ -49,6 +78,18 @@ The frontend test preserves a custom image on one control and selects an Ocean c
 on another, checking the actual pixels again after collection reload and restart. It also exercises
 category/search filtering, no-match selection clearing, palette changes, Use icon and Cancel. The
 native library adds no scene commands, per-frame work, installed companion dependency or saved paths.
+
+During this update, the owner clarified that scene/layout choice should be independent of a camera or
+content group's current selection. The existing controller supports this: clear the panel's Switch to
+selection's scene option and explicit mode/view destinations, extend one group's Other scenes scope,
+and press its controller choices alongside direct scene buttons. Choose-one sources must exist in
+each covered scene; named-mode sources may be distributed across that set. Separate same-named groups
+are not shared. Legacy imported-filter controls target their first-scene compatibility runtime, so
+use controller-group pins for shared scope. Standalone Link Visibility's Also in other scenes keeps its
+native hide-only cross-scene behavior for an exclusive selection; it is not a substitute for the
+controller's scoped command. The guide now explains these distinctions. Backend inspection supports
+this workflow, but the owner's newer report above remains unresolved pending saved-configuration
+evidence and the new actual Windows scope regression.
 
 Beta256 completed PR278, squash merge 9eb3bfae43e5c8bb806eed95d108cfd243219368. The final reviewed
 head d76590808b4a1683d03ceeeab8b4907eb257813e passed all eight required Windows/shared jobs, including

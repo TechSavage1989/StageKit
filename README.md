@@ -1241,9 +1241,20 @@ are available too.
 
 The right-hand list shows **Controls on this panel**. Select several entries to remove them together,
 or use **Remove all** to start a small panel from scratch. Use the ordering controls to arrange your
-choices. Enter a short **Button label** for an individual control, and give related controls the same
-**Section**. A section can be applied to several selected controls at once. A blank label or section
-follows the control's current name and location.
+choices. Enter a short **Button label** for an individual control. Show in Scenes controls use their
+source's name by default, with the filter name added when a source has more than one such control.
+Your own button label takes priority.
+
+**Reuse sections.** Choose a **Section** preset, such as Scenes, Cameras, Captures or Overlays, or use
+**Add section...** to create a custom name. Custom sections appear in the same dropdown for every
+control in this collection. You can still type a section name directly. Select several controls to
+apply the same section to all of them. **Use scene and control group** or **Reset** returns them to
+their original grouping.
+
+Save the panel to keep new section names. Names already used by an older panel appear in the choices
+automatically. A saved custom section stays available after its last control is removed or assigned
+elsewhere, and after **Use automatic controls**. Canceling the editor discards new names from that draft.
+A blank button label follows the control's current name.
 
 **Choose an icon.** Select one entry under **Controls on this panel**, then choose either:
 
@@ -1257,6 +1268,10 @@ with the scene collection, so the original image file and an installed Stream De
 required afterward. Icons work for scene shortcuts, modes, combined views and the other controls.
 They change a control's appearance without changing what it operates. Canceling either picker keeps
 the previous icon.
+
+**Browse built-in scene, source and control icons.**
+
+<p align="center"><img src="docs/images/stagekit-controls-icon-library.png" width="680" alt="StageKit's built-in icon library in Windows OBS, with searchable thumbnails, category and color choices"></p>
 
 **Save** keeps the selection and settings; **Cancel** leaves the saved panel alone. **Use automatic
 controls** restores automatic discovery when saved. It replaces the customized selection rather than
@@ -1279,6 +1294,10 @@ and combined views. The management scene selector keeps Program on its current s
 controls** to return to the panel. The same controller definition is used by the panel and the Stream
 Deck **StageKit View** action.
 
+Group, mode and combined-view windows edit the open configuration draft. Choose **Done** to return
+to **Configure**, then **Apply changes** to update the controller. The configuration window shows a
+notice while changes are pending. Canceling it leaves the controller's saved rules unchanged.
+
 | Group type | Behavior |
 | --- | --- |
 | Named modes | Each named choice lists the sources or groups it shows. Selecting it hides the other modes' members. Sources outside the group retain their visibility. |
@@ -1291,6 +1310,36 @@ Each selection group works independently. For example, a **Camera** group can se
 visible together. Choosing a different capture changes only that group's members, provided the groups
 do not control overlapping sources. Importing Link Visibility preserves its original behavior: only
 one, together or follow.
+
+**Switch scenes while keeping the same group choice.** Use one controller group across the scenes
+that should share a selection:
+
+1. In **Edit panel...**, uncheck **Switch to selection's scene** and save.
+2. Open **Manage controllers...**, choose the controller, then **Configure...**. Select the group and
+   choose **Edit group**. Under **Other scenes**, check the layout scenes that should share it.
+   The controller's own scene is always included. For **Choose one source**, add each choice as an
+   existing source to every covered scene. Named modes can select sources spread across those scenes.
+   Choose **Done**, then **Apply changes** in the configuration window. Reopen **Other scenes** to
+   check that the additional scenes remain selected.
+3. For named modes or combined views, leave **Also change scene** unchecked so those choices do not
+   have their own destination.
+4. Add the direct scene shortcuts and this controller group's choices to the panel. If you imported
+   an existing filter, choose the controller-group entries for this workflow.
+
+Select a scene, select a camera or content choice, then switch scenes using the scene buttons or
+dropdown. The shared group's selection remains in place; selecting a different member applies it
+to the covered scenes. Separate groups in separate controllers remain separate, even with identical
+names. A manual Sources eye change still follows that scene's native rules and can leave scenes with
+different selections until the shared controller choice is pressed again.
+
+If the choice affects only the controller's own scene, first reopen the group's **Other scenes** tab
+and check its saved scope. A scene selection in the dock does not add that scene to the group. Also
+check that the panel entry belongs to this controller group; an original-filter entry can have a
+different scope. Other enabled rules controlling the same sources can change visibility afterward.
+
+For an existing standalone Scene Modes filter, **Same modes in scenes** provides its shared scope.
+A standalone Link Visibility filter's **Also in other scenes** has different native behavior and does
+not replace the controller's **Other scenes** scope for selecting a source across scenes.
 
 **Combined views are optional presets.** They save several group choices under one button. In **Add
 combined view**, the **Control** column names an existing group, and **Set to** chooses what that group

@@ -121,6 +121,25 @@ Keep normal bright key art, not status/on or status/off variants, so native acti
 the state indicator. The native plugin must not depend on an installed Stream Deck companion or an
 external icon directory. Both library and Custom image choices save the same bounded iconPng thumbnail.
 Search/category changes must clear a hidden selection, and Cancel must preserve the previous icon.
+IconMode grid spacing does not enlarge the native item's painting rectangle. Give each thumbnail
+item an explicit tile size hint and space for wrapped labels; inspect the actual Windows capture.
+
+Panel section presets and customSections belong to the scene collection. Keep reusable custom names
+separate from pins so removing their last control, clearing the panel or choosing automatic discovery
+does not erase them. Seed an older panel's choices from its existing pin section strings. Editor drafts
+own newly created names until Save; Cancel and collection changes discard them. Block both the section
+combo and its line edit while showing a selection or mixed values. Do not register every prefix typed
+into the field. Reset clears the selected pins' override without deleting a reusable name.
+
+Show in Scenes catalog captions identify the owning source. Append the filter name only when that source
+has multiple Show in Scenes controls. Keep UUID identities and actions unchanged, and preserve explicit
+panel button labels across source/filter renames and refreshed fallback names.
+
+Nested group, mode and combined-view editors update the outer configuration draft. Their Done action
+does not publish native settings. Keep Apply changes on the outer editor, a pending-change notice,
+and atomic Cancel behavior. Exercise scope through the actual Other scenes editor, then reopen it
+after applying. Scoped imported groups must accept choices with their owning scene offscreen and
+apply to every covered scene without changing Program.
 
 Panel scene navigation belongs in the native queued command, after successful validation and application.
 An explicit mode or view destination takes priority over the parent scene. Studio Mode changes Preview.

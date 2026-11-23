@@ -15,6 +15,9 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSlider>
+#include <QStyle>
+#include <QStyledItemDelegate>
+#include <QStyleOptionViewItem>
 #include <QTemporaryDir>
 #include <QTreeWidget>
 #include <QTreeWidgetItemIterator>
@@ -535,7 +538,48 @@ inline bool select_library_icon(QListWidget *items, const QString &id)
 	return items->currentItem() == item && item->isSelected();
 }
 
-inline bool select_library_option(QComboBox *choice, const QString &value)
+inline bool library_captions_fit(QListWidget *items)
+{
+	if (!items || !items->isVisible())
+		return false;
+	class LabelMetrics final : public QStyledItemDelegate {
+	public:
+		using QStyledItemDelegate::initStyleOption;
+	} metrics;
+	items->doItemsLayout();
+	for (int i = 0; i < items->count(); ++i) {
+		auto *item = items->item(i);
+		if (item->isHidden())
+			continue;
+		QStyleOptionViewItem option;
+		option.initFrom(items);
+		option.widget = items;
+		option.rect = items->visualItemRect(item);
+		option.font = items->font();
+		option.fontMetrics = QFontMetrics(option.font);
+		option.decorationSize = items->iconSize();
+		option.decorationPosition = QStyleOptionViewItem::Top;
+		option.decorationAlignment = Qt::AlignCenter;
+		option.features |= QStyleOptionViewItem::WrapText;
+		option.textElideMode = items->textElideMode();
+		metrics.initStyleOption(&option, items->model()->index(i, 0));
+		const QRect text = items->style()->subElementRect(QStyle::SE_ItemViewItemText, &option, items);
+		const QRect image = items->style()->subElementRect(QStyle::SE_ItemViewItemDecoration, &option, items);
+		const QRect needed =
+			option.fontMetrics.boundingRect(QRect(0, 0, text.width(), 4096), Qt::TextWordWrap, option.text);
+		if (text.isEmpty() || !option.rect.contains(text) || !option.rect.contains(image) ||
+		    needed.width() > text.width() || needed.height() > text.height()) {
+			blog(LOG_WARNING,
+			     "[StageKit controls test] icon caption clipped: %s; cell=%dx%d; text=%dx%d; needed=%dx%d",
+			     item->data(Qt::UserRole).toString().toUtf8().constData(), option.rect.width(),
+			     option.rect.height(), text.width(), text.height(), needed.width(), needed.height());
+			return false;
+		}
+	}
+	return items->count() > 0;
+}
+
+inline bool select_combo_option(QComboBox *choice, const QString &value)
 {
 	const int index = choice ? choice->findData(value) : -1;
 	if (index < 0 || !choice->isVisible() || !choice->isEnabled())
@@ -552,6 +596,27 @@ inline bool select_library_option(QComboBox *choice, const QString &value)
 	QApplication::sendEvent(view, &release);
 	QCoreApplication::processEvents();
 	return choice->currentIndex() == index && !view->isVisible();
+}
+
+inline bool add_section(QWidget *editor, const QString &name)
+{
+	if (!click(editor, "viewsPanelAddSection") || !until([&] { return dialog("viewsPanelNewSectionDialog"); }))
+		return false;
+	QPointer<QDialog> naming = dialog("viewsPanelNewSectionDialog");
+	auto *input = naming->findChild<QLineEdit *>("viewsPanelNewSectionName");
+	auto *save = naming->findChild<QAbstractButton *>("viewsPanelNewSectionSave");
+	if (!input || !save) {
+		naming->reject();
+		return false;
+	}
+	input->setText("   ");
+	const bool rejects_empty = !save->isEnabled();
+	input->setText(name);
+	const bool saved = rejects_empty && click(naming, "viewsPanelNewSectionSave") &&
+			   until([&] { return !naming || !naming->isVisible(); });
+	if (naming && naming->isVisible())
+		naming->reject();
+	return saved;
 }
 
 inline void check_icon_library(QWidget *editor, QListWidget *pins, QStringList &issues)
@@ -586,10 +651,11 @@ inline void check_icon_library(QWidget *editor, QListWidget *pins, QStringList &
 	expect(palette->count() == 6 && palette->currentData().toString() == "mono" && !use->isEnabled() &&
 		       items->viewMode() == QListView::IconMode && !camera->icon().isNull(),
 	       "the library did not show its built-in thumbnails and six palettes with an explicit selection");
+	expect(library_captions_fit(items), "an icon library caption did not fit inside its native thumbnail cell");
 	expect(select_library_icon(items, "source:camera") && use->isEnabled(),
 	       "selecting a visible library thumbnail did not enable Use icon");
 	const QImage mono = camera->icon().pixmap(64, 64).toImage();
-	expect(select_library_option(palette, "ocean") && items->currentItem() == camera && use->isEnabled() &&
+	expect(select_combo_option(palette, "ocean") && items->currentItem() == camera && use->isEnabled() &&
 		       !camera->icon().isNull() && camera->icon().pixmap(64, 64).toImage() != mono,
 	       "changing palette did not update the selected thumbnail while preserving its selection");
 	search->setText("no-such-stagekit-icon");
@@ -597,7 +663,7 @@ inline void check_icon_library(QWidget *editor, QListWidget *pins, QStringList &
 		       pins->item(1)->data(Qt::UserRole + 1).toMap() == previous,
 	       "a search with no matches retained an applicable hidden icon or changed the saved image");
 	search->clear();
-	expect(select_library_option(category, "scenes") && camera->isHidden(),
+	expect(select_combo_option(category, "scenes") && camera->isHidden(),
 	       "the Scenes category did not exclude source icons");
 	int visible_scenes = 0;
 	for (int i = 0; i < items->count(); ++i)
@@ -606,7 +672,7 @@ inline void check_icon_library(QWidget *editor, QListWidget *pins, QStringList &
 			expect(items->item(i)->data(Qt::UserRole).toString().startsWith("scene:"),
 			       "the Scenes category included a source or control icon");
 		}
-	expect(visible_scenes > 0 && select_library_option(category, "sources") && !camera->isHidden(),
+	expect(visible_scenes > 0 && select_combo_option(category, "sources") && !camera->isHidden(),
 	       "the library categories did not expose their own available artwork");
 	search->setText("CaMeRa");
 	expect(!camera->isHidden() && select_library_icon(items, "source:camera") && use->isEnabled() &&
@@ -626,7 +692,7 @@ inline void check_icon_library(QWidget *editor, QListWidget *pins, QStringList &
 		return;
 	palette = library->findChild<QComboBox *>("viewsPanelIconLibraryPalette");
 	items = library->findChild<QListWidget *>("viewsPanelIconLibraryItems");
-	expect(select_library_option(palette, "ocean") && select_library_icon(items, "source:camera") &&
+	expect(select_combo_option(palette, "ocean") && select_library_icon(items, "source:camera") &&
 		       click(library, "viewsPanelIconLibraryUse") &&
 		       until([&] { return !library || !library->isVisible(); }) &&
 		       saved_library_icon(pins->item(1)->data(Qt::UserRole + 1).toMap()) &&
@@ -644,10 +710,14 @@ inline bool check_saved_panel(QWidget *panel, const char *layout = "list", bool 
 	QPointer<QDialog> editor = dialog("viewsPanelEditor");
 	auto *pins = editor->findChild<QListWidget *>("viewsPanelPins");
 	auto *show_scene = editor->findChild<QCheckBox *>("viewsPanelSwitchScene");
+	auto *sections = editor->findChild<QComboBox *>("viewsPanelSectionChoice");
 	auto *size = panel->findChild<QSlider *>("viewsPanelButtonSize");
 	const auto names = saved_labels();
 	bool valid = pins && pins->count() == names.size() && layout_is(panel, layout) && show_scene &&
-		     show_scene->isChecked() == navigate && size && size->value() == 64;
+		     show_scene->isChecked() == navigate && size && size->value() == 64 && sections &&
+		     sections->findData("Quick choices") >= 0 && sections->findData("Visibility") >= 0 &&
+		     sections->findData("Spare shortcuts") >= 0 && sections->findData("Discarded section") < 0 &&
+		     sections->findData("Uncommitted section") < 0;
 	for (int i = 0; valid && i < pins->count(); ++i) {
 		const auto pin = pins->item(i)->data(Qt::UserRole + 1).toMap();
 		const QString id = pin.value("id").toString();
@@ -691,6 +761,8 @@ inline void check_collection_isolation(QWidget *panel, QStringList &issues)
 	if (draft)
 		if (auto *label = draft->findChild<QLineEdit *>("viewsPanelLabel"))
 			label->setText("Uncommitted draft");
+	expect(draft && add_section(draft, "Uncommitted section"),
+	       "could not create a draft section before changing collections");
 	expect(draft && click(draft, "viewsPanelIconLibrary") &&
 		       until([&] { return dialog("viewsPanelIconLibraryDialog"); }),
 	       "could not open an icon library draft before changing collections");
@@ -715,8 +787,12 @@ inline void check_collection_isolation(QWidget *panel, QStringList &issues)
 		QPointer<QDialog> editor = dialog("viewsPanelEditor");
 		auto *navigate = editor->findChild<QCheckBox *>("viewsPanelSwitchScene");
 		auto *size = panel->findChild<QSlider *>("viewsPanelButtonSize");
+		auto *sections = editor->findChild<QComboBox *>("viewsPanelSectionChoice");
 		expect(layout_is(panel, "list") && navigate && navigate->isChecked() && size && size->value() == 48,
 		       "another collection inherited the first collection's layout, navigation or button size");
+		expect(sections && sections->findData("Spare shortcuts") < 0 &&
+			       sections->findData("Quick choices") < 0 && sections->findData("Uncommitted section") < 0,
+		       "another collection inherited saved or uncommitted custom sections");
 		expect(click(editor, "viewsPanelSave") && until([&] { return !editor || !editor->isVisible(); }),
 		       "could not save an intentionally empty panel");
 	} else {
@@ -764,6 +840,216 @@ inline void check_collection_isolation(QWidget *panel, QStringList &issues)
 	obs_frontend_save();
 }
 
+inline void check_other_scene_scope(QWidget *panel, const std::string &controller, obs_source_t *owner,
+				    QStringList &issues)
+{
+	const auto before = issues.size();
+	auto expect = [&](bool value, const char *message) {
+		if (!value)
+			issues.append(QStringLiteral("StageKit controls: ") + QString::fromUtf8(message));
+	};
+	OBSSourceAutoRelease previous = obs_frontend_get_current_scene();
+	OBSDataAutoRelease original_state = get(controller);
+	OBSDataAutoRelease original_config = obs_data_get_obj(original_state, "config");
+	QPointer<QDialog> importing, editor, form;
+	OBSSceneAutoRelease secondary = obs_scene_create("Control panel other scene");
+	auto *secondary_source = obs_scene_get_source(secondary);
+	OBSSourceAutoRelease first =
+		obs_source_create("stagekit_test_controller_item", "Scope first camera", nullptr, nullptr);
+	OBSSourceAutoRelease second =
+		obs_source_create("stagekit_test_controller_item", "Scope second camera", nullptr, nullptr);
+	auto *home_first = obs_scene_add(obs_scene_from_source(owner), first);
+	auto *home_second = obs_scene_add(obs_scene_from_source(owner), second);
+	auto *other_first = obs_scene_add(secondary, first);
+	auto *other_second = obs_scene_add(secondary, second);
+	OBSDataAutoRelease settings = obs_data_create();
+	obs_data_set_int(settings, "mode", 0);
+	list(settings, "items", {"Scope first camera", "Scope second camera"});
+	obs_data_set_string(settings, "transition", "none");
+	OBSSourceAutoRelease link =
+		obs_source_create("stagekit_visibility_link", "Scoped camera selection", settings, nullptr);
+	obs_source_filter_add(owner, link);
+	// Retain every fixture object until cleanup. Scenes created by the
+	// frontend also belong to OBS's canvas and need explicit removal.
+	struct Restore {
+		QWidget *panel;
+		obs_source_t *scene, *owner, *secondary, *first, *second, *link;
+		obs_sceneitem_t *home_first, *home_second;
+		const std::string &controller;
+		obs_data_t *config;
+		QStringList &issues;
+		QPointer<QDialog> &importing, &editor, &form;
+		std::string group;
+		~Restore()
+		{
+			for (const auto &dialog : {form, editor, importing})
+				if (dialog && dialog->isVisible())
+					dialog->reject();
+			if (scene)
+				obs_frontend_set_current_scene(scene);
+			if (!config || !configure(controller, config) || !until([&] {
+				    OBSDataAutoRelease state = get(controller);
+				    return !imported_group(controller, link) &&
+					   (group.empty() || !row(state, "groups", group));
+			    }))
+				issues.append("StageKit controls: temporary shared group could not be removed");
+			obs_source_filter_remove(owner, link);
+			if (home_first)
+				obs_sceneitem_remove(home_first);
+			if (home_second)
+				obs_sceneitem_remove(home_second);
+			obs_source_remove(secondary);
+			obs_source_remove(first);
+			obs_source_remove(second);
+			click(panel, "viewsBackToControls");
+		}
+	} restore{panel,       previous,   owner,           secondary_source, first,     second, link, home_first,
+		  home_second, controller, original_config, issues,           importing, editor, form, {}};
+	obs_frontend_set_current_scene(secondary_source);
+	auto *scenes = panel->findChild<QComboBox *>("viewsScene");
+	auto *controllers = panel->findChild<QComboBox *>("viewsController");
+	auto *scope = panel->findChild<QComboBox *>("viewsScope");
+	if (!home_first || !home_second || !other_first || !other_second || !scope ||
+	    !click(panel, "viewsManageControllers") || !select_combo_option(scenes, uuid(owner)) ||
+	    !select_combo_option(controllers, QString::fromStdString(controller)) ||
+	    !click(panel, "viewsImportLegacy") || !until([&] { return dialog("viewsImportDialog"); })) {
+		expect(false, "could not prepare the real imported multi-scene control fixture");
+		return;
+	}
+	importing = dialog("viewsImportDialog");
+	if (!select_combo_option(importing->findChild<QComboBox *>("viewsImportFilter"), uuid(link)) ||
+	    !click(importing, "viewsImportConfirm") ||
+	    !until([&] { return (!importing || !importing->isVisible()) && bool(imported_group(controller, link)); })) {
+		expect(false, "the multi-scene fixture's existing Link Visibility control was not imported");
+		return;
+	}
+	OBSDataAutoRelease imported = imported_group(controller, link);
+	const QString group_id = QString::fromUtf8(obs_data_get_string(imported, "id"));
+	restore.group = group_id.toStdString();
+	auto scope_saved = [&] {
+		OBSDataAutoRelease group = imported_group(controller, link);
+		for (const QJsonValue value : json(group)["scope"].toArray())
+			if (value.toObject()["value"].toString() == "Control panel other scene")
+				return true;
+		return false;
+	};
+	auto open_group = [&] {
+		if (!click(panel, "viewsConfigure") || !until([&] { return dialog("viewsEditor"); }))
+			return false;
+		editor = dialog("viewsEditor");
+		if (!click_row(editor->findChild<QListWidget *>("viewsGroups"), group_id) ||
+		    !click(editor, "viewsEditGroup") || !until([&] { return dialog("viewsGroupEditor"); }))
+			return false;
+		form = dialog("viewsGroupEditor");
+		auto *tabs = form->findChild<QTabWidget *>("viewsGroupTabs");
+		if (!tabs)
+			return false;
+		tabs->setCurrentIndex(1);
+		return true;
+	};
+	if (!open_group() ||
+	    !check_item(form->findChild<QListWidget *>("viewsGroupScope"), "Control panel other scene") ||
+	    !click(form, "viewsGroupSave") || !until([&] { return !form || !form->isVisible(); })) {
+		expect(false, "Other scenes could not be selected in the actual imported group editor");
+		return;
+	}
+	auto *pending = editor->findChild<QLabel *>("viewsEditorPending");
+	expect(pending && pending->isVisible() && !scope_saved() && scene_is(secondary_source),
+	       "inner Done did not identify an unapplied draft or changed native scope or Program early");
+	if (!click(editor, "viewsEditorSave") || !until([&] { return !editor || !editor->isVisible(); }) ||
+	    !until(scope_saved)) {
+		expect(false, "Apply changes did not persist the selected Other scenes scope");
+		return;
+	}
+	if (!open_group()) {
+		expect(false, "the saved multi-scene group could not be reopened");
+		return;
+	}
+	bool retained = false;
+	if (auto *saved_scope = form->findChild<QListWidget *>("viewsGroupScope"))
+		for (int i = 0; i < saved_scope->count(); ++i)
+			if (saved_scope->item(i)->data(Qt::UserRole).toString() == "Control panel other scene")
+				retained = saved_scope->item(i)->checkState() == Qt::Checked;
+	expect(retained, "reopening the imported group lost its saved Other scenes selection");
+	form->reject();
+	until([&] { return !form || !form->isVisible(); });
+	editor->reject();
+	until([&] { return !editor || !editor->isVisible(); });
+	const std::string first_choice = choice(controller, group_id.toUtf8().constData(), "Scope first camera");
+	const std::string second_choice = choice(controller, group_id.toUtf8().constData(), "Scope second camera");
+	expect(!first_choice.empty() && !second_choice.empty() && select_combo_option(scope, group_id) &&
+		       until([&] { return scene_is(secondary_source) && !obs_source_showing(owner); }),
+	       "the scoped control was not available with Program on the other scene and its owner offscreen");
+	auto *choices = panel->findChild<QListWidget *>("viewsList");
+	expect(click_row(choices, QString::fromStdString(second_choice)) && until([&] {
+		       return !obs_sceneitem_visible(home_first) && obs_sceneitem_visible(home_second) &&
+			      !obs_sceneitem_visible(other_first) && obs_sceneitem_visible(other_second) &&
+			      current(controller, group_id.toUtf8().constData()) == second_choice;
+	       }),
+	       "an imported choice did not update both scenes while Program was outside its owner");
+	expect(click_row(choices, QString::fromStdString(first_choice)) && until([&] {
+		       return obs_sceneitem_visible(home_first) && !obs_sceneitem_visible(home_second) &&
+			      obs_sceneitem_visible(other_first) && !obs_sceneitem_visible(other_second) &&
+			      current(controller, group_id.toUtf8().constData()) == first_choice;
+	       }),
+	       "the opposite imported choice did not update both scoped scenes");
+	settle(300);
+	expect(scene_is(secondary_source) && obs_sceneitem_visible(home_first) && !obs_sceneitem_visible(home_second) &&
+		       obs_sceneitem_visible(other_first) && !obs_sceneitem_visible(other_second),
+	       "the scoped visibility choice changed Program or was undone after settling");
+
+	if (!click(panel, "viewsBackToControls") || !click(panel, "viewsPanelEdit") ||
+	    !until([&] { return dialog("viewsPanelEditor"); })) {
+		expect(false, "the imported shared controls could not be pinned on the operator panel");
+		return;
+	}
+	editor = dialog("viewsPanelEditor");
+	auto *available = editor->findChild<QTreeWidget *>("viewsPanelAvailable");
+	QStringList pinned;
+	for (const auto &choice_id : {first_choice, second_choice}) {
+		const QVariantMap wanted{{"kind", "controller"},
+					 {"controllerId", QString::fromStdString(controller)},
+					 {"groupId", group_id},
+					 {"choiceId", QString::fromStdString(choice_id)}};
+		for (auto *candidate : tree_controls(available))
+			if (matches(candidate->data(0, Qt::UserRole + 1).toMap().value("target").toMap(), wanted)) {
+				pinned.append(candidate->data(0, Qt::UserRole).toString());
+				break;
+			}
+	}
+	if (pinned.size() != 2 || !check_inventory(available, pinned[0], Qt::Checked) ||
+	    !check_inventory(available, pinned[1], Qt::Checked) || !click(editor, "viewsPanelSave") ||
+	    !until([&] { return !editor || !editor->isVisible(); })) {
+		expect(false, "the operator editor did not expose the imported controller choices as distinct targets");
+		return;
+	}
+	auto panel_selected = [&](bool want_first) {
+		return scene_is(secondary_source) && !obs_source_showing(owner) &&
+		       obs_sceneitem_visible(home_first) == want_first &&
+		       obs_sceneitem_visible(other_first) == want_first &&
+		       obs_sceneitem_visible(home_second) != want_first &&
+		       obs_sceneitem_visible(other_second) != want_first &&
+		       checked(panel, pinned[want_first ? 0 : 1]) && !checked(panel, pinned[want_first ? 1 : 0]);
+	};
+	expect(until([&] { return button_id(panel, pinned[0]) && button_id(panel, pinned[1]); }) &&
+		       press_control(panel, pinned[1]) && until([&] { return panel_selected(false); }) &&
+		       press_control(panel, pinned[0]) && until([&] { return panel_selected(true); }),
+	       "pinned controller choices did not update both layouts while preserving the other Program scene");
+	if (!click(panel, "viewsPanelEdit") || !until([&] { return dialog("viewsPanelEditor"); })) {
+		expect(false, "the temporary scoped controls could not be removed from the operator panel");
+		return;
+	}
+	editor = dialog("viewsPanelEditor");
+	available = editor->findChild<QTreeWidget *>("viewsPanelAvailable");
+	expect(check_inventory(available, pinned[0], Qt::Unchecked) &&
+		       check_inventory(available, pinned[1], Qt::Unchecked) && click(editor, "viewsPanelSave") &&
+		       until([&] { return !editor || !editor->isVisible(); }),
+	       "removing the temporary scoped controls did not restore the saved panel");
+	if (issues.size() == before)
+		blog(LOG_INFO,
+		     "[StageKit controls test] PASS: imported Other scenes selection stays draft until Apply changes, survives reopening, and drives both layouts through management and pinned controller choices while Program remains outside the owner scene");
+}
+
 inline void check(QStringList &issues, bool restart)
 {
 	const auto before = issues.size();
@@ -787,7 +1073,7 @@ inline void check(QStringList &issues, bool restart)
 		       "restored layout or scene navigation could not be changed after OBS restart");
 		if (issues.size() == before)
 			blog(LOG_INFO,
-			     "[StageKit controls test] PASS: saved nondefault layout and navigation, embedded icons, button size, renamed source and disabled missing target restored after OBS restart");
+			     "[StageKit controls test] PASS: saved nondefault layout and navigation, custom sections, embedded icons, button size, renamed source and disabled missing target restored after OBS restart");
 		return;
 	}
 
@@ -934,6 +1220,49 @@ inline void check(QStringList &issues, bool restart)
 			      shown = control_id(panel, show_target);
 		if (first.isEmpty() || second.isEmpty() || mode.isEmpty() || linked.isEmpty() || shown.isEmpty())
 			return;
+		expect(button_id(panel, shown)->text() == "Studio watermark",
+		       "a Show in Scenes control did not use its owning source name");
+		{
+			OBSSourceAutoRelease other = obs_source_create("stagekit_show_in_scenes",
+								       "Alternate visibility", show_settings, nullptr);
+			obs_source_set_enabled(other, false);
+			obs_source_filter_add(obs_sceneitem_get_source(watermark), other);
+			const QVariantMap other_target{{"kind", "show-in-scenes"}, {"filterUuid", uuid(other)}};
+			expect(until([&] {
+				       auto *original = button_id(panel, shown);
+				       auto *additional = button(panel, other_target);
+				       return original && additional &&
+					      original->text() == "Studio watermark / Watermark visibility" &&
+					      additional->text() == "Studio watermark / Alternate visibility";
+			       }),
+			       "several Show in Scenes controls on one source did not include their distinct filter names");
+			const QString other_id = control_id(panel, other_target);
+			obs_source_set_name(show, "Primary visibility");
+			obs_source_set_name(obs_sceneitem_get_source(watermark), "Studio watermark renamed");
+			expect(!other_id.isEmpty() && until([&] {
+				auto *original = button_id(panel, shown);
+				auto *additional = button_id(panel, other_id);
+				return original && additional && control_id(panel, show_target) == shown &&
+				       control_id(panel, other_target) == other_id &&
+				       original->text() == "Studio watermark renamed / Primary visibility" &&
+				       additional->text() == "Studio watermark renamed / Alternate visibility";
+			}),
+			       "renaming a Show in Scenes source or filter changed its control identity or kept an old label");
+			obs_source_filter_remove(obs_sceneitem_get_source(watermark), other);
+			expect(until([&] {
+				       auto *original = button_id(panel, shown);
+				       return original && original->text() == "Studio watermark renamed" &&
+					      !button(panel, other_target);
+			       }),
+			       "removing a second Show in Scenes filter did not restore the source-only label");
+			obs_source_set_name(show, "Watermark visibility");
+			obs_source_set_name(obs_sceneitem_get_source(watermark), "Studio watermark");
+			expect(until([&] {
+				       return button_id(panel, shown) &&
+					      button_id(panel, shown)->text() == "Studio watermark";
+			       }),
+			       "restoring the source name did not update the same Show in Scenes control");
+		}
 		expect(first_scene && destination_scene && !destination_view.isEmpty(),
 		       "navigation fixture scenes or the explicit combined view were missing");
 		if (!first_scene || !destination_scene || destination_view.isEmpty())
@@ -1174,6 +1503,12 @@ inline void check(QStringList &issues, bool restart)
 		expect(!tree_item(available, first)->isHidden(), "clearing search did not restore available controls");
 		auto *label = editor->findChild<QLineEdit *>("viewsPanelLabel");
 		auto *section = editor->findChild<QLineEdit *>("viewsPanelSection");
+		auto *sections = editor->findChild<QComboBox *>("viewsPanelSectionChoice");
+		expect(sections && sections->isEditable() && sections->lineEdit() == section,
+		       "Section did not expose the editable preset dropdown");
+		for (const auto *preset :
+		     {"Scenes", "Views", "Cameras", "Captures", "Backgrounds", "Overlays", "Audio"})
+			expect(sections && sections->findData(preset) >= 0, "a built-in section preset was missing");
 		const auto names = saved_labels();
 		for (int i = 0; label && section && i < ids.size(); ++i) {
 			int from = pin_row(pins, ids[i]);
@@ -1205,6 +1540,31 @@ inline void check(QStringList &issues, bool restart)
 		expect(select_pins(pins, {8}), "could not select the direct scene pin");
 		if (section)
 			section->setText("Scenes");
+		expect(select_pins(pins, {0, 1}) && add_section(editor, "Spare shortcuts") && sections &&
+			       sections->findData("Spare shortcuts") >= 0 &&
+			       pins->item(0)->data(Qt::UserRole + 1).toMap().value("section").toString() ==
+				       "Spare shortcuts" &&
+			       pins->item(1)->data(Qt::UserRole + 1).toMap().value("section").toString() ==
+				       "Spare shortcuts",
+		       "Add section did not retain its name and apply it to every selected control");
+		expect(select_pins(pins, {3}) && select_combo_option(sections, "Spare shortcuts") &&
+			       pins->item(3)->data(Qt::UserRole + 1).toMap().value("section").toString() ==
+				       "Spare shortcuts",
+		       "a custom section could not be reused on another control from the dropdown");
+		expect(select_pins(pins, {0, 1, 3}) && select_combo_option(sections, "Cameras") &&
+			       pins->item(0)->data(Qt::UserRole + 1).toMap().value("section").toString() == "Cameras" &&
+			       pins->item(1)->data(Qt::UserRole + 1).toMap().value("section").toString() == "Cameras" &&
+			       pins->item(3)->data(Qt::UserRole + 1).toMap().value("section").toString() == "Cameras",
+		       "a section preset did not apply to every selected control");
+		expect(select_pins(pins, {0, 1}) && select_combo_option(sections, "") &&
+			       pins->item(0)->data(Qt::UserRole + 1).toMap().value("section").toString().isEmpty() &&
+			       pins->item(1)->data(Qt::UserRole + 1).toMap().value("section").toString().isEmpty(),
+		       "the original-section choice stored its placeholder instead of clearing custom sections");
+		expect(select_pins(pins, {0, 1, 2}) && select_combo_option(sections, "Quick choices") &&
+			       select_pins(pins, {3, 4, 5, 6, 7}) && select_combo_option(sections, "Visibility") &&
+			       select_pins(pins, {8}) && select_combo_option(sections, "Scenes") &&
+			       sections->findData("Spare shortcuts") >= 0,
+		       "existing section names were not reusable or removing a section's last assignment lost its name");
 		for (int i = 0; i < pins->count(); ++i)
 			expect(pins->item(i)->data(Qt::UserRole + 1).toMap().value("section").toString() ==
 				       saved_section(i),
@@ -1242,6 +1602,27 @@ inline void check(QStringList &issues, bool restart)
 		expect(label && section && click(editor, "viewsPanelSave") &&
 			       until([&] { return !editor || !editor->isVisible(); }),
 		       "panel customization was not saved");
+		obs_source_set_name(show, "Renamed filter");
+		obs_source_set_name(obs_sceneitem_get_source(watermark), "Renamed watermark");
+		expect(click(panel, "viewsPanelEdit") && until([&] { return dialog("viewsPanelEditor"); }),
+		       "could not reopen the panel editor after a Show in Scenes source rename");
+		editor = dialog("viewsPanelEditor");
+		if (editor) {
+			auto *renamed = tree_item(editor->findChild<QTreeWidget *>("viewsPanelAvailable"), shown);
+			expect(renamed && renamed->text(0) == "Renamed watermark",
+			       "the available Show in Scenes control did not reflect its renamed source");
+			editor->reject();
+			until([&] { return !editor || !editor->isVisible(); });
+		}
+		expect(until([&] {
+			       auto *control = button_id(panel, shown);
+			       auto *row = tree_item(control_list(panel), shown);
+			       return control && row && control_id(panel, show_target) == shown &&
+				      control->text() == "Watermark" && row->text(0) == "Watermark";
+		       }),
+		       "renaming a Show in Scenes source or filter replaced its explicit panel label");
+		obs_source_set_name(show, "Watermark visibility");
+		obs_source_set_name(obs_sceneitem_get_source(watermark), "Studio watermark");
 		const QString title_id = ids[5], group_id = ids[6], spare_id = ids[7];
 		const QString scene_id = ids[8];
 		obs_source_set_name(obs_sceneitem_get_source(title), "Studio title renamed");
@@ -1334,17 +1715,22 @@ inline void check(QStringList &issues, bool restart)
 			pins = editor->findChild<QListWidget *>("viewsPanelPins");
 			label = editor->findChild<QLineEdit *>("viewsPanelLabel");
 			section = editor->findChild<QLineEdit *>("viewsPanelSection");
+			sections = editor->findChild<QComboBox *>("viewsPanelSectionChoice");
 			show_scene = editor->findChild<QCheckBox *>("viewsPanelSwitchScene");
 			expect(select_pins(pins, {0}) && label && section && show_scene,
 			       "a saved pin could not be edited in a new draft");
 			if (label)
 				label->setText("Discarded label");
-			if (section)
-				section->setText("Discarded section");
+			expect(add_section(editor, "Discarded section") && sections &&
+				       sections->findData("Discarded section") >= 0,
+			       "a draft custom section was not available before Cancel");
 			if (show_scene)
 				show_scene->setChecked(false);
 			expect(click(editor, "viewsPanelRemoveIcon") && click(editor, "viewsPanelRemoveAll") && pins &&
-				       pins->count() == 0 && click(editor, "viewsPanelAutomatic") && pins->count() > 0,
+				       pins->count() == 0 && sections && sections->findData("Spare shortcuts") >= 0 &&
+				       click(editor, "viewsPanelAutomatic") && pins->count() > 0 &&
+				       sections->findData("Spare shortcuts") >= 0 &&
+				       sections->findData("Discarded section") >= 0,
 			       "draft icon removal, clear or Automatic reset did not update its controls");
 			editor->reject();
 			expect(until([&] { return !editor || !editor->isVisible(); }) && check_saved_panel(panel),
@@ -1444,6 +1830,7 @@ inline void check(QStringList &issues, bool restart)
 			       "pinned legacy controls stopped working after controller ownership transferred");
 		}
 
+		check_other_scene_scope(panel, id, scene, issues);
 		OBSSourceAutoRelease before_browsing = obs_frontend_get_current_scene();
 		// Restore the previous management selection before saving for its own
 		// restart fixture; operator controls remain the default page.
@@ -1507,7 +1894,7 @@ inline void check(QStringList &issues, bool restart)
 				QPointer<QDialog> library = dialog("viewsPanelIconLibraryDialog");
 				if (library) {
 					auto *palette = library->findChild<QComboBox *>("viewsPanelIconLibraryPalette");
-					expect(select_library_option(palette, "ocean"),
+					expect(select_combo_option(palette, "ocean"),
 					       "could not show a colour palette for the real icon library capture");
 					QCoreApplication::processEvents();
 					expect(library->grab().save(
@@ -1535,7 +1922,7 @@ inline void check(QStringList &issues, bool restart)
 	check_collection_isolation(panel, issues);
 	if (issues.size() == before)
 		blog(LOG_INFO,
-		     "[StageKit controls test] PASS: compact list and icon buttons, native mode/view navigation, direct scene selection, Studio Preview, grouped bulk editing, custom and built-in icon library images, palettes and size, native visibility, rename/missing identity, bulk import and scene collection isolation");
+		     "[StageKit controls test] PASS: compact list and icon buttons, native mode/view navigation, direct scene selection, Studio Preview, section presets and reusable custom sections, source-based visibility names, grouped bulk editing, custom and built-in icon library images, palettes and size, native visibility, rename/missing identity, bulk import and scene collection isolation");
 }
 
 } // namespace control_panel_test

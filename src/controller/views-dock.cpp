@@ -46,6 +46,7 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <QScrollBar>
 #include <QSlider>
 #include <QStackedWidget>
+#include <QStringList>
 #include <QShowEvent>
 #include <QStylePainter>
 #include <QStyleOptionButton>
@@ -393,10 +394,12 @@ void edit_group(QWidget *parent, const QString &scene_uuid, QJsonObject group, s
 	transition_form->addRow(text("Views.Duration"), hide_ms);
 	transition_form->addRow(note(transition_page, text("Views.TransitionHelp")));
 	tabs->addTab(transition_page, text("Views.Transitions"));
+	layout->addWidget(note(dialog, text("Views.DraftHelp"), "viewsNestedDraftHelp"));
 	auto *error = note(dialog, {}, "viewsGroupError");
 	layout->addWidget(error);
 	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, dialog);
 	buttons->button(QDialogButtonBox::Save)->setObjectName("viewsGroupSave");
+	buttons->button(QDialogButtonBox::Save)->setText(text("Views.Done"));
 	layout->addWidget(buttons);
 	auto update_kind = [=] {
 		const QString selected = kind->currentData().toString();
@@ -519,10 +522,12 @@ void edit_mode(QWidget *parent, const QString &scene_uuid, const QJsonObject &gr
 	destination->setEnabled(change_scene->isChecked());
 	layout->addWidget(destination);
 	QObject::connect(change_scene, &QCheckBox::toggled, destination, &QWidget::setEnabled);
+	layout->addWidget(note(dialog, text("Views.DraftHelp"), "viewsNestedDraftHelp"));
 	auto *error = note(dialog, {}, "viewsModeError");
 	layout->addWidget(error);
 	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, dialog);
 	buttons->button(QDialogButtonBox::Save)->setObjectName("viewsModeSave");
+	buttons->button(QDialogButtonBox::Save)->setText(text("Views.Done"));
 	layout->addWidget(buttons);
 	QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
 	QObject::connect(buttons, &QDialogButtonBox::accepted, dialog, [=] {
@@ -645,10 +650,12 @@ void edit_view(QWidget *parent, const QJsonArray &groups, QJsonObject view, std:
 	destination->setEnabled(change_scene->isChecked());
 	layout->addWidget(destination);
 	QObject::connect(change_scene, &QCheckBox::toggled, destination, &QWidget::setEnabled);
+	layout->addWidget(note(dialog, text("Views.DraftHelp"), "viewsNestedDraftHelp"));
 	auto *error = note(dialog, {}, "viewsViewError");
 	layout->addWidget(error);
 	auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, dialog);
 	buttons->button(QDialogButtonBox::Save)->setObjectName("viewsViewSave");
+	buttons->button(QDialogButtonBox::Save)->setText(text("Views.Done"));
 	layout->addWidget(buttons);
 	QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
 	QObject::connect(buttons, &QDialogButtonBox::accepted, dialog, [=]() mutable {
@@ -753,10 +760,14 @@ public:
 			view_layout, "View", [this] { view_edit(true); }, [this] { view_edit(false); },
 			[this] { view_remove(); }, [this](int direction) { move("views", views_, direction); });
 		tabs->addTab(view_page, text("Views.CombinedViews"));
+		pending_ = note(this, text("Views.PendingChanges"), "viewsEditorPending");
+		pending_->setVisible(false);
+		layout->addWidget(pending_);
 		error_ = note(this, {}, "viewsEditorError");
 		layout->addWidget(error_);
 		auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
 		buttons->button(QDialogButtonBox::Save)->setObjectName("viewsEditorSave");
+		buttons->button(QDialogButtonBox::Save)->setText(text("Views.ApplyChanges"));
 		layout->addWidget(buttons);
 		connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 		connect(buttons, &QDialogButtonBox::accepted, this, [this] { save(); });
@@ -843,6 +854,8 @@ private:
 				button->setEnabled(modes);
 	}
 
+	void update_pending() { pending_->setVisible(editable_definition(config_) != original_); }
+
 	void put(const char *field, const QJsonObject &entry)
 	{
 		QJsonArray array = config_[field].toArray();
@@ -856,6 +869,7 @@ private:
 		if (!replaced)
 			array.append(entry);
 		config_[field] = array;
+		update_pending();
 	}
 
 	bool referenced(const QString &group, const QString &choice, bool whole_group)
@@ -883,6 +897,7 @@ private:
 				break;
 			}
 		config_[field] = array;
+		update_pending();
 		redraw();
 	}
 
@@ -895,6 +910,7 @@ private:
 		const auto entry = array.takeAt(from);
 		array.insert(to, entry);
 		config_[field] = array;
+		update_pending();
 		redraw();
 	}
 
@@ -1016,7 +1032,7 @@ private:
 	QString id_, scene_uuid_;
 	QJsonObject config_, original_;
 	QListWidget *groups_ = nullptr, *modes_ = nullptr, *views_ = nullptr;
-	QLabel *mode_help_ = nullptr, *error_ = nullptr;
+	QLabel *mode_help_ = nullptr, *error_ = nullptr, *pending_ = nullptr;
 };
 
 obs_source_t *controller_source(const QJsonObject &state)
@@ -1246,7 +1262,8 @@ public:
 		icons_->setResizeMode(QListView::Adjust);
 		icons_->setSelectionMode(QAbstractItemView::SingleSelection);
 		icons_->setIconSize(QSize(64, 64));
-		icons_->setGridSize(QSize(128, 112));
+		icons_->ensurePolished();
+		icons_->setGridSize(QSize(144, 64 + icons_->fontMetrics().lineSpacing() * 3 + 12));
 		icons_->setSpacing(4);
 		icons_->setWordWrap(true);
 		icons_->setTextElideMode(Qt::ElideRight);
@@ -1297,6 +1314,9 @@ private:
 			const auto icon = value.toObject();
 			const auto label = text(icon["labelKey"].toString().toUtf8().constData());
 			auto *item = new QListWidgetItem(label, icons_);
+			// IconMode's grid controls placement, not the item's painting rect.
+			// Give the native delegate the full tile for wrapped labels.
+			item->setSizeHint(icons_->gridSize());
 			item->setData(Qt::UserRole, icon["id"].toString());
 			item->setData(Qt::UserRole + 1, icon.toVariantMap());
 			item->setToolTip(label + "\n" + groups_.value(icon["group"].toString()));
@@ -1432,8 +1452,9 @@ private:
 
 class ViewPanelEditor final : public QDialog {
 public:
-	ViewPanelEditor(QWidget *parent, const QJsonArray &inventory, const QJsonArray &pins, bool show_scene,
-			std::function<void(QJsonArray, bool, bool)> apply)
+	ViewPanelEditor(QWidget *parent, const QJsonArray &inventory, const QJsonArray &pins,
+			const QJsonArray &custom_sections, bool show_scene,
+			std::function<void(QJsonArray, QJsonArray, bool, bool)> apply)
 		: QDialog(parent),
 		  inventory_(inventory),
 		  apply_(std::move(apply))
@@ -1498,10 +1519,29 @@ public:
 		label_->setObjectName("viewsPanelLabel");
 		label_->setPlaceholderText(text("Controls.UseName"));
 		form->addRow(text("Controls.Label"), label_);
-		section_ = new QLineEdit(this);
+		section_choice_ = new QComboBox(this);
+		section_choice_->setObjectName("viewsPanelSectionChoice");
+		section_choice_->setEditable(true);
+		section_choice_->setInsertPolicy(QComboBox::NoInsert);
+		section_choice_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+		section_choice_->setMinimumContentsLength(12);
+		section_choice_->setToolTip(text("Controls.SectionHelp"));
+		section_ = section_choice_->lineEdit();
 		section_->setObjectName("viewsPanelSection");
+		for (const char *key :
+		     {"Controls.Scenes", "Controls.SectionViews", "Controls.SectionCameras", "Controls.SectionCaptures",
+		      "Controls.SectionBackgrounds", "Controls.SectionOverlays", "Controls.SectionAudio"})
+			section_presets_.append(text(key));
+		for (const QJsonValue value : custom_sections)
+			remember_section(value.toString());
+		for (const QJsonValue value : pins)
+			remember_section(value.toObject()["section"].toString());
+		fill_sections();
 		auto *section_row = new QHBoxLayout;
-		section_row->addWidget(section_, 1);
+		section_row->addWidget(section_choice_, 1);
+		add_section_ = new QPushButton(text("Controls.AddSection"), this);
+		add_section_->setObjectName("viewsPanelAddSection");
+		section_row->addWidget(add_section_);
 		reset_section_ = new QToolButton(this);
 		reset_section_->setObjectName("viewsPanelResetSection");
 		reset_section_->setText(text("Controls.ResetSection"));
@@ -1546,6 +1586,7 @@ public:
 		connect(available_, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem *item, int column) {
 			if (column != 0)
 				return;
+			remember_pin_sections();
 			mark_custom();
 			const bool checked = item->checkState(0) == Qt::Checked;
 			if (item->childCount()) {
@@ -1560,6 +1601,7 @@ public:
 			show_pin();
 		});
 		connect(remove_, &QPushButton::clicked, this, [this] {
+			remember_pin_sections();
 			mark_custom();
 			{
 				const QSignalBlocker blocker(pins_);
@@ -1570,6 +1612,7 @@ public:
 			show_pin();
 		});
 		connect(clear_, &QPushButton::clicked, this, [this] {
+			remember_pin_sections();
 			mark_custom();
 			pins_->clear();
 			sync_checks();
@@ -1578,10 +1621,21 @@ public:
 		connect(pins_, &QListWidget::itemSelectionChanged, this, [this] { show_pin(); });
 		connect(pins_->model(), &QAbstractItemModel::rowsMoved, this, [this] { mark_custom(); });
 		connect(label_, &QLineEdit::textChanged, this, [this] { edit_labels(); });
-		connect(section_, &QLineEdit::textChanged, this, [this] { edit_sections(); });
+		connect(section_, &QLineEdit::textChanged, this, [this] {
+			// The editable combo can publish its label before activated. The
+			// original-section placeholder must never become a saved section.
+			const bool original = section_->text() == section_choice_->itemText(0);
+			edit_sections(original ? QString() : section_->text());
+		});
+		connect(section_, &QLineEdit::editingFinished, this, [this] { remember_pin_sections(); });
+		connect(section_choice_, &QComboBox::activated, this, [this](int index) {
+			edit_sections(section_choice_->itemData(index).toString());
+			show_pin();
+		});
+		connect(add_section_, &QPushButton::clicked, this, [this] { add_section(); });
 		connect(reset_section_, &QToolButton::clicked, this, [this] {
-			section_->clear();
-			edit_sections();
+			remember_pin_sections();
+			edit_sections({});
 			show_pin();
 		});
 		connect(icon_library_, &QPushButton::clicked, this, [this] { choose_library_icon(); });
@@ -1597,6 +1651,7 @@ public:
 			show_pin();
 		});
 		connect(automatic_button, &QPushButton::clicked, this, [this] {
+			remember_pin_sections();
 			automatic_ = true;
 			pins_->clear();
 			remembered_.clear();
@@ -1609,10 +1664,13 @@ public:
 		});
 		connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 		connect(buttons, &QDialogButtonBox::accepted, this, [this] {
-			QJsonArray pins;
+			remember_pin_sections();
+			QJsonArray pins, sections;
 			for (int i = 0; i < pins_->count(); ++i)
 				pins.append(pin_data(pins_->item(i)));
-			apply_(pins, !automatic_, switch_scene_->isChecked());
+			for (const auto &name : custom_sections_)
+				sections.append(name);
+			apply_(pins, sections, !automatic_, switch_scene_->isChecked());
 			accept();
 		});
 		if (pins_->count())
@@ -1750,19 +1808,22 @@ private:
 
 	void show_pin()
 	{
-		const QSignalBlocker label_block(label_), section_block(section_);
+		remember_pin_sections();
+		const QSignalBlocker label_block(label_), section_block(section_),
+			section_choice_block(section_choice_);
 		const auto selected = pins_->selectedItems();
 		const bool one = selected.size() == 1;
 		const auto pin = one ? pin_data(selected.front()) : QJsonObject{};
 		label_->setEnabled(one);
 		label_->setText(pin["label"].toString());
-		section_->setEnabled(!selected.isEmpty());
+		section_choice_->setEnabled(!selected.isEmpty());
 		reset_section_->setEnabled(!selected.isEmpty());
 		QString section = selected.isEmpty() ? QString() : pin_data(selected.front())["section"].toString();
 		bool same_section = true;
 		for (auto *item : selected)
 			same_section = same_section && pin_data(item)["section"].toString() == section;
 		section_->setPlaceholderText(text(same_section ? "Controls.UseSection" : "Controls.MixedSections"));
+		section_choice_->setCurrentIndex(same_section ? section_choice_->findData(section) : -1);
 		section_->setText(same_section ? section : QString());
 		const auto control = find_id(inventory_, pin["id"].toString());
 		context_->setText(one ? control["section"].toString(pin["context"].toString()) + "\n" +
@@ -1789,7 +1850,78 @@ private:
 		update_pin(selected.front(), pin);
 	}
 
-	void edit_sections()
+	bool remember_section(const QString &value)
+	{
+		const auto name = value.trimmed();
+		if (name.isEmpty() || section_presets_.contains(name) || custom_sections_.contains(name))
+			return false;
+		custom_sections_.append(name);
+		return true;
+	}
+
+	void fill_sections()
+	{
+		const QSignalBlocker section_block(section_), choice_block(section_choice_);
+		const auto current = section_->text();
+		section_choice_->clear();
+		section_choice_->addItem(text("Controls.UseSection"), QString());
+		for (const auto &name : section_presets_)
+			section_choice_->addItem(name, name);
+		for (const auto &name : custom_sections_)
+			section_choice_->addItem(name, name);
+		section_choice_->setCurrentIndex(section_choice_->findData(current));
+		section_->setText(current);
+	}
+
+	void remember_pin_sections()
+	{
+		bool added = false;
+		for (int i = 0; i < pins_->count(); ++i)
+			added = remember_section(pin_data(pins_->item(i))["section"].toString()) || added;
+		if (added)
+			fill_sections();
+	}
+
+	void add_section()
+	{
+		remember_pin_sections();
+		auto *dialog = new QDialog(this);
+		dialog->setObjectName("viewsPanelNewSectionDialog");
+		dialog->setWindowTitle(text("Controls.AddSectionTitle"));
+		dialog->setAttribute(Qt::WA_DeleteOnClose);
+		dialog->setWindowModality(Qt::WindowModal);
+		auto *layout = new QVBoxLayout(dialog);
+		layout->addWidget(note(dialog, text("Controls.AddSectionHelp")));
+		auto *name = new QLineEdit(dialog);
+		name->setObjectName("viewsPanelNewSectionName");
+		name->setPlaceholderText(text("Controls.SectionName"));
+		name->setAccessibleName(text("Controls.SectionName"));
+		layout->addWidget(name);
+		auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, dialog);
+		auto *save = buttons->addButton(text("Controls.AddSectionTitle"), QDialogButtonBox::AcceptRole);
+		save->setObjectName("viewsPanelNewSectionSave");
+		save->setEnabled(false);
+		buttons->button(QDialogButtonBox::Cancel)->setObjectName("viewsPanelNewSectionCancel");
+		layout->addWidget(buttons);
+		connect(name, &QLineEdit::textChanged, dialog,
+			[name, save] { save->setEnabled(!name->text().trimmed().isEmpty()); });
+		connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+		connect(buttons, &QDialogButtonBox::accepted, dialog, [this, dialog, name] {
+			const auto value = name->text().trimmed();
+			if (value.isEmpty())
+				return;
+			remember_section(value);
+			fill_sections();
+			edit_sections(value);
+			show_pin();
+			dialog->accept();
+		});
+		dialog->resize(400, 150);
+		dialog->open();
+		name->setFocus();
+	}
+
+	void edit_sections(const QString &section)
 	{
 		const auto selected = pins_->selectedItems();
 		if (selected.isEmpty())
@@ -1797,7 +1929,7 @@ private:
 		mark_custom();
 		for (auto *item : selected) {
 			auto pin = pin_data(item);
-			pin["section"] = section_->text();
+			pin["section"] = section;
 			update_pin(item, pin);
 		}
 	}
@@ -1887,13 +2019,15 @@ private:
 
 	QJsonArray inventory_;
 	QMap<QString, QJsonObject> remembered_;
-	std::function<void(QJsonArray, bool, bool)> apply_;
+	std::function<void(QJsonArray, QJsonArray, bool, bool)> apply_;
+	QStringList section_presets_, custom_sections_;
+	QComboBox *section_choice_ = nullptr;
 	QLineEdit *search_ = nullptr, *label_ = nullptr, *section_ = nullptr;
 	QTreeWidget *available_ = nullptr;
 	QListWidget *pins_ = nullptr;
 	QLabel *context_ = nullptr, *status_ = nullptr, *selected_heading_ = nullptr, *icon_preview_ = nullptr;
 	QPushButton *remove_ = nullptr, *clear_ = nullptr, *choose_icon_ = nullptr, *remove_icon_ = nullptr,
-		    *icon_library_ = nullptr;
+		    *icon_library_ = nullptr, *add_section_ = nullptr;
 	QCheckBox *switch_scene_ = nullptr;
 	QToolButton *reset_section_ = nullptr;
 	QSet<QString> expanded_before_search_;
@@ -2336,15 +2470,18 @@ private:
 		set_inventory(object(response)["controls"].toArray(), ready);
 		if (!ready)
 			return;
-		editor_ = new ViewPanelEditor(this, inventory_, effective_pins(), config_["showScene"].toBool(true),
-					      [this](QJsonArray pins, bool custom, bool show_scene) {
-						      config_["schema"] = 1;
-						      config_["customized"] = custom;
-						      config_["pins"] = pins;
-						      config_["showScene"] = show_scene;
-						      set_inventory(inventory_, loaded_);
-						      obs_frontend_save();
-					      });
+		editor_ =
+			new ViewPanelEditor(this, inventory_, effective_pins(), config_["customSections"].toArray(),
+					    config_["showScene"].toBool(true),
+					    [this](QJsonArray pins, QJsonArray sections, bool custom, bool show_scene) {
+						    config_["schema"] = 1;
+						    config_["customized"] = custom;
+						    config_["pins"] = pins;
+						    config_["customSections"] = sections;
+						    config_["showScene"] = show_scene;
+						    set_inventory(inventory_, loaded_);
+						    obs_frontend_save();
+					    });
 		connect(editor_, &QDialog::finished, this, [this] {
 			editor_ = nullptr;
 			edit_->setEnabled(loaded_);

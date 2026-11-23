@@ -447,6 +447,10 @@ Array catalog()
 	const auto aliases = controller_controls(out.get());
 	const Inventory inventory;
 	const auto looks = scene_modes_list(nullptr);
+	std::map<obs_source_t *, size_t> show_in_scenes_counts;
+	for (const auto &filter : inventory.filters)
+		if (is_kind(filter.value.get(), kShowInScenesId))
+			++show_in_scenes_counts[filter.parent.get()];
 	for (const auto &filter : inventory.filters) {
 		const auto found = aliases.find(obs_source_get_uuid(filter.value.get()));
 		const Alias *alias = found == aliases.end() ? nullptr : &found->second;
@@ -456,12 +460,18 @@ Array catalog()
 			legacy_link(out.get(), inventory, filter, alias);
 		else if (is_kind(filter.value.get(), kShowInScenesId)) {
 			const std::string fid = obs_source_get_uuid(filter.value.get());
+			const std::string parent_name = obs_source_get_name(filter.parent.get());
+			// The source identifies this control. Add the filter's name only
+			// when that source has several distinct Show in Scenes controls.
+			const std::string name =
+				show_in_scenes_counts[filter.parent.get()] > 1
+					? section({parent_name, obs_source_get_name(filter.value.get())})
+					: parent_name;
 			auto action = target("show-in-scenes");
 			set_text(action.get(), "filterUuid", fid);
 			set_text(action.get(), "parentUuid", obs_source_get_uuid(filter.parent.get()));
-			append(out.get(), stable_id("show-in-scenes", {fid}), obs_source_get_name(filter.value.get()),
-			       obs_source_get_name(filter.parent.get()), obs_source_enabled(filter.value.get()), true,
-			       {}, true, action.get());
+			append(out.get(), stable_id("show-in-scenes", {fid}), name, parent_name,
+			       obs_source_enabled(filter.value.get()), true, {}, true, action.get());
 		}
 	}
 	ordinary_sources(out.get(), inventory);
