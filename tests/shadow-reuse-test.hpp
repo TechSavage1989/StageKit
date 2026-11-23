@@ -304,6 +304,9 @@ inline Sample sample(Fixture &fixture, bool linear = false)
 		[](void *data) {
 			auto &job = *static_cast<Job *>(data);
 			auto &fixture = *job.fixture;
+			// OBS_TASK_GRAPHICS selects the video thread; its callbacks must
+			// still enter graphics before reading or changing colour state.
+			obs_enter_graphics();
 			const uint64_t frame = obs_get_video_frame_time();
 			const bool previous = gs_get_linear_srgb();
 			gs_set_linear_srgb(job.linear);
@@ -322,6 +325,7 @@ inline Sample sample(Fixture &fixture, bool linear = false)
 			job.out.same_frame = frame == obs_get_video_frame_time();
 			fixture.last_sample = frame;
 			gs_set_linear_srgb(previous);
+			obs_leave_graphics();
 		},
 		&job, true);
 	return job.out;
@@ -397,6 +401,7 @@ inline void check_guards(Fixture &fixture, QStringList &issues)
 		[](void *data) {
 			auto &job = *static_cast<Job *>(data);
 			auto &fixture = *job.fixture;
+			obs_enter_graphics();
 			const uint64_t frame = obs_get_video_frame_time();
 			const bool previous = gs_get_linear_srgb();
 			gs_set_linear_srgb(false);
@@ -465,6 +470,7 @@ inline void check_guards(Fixture &fixture, QStringList &issues)
 					"Shadow reuse: the direct-redraw checks crossed a video frame");
 			fixture.last_sample = frame;
 			gs_set_linear_srgb(previous);
+			obs_leave_graphics();
 		},
 		&job, true);
 	issues.append(job.issues);
