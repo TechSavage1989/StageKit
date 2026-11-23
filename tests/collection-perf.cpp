@@ -270,7 +270,7 @@ obs_data_t *take_timing()
 
 // What changed in the scenes (signals) and how often StageKit's periodic
 // looks ran, so far (`stagekit_test_looks`).
-obs_data_t *take_looks()
+obs_data_t *take_looks(const std::vector<obs_source_t *> &loaded_sources)
 {
 	calldata_t cd;
 	calldata_init(&cd);
@@ -295,20 +295,18 @@ obs_data_t *take_looks()
 	// These optional per-filter counters were added after the frozen baseline.
 	// Missing support is recorded, never interpreted as zero work by the baseline.
 	std::vector<obs_source_t *> shadows;
-	obs_enum_sources(
-		[](void *param, obs_source_t *source) {
-			obs_source_enum_filters(
-				source,
-				[](obs_source_t *, obs_source_t *filter, void *param) {
-					if (strcmp(obs_source_get_id(filter), "stagekit_scene_shadow") != 0)
-						return;
-					static_cast<std::vector<obs_source_t *> *>(param)->push_back(
-						obs_source_get_ref(filter));
-				},
-				param);
-			return true;
-		},
-		&shadows);
+	// OBS's input-source enumeration omits scenes. Inspect the collection's
+	// retained sources instead, including its scenes and groups.
+	for (obs_source_t *source : loaded_sources)
+		obs_source_enum_filters(
+			source,
+			[](obs_source_t *, obs_source_t *filter, void *param) {
+				if (strcmp(obs_source_get_id(filter), "stagekit_scene_shadow") != 0)
+					return;
+				static_cast<std::vector<obs_source_t *> *>(param)->push_back(
+					obs_source_get_ref(filter));
+			},
+			&shadows);
 	// The procedure enters graphics. Do not call it while OBS's source/filter
 	// enumeration locks are held; the render thread can need those locks too.
 	obs_data_set_int(data, "shadow_filters", (long long)shadows.size());
@@ -607,7 +605,7 @@ int main(int argc, char **argv)
 		}
 		obs_transition_set(transition, scene);
 		os_sleep_ms((uint32_t)(warmup * 1000.0));
-		obs_data_t *looks_a = take_looks();
+		obs_data_t *looks_a = take_looks(held);
 		obs_data_release(take_timing());
 		profiler_snapshot_t *a = profile_snapshot_create();
 		std::vector<obs_source_t *> ring;
@@ -638,7 +636,7 @@ int main(int argc, char **argv)
 		const uint64_t actual_frames = total_frames > lagged_frames ? total_frames - lagged_frames : 0;
 		profiler_snapshot_t *b = profile_snapshot_create();
 		obs_data_t *took = take_timing();
-		obs_data_t *looks_b = take_looks();
+		obs_data_t *looks_b = take_looks(held);
 		if (!whole) {
 			printf("FAIL: '%s' did not reach %llu frames in time\n", name.c_str(),
 			       (unsigned long long)frames);

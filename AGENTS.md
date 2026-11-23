@@ -38,6 +38,8 @@ OBS_TASK_GRAPHICS runs on the video thread without automatically entering a grap
 
 Headless fixtures that call procedures registered by register_dock must run after the existing obs_post_load_modules call. StageKit registers that dock and its measurement test procedure from obs_module_post_load. Loading the module alone does not register them. Keep a separate issue list for a fixture moved past the earlier native-filter assertion; do not call module post-load twice to satisfy it.
 
+OBS input-source enumeration omits scenes. The collection performance harness must collect scene-filter counters from its retained loaded-source list, which includes scenes and groups. Retain each discovered filter and invoke its procedure only after filter enumeration has finished, outside the measured timing snapshots. Missing probe discovery must fail the workload coverage check rather than being interpreted as zero work.
+
 For a performance release, compare a frozen baseline and candidate using the same harness, compiler, dependencies, renderer, canvas scale and scene settings. Run baseline/candidate/candidate/baseline after other OBS processes and builds finish. Preserve every measured trial, its requested/completed frames, commit identities and renderer metadata. Report whole OBS graphics/render/tick distributions independently; nested inclusive filter times cannot be added into a frame cost. Missing or incomplete data fails the benchmark, but noisy shared-runner timing has no arbitrary speed threshold. Operation counts prove removed work; software rendering alone cannot prove the owner's hardware frame-time gain.
 
 ## Saved scene settings and source renames
