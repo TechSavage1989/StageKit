@@ -1291,9 +1291,12 @@ An OBS Sources group is one selectable item; its children retain their own eye s
 
 **Create or edit controller rules.** Open **Manage controllers...**, choose a scene, and select **Add**
 to create **Scene Filter: Scene Controller (StageKit)**. **Configure...** opens its independent groups
-and combined views. The management scene selector keeps Program on its current scene. Use **Back to
-controls** to return to the panel. The same controller definition is used by the panel and the Stream
-Deck **StageKit View** action.
+and combined views. A controller is available from its own scene and from additional scenes included
+in its groups or combined views. When browsing an additional scene, the manager shows the groups and
+views that apply there and identifies the controller's owning scene. These are the same saved rules,
+not separate copies. The management scene selector keeps Program on its current scene. Use **Back to
+controls** to return to the panel. The panel and the Stream Deck **StageKit View** action use the same
+controller definition.
 
 Group, mode and combined-view windows edit the open configuration draft. Choose **Done** to return
 to **Configure**, then **Apply changes** to update the controller. The configuration window shows a
@@ -1317,15 +1320,17 @@ that should share a selection:
 
 1. In **Edit panel...**, uncheck **Switch to selection's scene** and save.
 2. Open **Manage controllers...**, choose the controller, then **Configure...**. Select the group and
-   choose **Edit group**. Under **Other scenes**, check the layout scenes that should share it.
+   choose **Edit group**. Under **Applies to**, check the layout scenes that should share it.
    The controller's own scene is always included. For **Choose one source**, add each choice as an
    existing source to every covered scene. Named modes can select sources spread across those scenes.
-   Choose **Done**, then **Apply changes** in the configuration window. Reopen **Other scenes** to
-   check that the additional scenes remain selected.
+   Choose **Done**, then **Apply changes** in the configuration window. The manager's **Applies to**
+   summary shows the covered scenes. You can select any of those scenes in the manager and access
+   this same controller and group.
 3. For named modes or combined views, leave **Also change scene** unchecked so those choices do not
    have their own destination.
-4. Add the direct scene shortcuts and this controller group's choices to the panel. If you imported
-   an existing filter, choose the controller-group entries for this workflow.
+4. Add the direct scene shortcuts and this controller group's choices to the panel. Existing panel
+   buttons for an actively imported filter automatically use that group's complete scope, retaining
+   their labels, icons, sections and order.
 
 Select a scene, select a camera or content choice, then switch scenes using the scene buttons or
 dropdown. The shared group's selection remains in place; selecting a different member applies it
@@ -1333,14 +1338,15 @@ to the covered scenes. Separate groups in separate controllers remain separate, 
 names. A manual Sources eye change still follows that scene's native rules and can leave scenes with
 different selections until the shared controller choice is pressed again.
 
-If the choice affects only the controller's own scene, first reopen the group's **Other scenes** tab
-and check its saved scope. A scene selection in the dock does not add that scene to the group. Also
-check that the panel entry belongs to this controller group; an original-filter entry can have a
-different scope. Other enabled rules controlling the same sources can change visibility afterward.
+The **Applies to** summary distinguishes the scenes covered by a group from the scene currently being
+browsed. Selecting a scene in the dock does not add it to the group's scope. Other enabled rules
+controlling the same sources can change visibility afterward.
 
 For an existing standalone Scene Modes filter, **Same modes in scenes** provides its shared scope.
 A standalone Link Visibility filter's **Also in other scenes** has different native behavior and does
-not replace the controller's **Other scenes** scope for selecting a source across scenes.
+not replace the controller's **Applies to** scope for selecting a source across scenes. Existing
+native filter-targeted Stream Deck keys and hotkeys retain their native scope; choose the **StageKit
+View** action when a key should select the complete controller group.
 
 **Combined views are optional presets.** They save several group choices under one button. In **Add
 combined view**, the **Control** column names an existing group, and **Set to** chooses what that group
@@ -1386,7 +1392,8 @@ both the OBS plugin and companion for this action; companion 0.43.0.0 adds it.
 **Import existing scene controls.** Import is optional for using existing filters from the panel. To
 manage their rules within a controller, open **Manage controllers...**, select its scene and controller,
 then choose **Import...**. Import one selected filter, or choose **Import all** to copy every supported
-Scene Modes and Link Visibility filter on that scene in one action. Filters already imported into this
+Scene Modes and Link Visibility filter on the controller's owning scene in one action, including when
+you access that controller from an additional scene. Filters already imported into this
 controller, or assigned to an active import in another controller, are skipped. An inactive review copy
 in another controller does not block importing the filter. The result shows imported and skipped
 counts. The complete batch is validated before it is applied, so a rejected batch leaves the controller

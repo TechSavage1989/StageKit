@@ -22,6 +22,10 @@
 #include <QTreeWidget>
 #include <QTreeWidgetItemIterator>
 #include <QVariantMap>
+#include <chrono>
+#include <condition_variable>
+#include <memory>
+#include <mutex>
 #include <util/bmem.h>
 
 // Exercise the public dock and normal OBS objects. This probe deliberately
@@ -891,7 +895,9 @@ inline void check_other_scene_scope(QWidget *panel, const std::string &controlle
 	OBSDataAutoRelease original_state = get(controller);
 	OBSDataAutoRelease original_config = obs_data_get_obj(original_state, "config");
 	QPointer<QDialog> importing, editor, form;
+	QStringList temporary_pins;
 	OBSSceneAutoRelease secondary = obs_scene_create("Control panel other scene");
+	OBSSceneAutoRelease unrelated = obs_scene_create("Control panel unrelated scene");
 	auto *secondary_source = obs_scene_get_source(secondary);
 	OBSSourceAutoRelease first =
 		obs_source_create("stagekit_test_controller_item", "Scope first camera", nullptr, nullptr);
@@ -912,20 +918,48 @@ inline void check_other_scene_scope(QWidget *panel, const std::string &controlle
 	// frontend also belong to OBS's canvas and need explicit removal.
 	struct Restore {
 		QWidget *panel;
-		obs_source_t *scene, *owner, *secondary, *first, *second, *link;
+		obs_source_t *scene, *owner, *secondary, *unrelated, *first, *second, *link;
 		obs_sceneitem_t *home_first, *home_second;
 		const std::string &controller;
 		obs_data_t *config;
 		QStringList &issues;
 		QPointer<QDialog> &importing, &editor, &form;
+		QStringList &pins;
+		bool enabled;
 		std::string group;
+		bool remove_pins()
+		{
+			if (pins.isEmpty())
+				return true;
+			if (!click(panel, "viewsBackToControls") || !click(panel, "viewsPanelEdit") ||
+			    !until([&] { return dialog("viewsPanelEditor"); }))
+				return false;
+			editor = dialog("viewsPanelEditor");
+			auto *saved = editor->findChild<QListWidget *>("viewsPanelPins");
+			QList<int> rows;
+			for (const auto &id : pins) {
+				const int at = pin_row(saved, id);
+				if (at >= 0)
+					rows.append(at);
+			}
+			if ((!rows.isEmpty() && (!select_pins(saved, rows) || !click(editor, "viewsPanelRemove"))) ||
+			    !click(editor, "viewsPanelSave") || !until([&] { return !editor || !editor->isVisible(); }))
+				return false;
+			pins.clear();
+			return true;
+		}
 		~Restore()
 		{
 			for (const auto &dialog : {form, editor, importing})
 				if (dialog && dialog->isVisible())
 					dialog->reject();
+			if (!remove_pins())
+				issues.append("StageKit controls: temporary shared pins could not be removed");
 			if (scene)
 				obs_frontend_set_current_scene(scene);
+			OBSSourceAutoRelease source = obs_get_source_by_uuid(controller.c_str());
+			if (source)
+				obs_source_set_enabled(source, enabled);
 			if (!config || !configure(controller, config) || !until([&] {
 				    OBSDataAutoRelease state = get(controller);
 				    return !imported_group(controller, link) &&
@@ -938,18 +972,151 @@ inline void check_other_scene_scope(QWidget *panel, const std::string &controlle
 			if (home_second)
 				obs_sceneitem_remove(home_second);
 			obs_source_remove(secondary);
+			obs_source_remove(unrelated);
 			obs_source_remove(first);
 			obs_source_remove(second);
 			click(panel, "viewsBackToControls");
 		}
-	} restore{panel,       previous,   owner,           secondary_source, first,     second, link, home_first,
-		  home_second, controller, original_config, issues,           importing, editor, form, {}};
+	} restore{panel,
+		  previous,
+		  owner,
+		  secondary_source,
+		  obs_scene_get_source(unrelated),
+		  first,
+		  second,
+		  link,
+		  home_first,
+		  home_second,
+		  controller,
+		  original_config,
+		  issues,
+		  importing,
+		  editor,
+		  form,
+		  temporary_pins,
+		  obs_data_get_bool(original_state, "enabled"),
+		  {}};
 	obs_frontend_set_current_scene(secondary_source);
+	if (!home_first || !home_second || !other_first || !other_second || !click(panel, "viewsPanelEdit") ||
+	    !until([&] { return dialog("viewsPanelEditor"); })) {
+		expect(false, "could not pin original Link Visibility choices before importing the shared fixture");
+		return;
+	}
+	editor = dialog("viewsPanelEditor");
+	auto *available = editor->findChild<QTreeWidget *>("viewsPanelAvailable");
+	QStringList originals;
+	for (auto *source : {first.Get(), second.Get()}) {
+		const QVariantMap wanted{{"kind", "link"}, {"filterUuid", uuid(link)}, {"sourceUuid", uuid(source)}};
+		for (auto *candidate : tree_controls(available))
+			if (matches(candidate->data(0, Qt::UserRole + 1).toMap().value("target").toMap(), wanted)) {
+				originals.append(candidate->data(0, Qt::UserRole).toString());
+				break;
+			}
+	}
+	temporary_pins = originals;
+	if (originals.size() != 2 || !check_inventory(available, originals[0], Qt::Checked) ||
+	    !check_inventory(available, originals[1], Qt::Checked) || !click(editor, "viewsPanelSave") ||
+	    !until([&] { return !editor || !editor->isVisible(); })) {
+		expect(false, "the original Link Visibility choices were not exposed and saved before import");
+		return;
+	}
 	auto *scenes = panel->findChild<QComboBox *>("viewsScene");
 	auto *controllers = panel->findChild<QComboBox *>("viewsController");
 	auto *scope = panel->findChild<QComboBox *>("viewsScope");
-	if (!home_first || !home_second || !other_first || !other_second || !scope ||
-	    !click(panel, "viewsManageControllers") || !select_combo_option(scenes, uuid(owner)) ||
+	const QString controller_id = QString::fromStdString(controller);
+	if (!scenes || !controllers || !scope || !click(panel, "viewsManageControllers") ||
+	    !select_combo_option(scenes, uuid(secondary_source))) {
+		expect(false, "could not browse the unrelated scene before configuring shared access");
+		return;
+	}
+	expect(until([&] { return controllers->findData(controller_id) < 0 && scene_is(secondary_source); }),
+	       "a controller appeared in a scene outside its configured scope");
+	auto open_group = [&](const QString &selected_group) {
+		if (!click(panel, "viewsConfigure") || !until([&] { return dialog("viewsEditor"); }))
+			return false;
+		editor = dialog("viewsEditor");
+		if (!click_row(editor->findChild<QListWidget *>("viewsGroups"), selected_group) ||
+		    !click(editor, "viewsEditGroup") || !until([&] { return dialog("viewsGroupEditor"); }))
+			return false;
+		form = dialog("viewsGroupEditor");
+		auto *tabs = form->findChild<QTabWidget *>("viewsGroupTabs");
+		if (!tabs)
+			return false;
+		tabs->setCurrentIndex(1);
+		return true;
+	};
+	// Older named-mode definitions keep their shared scenes in settings.
+	// Browsing and an untouched editor round trip must honor that saved form.
+	OBSDataAutoRelease inherited_config = obs_data_create_from_json(obs_data_get_json(original_config));
+	OBSDataAutoRelease inherited_group = row(inherited_config, "groups", "camera");
+	OBSDataAutoRelease inherited_settings = obs_data_get_obj(inherited_group, "settings");
+	list(inherited_settings, "share_scenes", {"Control panel other scene"});
+	if (!configure(controller, inherited_config) ||
+	    !until([&] { return controllers->findData(controller_id) >= 0; }) ||
+	    !select_combo_option(controllers, controller_id) || !select_combo_option(scope, "camera") ||
+	    !open_group("camera")) {
+		expect(false, "legacy named-mode shared scenes did not expose the controller and its group");
+		return;
+	}
+	bool inherited_checked = false;
+	if (auto *saved_scope = form->findChild<QListWidget *>("viewsGroupScope"))
+		for (int i = 0; i < saved_scope->count(); ++i)
+			if (saved_scope->item(i)->data(Qt::UserRole).toString() == "Control panel other scene")
+				inherited_checked = saved_scope->item(i)->checkState() == Qt::Checked;
+	expect(inherited_checked, "the group editor omitted the named mode's inherited shared scene");
+	if (!click(form, "viewsGroupSave") || !until([&] { return !form || !form->isVisible(); }) ||
+	    !click(editor, "viewsEditorSave") || !until([&] { return !editor || !editor->isVisible(); })) {
+		expect(false, "the inherited-scope group could not complete an unchanged editor round trip");
+		return;
+	}
+	expect(until([&] {
+		       OBSDataAutoRelease state = get(controller);
+		       OBSDataAutoRelease config = obs_data_get_obj(state, "config");
+		       const auto saved = json(row(config, "groups", "camera"));
+		       const auto original = json(inherited_group);
+		       return saved["scope"] == original["scope"] &&
+			      saved["settings"].toObject()["share_scenes"] ==
+				      original["settings"].toObject()["share_scenes"] &&
+			      controllers->currentData().toString() == controller_id && scene_is(secondary_source);
+	       }),
+	       "an untouched inherited-scope editor changed its saved fields or lost shared access");
+	if (!click(panel, "viewsImportLegacy") || !until([&] { return dialog("viewsImportDialog"); })) {
+		expect(false, "import could not open while browsing a shared controller from another scene");
+		return;
+	}
+	importing = dialog("viewsImportDialog");
+	auto *import_filters = importing->findChild<QComboBox *>("viewsImportFilter");
+	auto *import_help = importing->findChild<QLabel *>("viewsImportHelp");
+	expect(import_filters && import_filters->findData(uuid(link)) >= 0 && import_help &&
+		       import_help->text().contains(QString::fromUtf8(obs_source_get_name(owner))),
+	       "shared controller import did not enumerate or identify the actual owner scene");
+	importing->reject();
+	until([&] { return !importing || !importing->isVisible(); });
+	if (!open_group("camera")) {
+		expect(false, "the inherited shared scene could not be edited from its shared manager entry");
+		return;
+	}
+	if (auto *saved_scope = form->findChild<QListWidget *>("viewsGroupScope"))
+		for (int i = 0; i < saved_scope->count(); ++i)
+			if (saved_scope->item(i)->data(Qt::UserRole).toString() == "Control panel other scene")
+				saved_scope->item(i)->setCheckState(Qt::Unchecked);
+	expect(click(form, "viewsGroupSave") && until([&] { return !form || !form->isVisible(); }) &&
+		       click(editor, "viewsEditorSave") && until([&] { return !editor || !editor->isVisible(); }) &&
+		       until([&] {
+			       OBSDataAutoRelease state = get(controller);
+			       OBSDataAutoRelease config = obs_data_get_obj(state, "config");
+			       const auto saved = json(row(config, "groups", "camera"));
+			       return saved["scope"].toArray().isEmpty() &&
+				      saved["settings"].toObject()["share_scenes"].toArray().isEmpty() &&
+				      controllers->findData(controller_id) < 0 && scene_is(secondary_source);
+		       }),
+	       "removing an inherited shared scene left its legacy setting or manager access active");
+	if (!configure(controller, original_config) ||
+	    !until([&] { return controllers->findData(controller_id) < 0; })) {
+		expect(false, "removing inherited shared scope did not remove the secondary manager entry");
+		return;
+	}
+	if (!select_combo_option(scenes, uuid(owner)) ||
 	    !select_combo_option(controllers, QString::fromStdString(controller)) ||
 	    !click(panel, "viewsImportLegacy") || !until([&] { return dialog("viewsImportDialog"); })) {
 		expect(false, "could not prepare the real imported multi-scene control fixture");
@@ -968,28 +1135,25 @@ inline void check_other_scene_scope(QWidget *panel, const std::string &controlle
 	auto scope_saved = [&] {
 		OBSDataAutoRelease group = imported_group(controller, link);
 		for (const QJsonValue value : json(group)["scope"].toArray())
-			if (value.toObject()["value"].toString() == "Control panel other scene")
+			if (value.toObject()["value"].toString() ==
+			    QString::fromUtf8(obs_source_get_name(secondary_source)))
 				return true;
 		return false;
 	};
-	auto open_group = [&] {
-		if (!click(panel, "viewsConfigure") || !until([&] { return dialog("viewsEditor"); }))
-			return false;
-		editor = dialog("viewsEditor");
-		if (!click_row(editor->findChild<QListWidget *>("viewsGroups"), group_id) ||
-		    !click(editor, "viewsEditGroup") || !until([&] { return dialog("viewsGroupEditor"); }))
-			return false;
-		form = dialog("viewsGroupEditor");
-		auto *tabs = form->findChild<QTabWidget *>("viewsGroupTabs");
-		if (!tabs)
-			return false;
-		tabs->setCurrentIndex(1);
-		return true;
-	};
-	if (!open_group() ||
-	    !check_item(form->findChild<QListWidget *>("viewsGroupScope"), "Control panel other scene") ||
-	    !click(form, "viewsGroupSave") || !until([&] { return !form || !form->isVisible(); })) {
+	if (!open_group(group_id) ||
+	    !check_item(form->findChild<QListWidget *>("viewsGroupScope"), "Control panel other scene")) {
 		expect(false, "Other scenes could not be selected in the actual imported group editor");
+		return;
+	}
+	auto *owner_scene = form->findChild<QLabel *>("viewsGroupOwnerScene");
+	auto *applies = form->findChild<QLabel *>("viewsGroupAppliesTo");
+	expect(owner_scene && owner_scene->isVisible() &&
+		       owner_scene->text().contains(QString::fromUtf8(obs_source_get_name(owner))) && applies &&
+		       applies->text().contains(QString::fromUtf8(obs_source_get_name(owner))) &&
+		       applies->text().contains("Control panel other scene"),
+	       "the group editor did not show its always-included owner and selected additional scene");
+	if (!click(form, "viewsGroupSave") || !until([&] { return !form || !form->isVisible(); })) {
+		expect(false, "the shared group draft could not be returned to the outer configuration editor");
 		return;
 	}
 	auto *pending = editor->findChild<QLabel *>("viewsEditorPending");
@@ -1000,7 +1164,7 @@ inline void check_other_scene_scope(QWidget *panel, const std::string &controlle
 		expect(false, "Apply changes did not persist the selected Other scenes scope");
 		return;
 	}
-	if (!open_group()) {
+	if (!open_group(group_id)) {
 		expect(false, "the saved multi-scene group could not be reopened");
 		return;
 	}
@@ -1016,9 +1180,24 @@ inline void check_other_scene_scope(QWidget *panel, const std::string &controlle
 	until([&] { return !editor || !editor->isVisible(); });
 	const std::string first_choice = choice(controller, group_id.toUtf8().constData(), "Scope first camera");
 	const std::string second_choice = choice(controller, group_id.toUtf8().constData(), "Scope second camera");
-	expect(!first_choice.empty() && !second_choice.empty() && select_combo_option(scope, group_id) &&
-		       until([&] { return scene_is(secondary_source) && !obs_source_showing(owner); }),
-	       "the scoped control was not available with Program on the other scene and its owner offscreen");
+	if (first_choice.empty() || second_choice.empty() || !select_combo_option(scope, group_id) ||
+	    !select_combo_option(scenes, uuid(secondary_source)) || !until([&] {
+		    return controllers->currentData().toString() == controller_id &&
+			   scope->currentData().toString() == group_id && scene_is(secondary_source) &&
+			   !obs_source_showing(owner);
+	    })) {
+		expect(false,
+		       "browsing the additional scene did not expose the same controller and preserve its group");
+		return;
+	}
+	OBSDataAutoRelease shared_state = get(controller);
+	auto *summary = panel->findChild<QLabel *>("viewsAppliesTo");
+	expect(QString::fromUtf8(obs_data_get_string(shared_state, "sceneUuid")) == uuid(owner) &&
+		       controllers->currentText().contains(QString::fromUtf8(obs_source_get_name(owner))) &&
+		       scope->findData("camera") < 0 && summary && summary->isVisible() &&
+		       summary->text().contains(QString::fromUtf8(obs_source_get_name(owner))) &&
+		       summary->text().contains("Control panel other scene"),
+	       "shared manager access lost its owner identity, exposed an unrelated group or omitted effective scenes");
 	auto *choices = panel->findChild<QListWidget *>("viewsList");
 	expect(click_row(choices, QString::fromStdString(second_choice)) && until([&] {
 		       return !obs_sceneitem_visible(home_first) && obs_sceneitem_visible(home_second) &&
@@ -1036,6 +1215,24 @@ inline void check_other_scene_scope(QWidget *panel, const std::string &controlle
 	expect(scene_is(secondary_source) && obs_sceneitem_visible(home_first) && !obs_sceneitem_visible(home_second) &&
 		       obs_sceneitem_visible(other_first) && !obs_sceneitem_visible(other_second),
 	       "the scoped visibility choice changed Program or was undone after settling");
+	const QString capture = qEnvironmentVariable("STAGEKIT_VIEWS_CAPTURE");
+	if (!capture.isEmpty()) {
+		const QDir directory = QFileInfo(capture).isDir() ? QDir(capture) : QFileInfo(capture).absoluteDir();
+		QDockWidget *dock = nullptr;
+		for (auto *parent = panel->parentWidget(); !dock && parent; parent = parent->parentWidget())
+			dock = qobject_cast<QDockWidget *>(parent);
+		if (dock)
+			dock->resize(520, 600);
+		QCoreApplication::processEvents();
+		expect(panel->grab().save(directory.filePath("stagekit-shared-controls.png")),
+		       "could not capture controller access from its additional scene");
+	}
+	expect(select_combo_option(scenes, uuid(obs_scene_get_source(unrelated))) &&
+		       until([&] { return controllers->findData(controller_id) < 0 && scene_is(secondary_source); }) &&
+		       select_combo_option(scenes, uuid(secondary_source)) &&
+		       until([&] { return controllers->findData(controller_id) >= 0; }) &&
+		       select_combo_option(controllers, controller_id) && select_combo_option(scope, group_id),
+	       "shared management access leaked to an unrelated scene or could not be reopened");
 
 	if (!click(panel, "viewsBackToControls") || !click(panel, "viewsPanelEdit") ||
 	    !until([&] { return dialog("viewsPanelEditor"); })) {
@@ -1043,7 +1240,7 @@ inline void check_other_scene_scope(QWidget *panel, const std::string &controlle
 		return;
 	}
 	editor = dialog("viewsPanelEditor");
-	auto *available = editor->findChild<QTreeWidget *>("viewsPanelAvailable");
+	available = editor->findChild<QTreeWidget *>("viewsPanelAvailable");
 	QStringList pinned;
 	for (const auto &choice_id : {first_choice, second_choice}) {
 		const QVariantMap wanted{{"kind", "controller"},
@@ -1051,11 +1248,13 @@ inline void check_other_scene_scope(QWidget *panel, const std::string &controlle
 					 {"groupId", group_id},
 					 {"choiceId", QString::fromStdString(choice_id)}};
 		for (auto *candidate : tree_controls(available))
-			if (matches(candidate->data(0, Qt::UserRole + 1).toMap().value("target").toMap(), wanted)) {
+			if (!originals.contains(candidate->data(0, Qt::UserRole).toString()) &&
+			    matches(candidate->data(0, Qt::UserRole + 1).toMap().value("target").toMap(), wanted)) {
 				pinned.append(candidate->data(0, Qt::UserRole).toString());
 				break;
 			}
 	}
+	temporary_pins.append(pinned);
 	if (pinned.size() != 2 || !check_inventory(available, pinned[0], Qt::Checked) ||
 	    !check_inventory(available, pinned[1], Qt::Checked) || !click(editor, "viewsPanelSave") ||
 	    !until([&] { return !editor || !editor->isVisible(); })) {
@@ -1068,25 +1267,198 @@ inline void check_other_scene_scope(QWidget *panel, const std::string &controlle
 		       obs_sceneitem_visible(other_first) == want_first &&
 		       obs_sceneitem_visible(home_second) != want_first &&
 		       obs_sceneitem_visible(other_second) != want_first &&
-		       checked(panel, pinned[want_first ? 0 : 1]) && !checked(panel, pinned[want_first ? 1 : 0]);
+		       checked(panel, pinned[want_first ? 0 : 1]) && !checked(panel, pinned[want_first ? 1 : 0]) &&
+		       checked(panel, originals[want_first ? 0 : 1]) && !checked(panel, originals[want_first ? 1 : 0]);
 	};
+	expect(until([&] {
+		       for (int i = 0; i < originals.size(); ++i) {
+			       auto *original = button_id(panel, originals[i]);
+			       const QVariantMap wanted{
+				       {"kind", "controller"},
+				       {"controllerId", controller_id},
+				       {"groupId", group_id},
+				       {"choiceId", QString::fromStdString(i == 0 ? first_choice : second_choice)},
+				       {"filterUuid", uuid(link)},
+				       {"sourceUuid", uuid(i == 0 ? first.Get() : second.Get())}};
+			       if (!original || !matches(target(original), wanted))
+				       return false;
+		       }
+		       return true;
+	       }),
+	       "original Link Visibility pins did not retain their stable IDs while resolving to the shared group");
 	expect(until([&] { return button_id(panel, pinned[0]) && button_id(panel, pinned[1]); }) &&
 		       press_control(panel, pinned[1]) && until([&] { return panel_selected(false); }) &&
 		       press_control(panel, pinned[0]) && until([&] { return panel_selected(true); }),
 	       "pinned controller choices did not update both layouts while preserving the other Program scene");
-	if (!click(panel, "viewsPanelEdit") || !until([&] { return dialog("viewsPanelEditor"); })) {
-		expect(false, "the temporary scoped controls could not be removed from the operator panel");
+	expect(press_control(panel, originals[1]) && until([&] { return panel_selected(false); }) &&
+		       press_control(panel, originals[0]) && until([&] { return panel_selected(true); }),
+	       "original pins still used only their owner's compatibility binding after importing shared scope");
+	obs_sceneitem_set_visible(other_second, true);
+	expect(until([&] {
+		       return obs_sceneitem_visible(home_first) && !obs_sceneitem_visible(home_second) &&
+			      !obs_sceneitem_visible(other_first) && obs_sceneitem_visible(other_second) &&
+			      !checked(panel, originals[0]) && !checked(panel, originals[1]) &&
+			      !checked(panel, pinned[0]) && !checked(panel, pinned[1]);
+	       }) && press_control(panel, originals[0]) &&
+		       until([&] { return panel_selected(true); }),
+	       "original pins did not report a mixed shared state or repair the other scene when reselected");
+
+	if (!click(panel, "viewsManageControllers") || !click(panel, "viewsEnabled") || !until([&] {
+		    OBSDataAutoRelease state = get(controller);
+		    return !obs_data_get_bool(state, "enabled");
+	    }) ||
+	    !click(panel, "viewsBackToControls")) {
+		expect(false, "the shared controller could not be disabled from its additional scene");
 		return;
 	}
-	editor = dialog("viewsPanelEditor");
-	available = editor->findChild<QTreeWidget *>("viewsPanelAvailable");
-	expect(check_inventory(available, pinned[0], Qt::Unchecked) &&
-		       check_inventory(available, pinned[1], Qt::Unchecked) && click(editor, "viewsPanelSave") &&
-		       until([&] { return !editor || !editor->isVisible(); }),
-	       "removing the temporary scoped controls did not restore the saved panel");
+	auto controls_enabled = [&](const QStringList &ids, bool enabled) {
+		for (const auto &id : ids) {
+			const auto *found = button_id(panel, id);
+			const auto *item = tree_item(control_list(panel), id);
+			if (!found || found->isEnabled() != enabled || !item ||
+			    bool(item->flags() & Qt::ItemIsEnabled) != enabled)
+				return false;
+		}
+		return true;
+	};
+	expect(until([&] { return controls_enabled(temporary_pins, false); }) && !press_control(panel, originals[1]) &&
+		       !press_control(panel, pinned[1]) && scene_is(secondary_source),
+	       "disabling a shared controller left original or controller pins actionable");
+	if (!click(panel, "viewsManageControllers") || !click(panel, "viewsEnabled") ||
+	    !click(panel, "viewsBackToControls") || !until([&] { return controls_enabled(temporary_pins, true); })) {
+		expect(false, "reenabling the shared controller did not restore both kinds of pinned control");
+		return;
+	}
+	obs_sceneitem_remove(other_second);
+	other_second = nullptr;
+	expect(until([&] {
+		       return controls_enabled({originals[1], pinned[1]}, false) &&
+			      controls_enabled({originals[0], pinned[0]}, true);
+	       }) && !press_control(panel, originals[1]) &&
+		       !press_control(panel, pinned[1]) && scene_is(secondary_source),
+	       "a member missing only in the additional scene did not disable its original and controller pins");
+	other_second = obs_scene_add(secondary, second);
+	expect(other_second && until([&] { return controls_enabled(temporary_pins, true); }) &&
+		       press_control(panel, originals[1]) && until([&] { return panel_selected(false); }),
+	       "restoring a shared member did not restore both pin kinds and full-scope selection");
+	{
+		// Hold the video queue without retaining any OBS or graphics locks so
+		// this real panel press is accepted before its original is detached,
+		// then executed after detachment. A bounded wait cannot hang OBS.
+		struct Barrier {
+			std::mutex mutex;
+			std::condition_variable changed;
+			std::atomic_bool entered{false}, finished{false}, expired{false};
+			bool released = false;
+			void release()
+			{
+				{
+					std::lock_guard lock(mutex);
+					released = true;
+				}
+				changed.notify_all();
+			}
+		};
+		auto barrier = std::make_shared<Barrier>();
+		struct Release {
+			std::shared_ptr<Barrier> barrier;
+			~Release() { barrier->release(); }
+		} release{barrier};
+		obs_queue_task(
+			OBS_TASK_GRAPHICS,
+			[](void *opaque) {
+				std::unique_ptr<std::shared_ptr<Barrier>> held(
+					static_cast<std::shared_ptr<Barrier> *>(opaque));
+				auto &barrier = **held;
+				std::unique_lock lock(barrier.mutex);
+				barrier.entered = true;
+				barrier.expired = !barrier.changed.wait_for(lock, std::chrono::seconds(8),
+									    [&] { return barrier.released; });
+				barrier.finished = true;
+			},
+			new std::shared_ptr<Barrier>(barrier), false);
+		const bool queued = until([&] { return barrier->entered.load(); }) &&
+				    press_control(panel, originals[0]);
+		obs_source_filter_remove(owner, link);
+		barrier->release();
+		expect(queued && until([&] {
+			       OBSDataAutoRelease state = get(controller);
+			       return barrier->finished.load() && !barrier->expired.load() &&
+				      QString::fromUtf8(obs_data_get_string(state, "error"))
+					      .contains("original panel control") &&
+				      !obs_sceneitem_visible(home_first) && obs_sceneitem_visible(home_second) &&
+				      !obs_sceneitem_visible(other_first) && obs_sceneitem_visible(other_second) &&
+				      scene_is(secondary_source);
+		       }),
+		       "a queued original pin changed a scoped scene after its original filter was detached");
+		expect(press_control(panel, pinned[0]) && until([&] {
+			       return obs_sceneitem_visible(home_first) && !obs_sceneitem_visible(home_second) &&
+				      obs_sceneitem_visible(other_first) && !obs_sceneitem_visible(other_second) &&
+				      current(controller, group_id.toUtf8().constData()) == first_choice &&
+				      scene_is(secondary_source);
+		       }),
+		       "detaching the original prevented its retained controller group from controlling both scenes");
+		obs_source_filter_add(owner, link);
+		expect(until([&] { return controls_enabled(temporary_pins, true); }) &&
+			       press_control(panel, originals[1]) && until([&] { return panel_selected(false); }),
+		       "reattaching the same original did not restore its stable shared pins");
+	}
+
+	if (!click(panel, "viewsManageControllers") || !select_combo_option(scenes, uuid(secondary_source)) ||
+	    !select_combo_option(controllers, controller_id) || !select_combo_option(scope, group_id)) {
+		expect(false, "the shared controller could not be reopened before removing its additional scene");
+		return;
+	}
+	obs_source_set_name(secondary_source, "Control panel other scene renamed");
+	expect(until([&] {
+		       return scope_saved() && scenes->currentData().toString() == uuid(secondary_source) &&
+			      controllers->currentData().toString() == controller_id &&
+			      scope->currentData().toString() == group_id && summary &&
+			      summary->text().contains("Control panel other scene renamed") &&
+			      choice(controller, group_id.toUtf8().constData(), "Scope first camera") == first_choice &&
+			      choice(controller, group_id.toUtf8().constData(), "Scope second camera") == second_choice;
+	       }),
+	       "renaming an additional scene lost shared manager access, its summary or choice identities");
+	if (!open_group(group_id)) {
+		expect(false, "the additional scene could not be edited from its shared manager entry");
+		return;
+	}
+	bool removed = false;
+	if (auto *saved_scope = form->findChild<QListWidget *>("viewsGroupScope"))
+		for (int i = 0; i < saved_scope->count(); ++i)
+			if (saved_scope->item(i)->data(Qt::UserRole).toString() ==
+			    "Control panel other scene renamed") {
+				saved_scope->item(i)->setCheckState(Qt::Unchecked);
+				removed = true;
+			}
+	if (!removed || !click(form, "viewsGroupSave") || !until([&] { return !form || !form->isVisible(); }) ||
+	    !click(editor, "viewsEditorSave") || !until([&] { return !editor || !editor->isVisible(); }) ||
+	    !until([&] { return !scope_saved() && controllers->findData(controller_id) < 0; })) {
+		expect(false, "removing an additional scene did not remove shared manager access after Apply changes");
+		return;
+	}
+	expect(scene_is(secondary_source) && select_combo_option(scenes, uuid(owner)) &&
+		       select_combo_option(controllers, controller_id) && select_combo_option(scope, group_id) &&
+		       click_row(choices, QString::fromStdString(first_choice)) && until([&] {
+			       return obs_sceneitem_visible(home_first) && !obs_sceneitem_visible(home_second) &&
+				      !obs_sceneitem_visible(other_first) && obs_sceneitem_visible(other_second) &&
+				      scene_is(secondary_source);
+		       }),
+	       "removing shared access deleted its original group, changed Program or kept controlling the removed scene");
+	expect(configure(controller, original_config) && until([&] { return !imported_group(controller, link); }) &&
+		       click(panel, "viewsBackToControls") && until([&] {
+			       return matches(target(button_id(panel, originals[0])), {{"kind", "link"},
+										       {"filterUuid", uuid(link)},
+										       {"sourceUuid", uuid(first)}}) &&
+				      matches(target(button_id(panel, originals[1])), {{"kind", "link"},
+										       {"filterUuid", uuid(link)},
+										       {"sourceUuid", uuid(second)}});
+		       }),
+	       "removing the imported group did not restore the same original pins to their native controls");
+	expect(restore.remove_pins(), "removing the temporary scoped controls did not restore the saved panel");
 	if (issues.size() == before)
 		blog(LOG_INFO,
-		     "[StageKit controls test] PASS: imported Other scenes selection stays draft until Apply changes, survives reopening, and drives both layouts through management and pinned controller choices while Program remains outside the owner scene");
+		     "[StageKit controls test] PASS: imported shared scope stays draft until Apply changes; the same controller is accessible from covered scenes only; original and controller pins drive both layouts, reflect mixed and unavailable state, survive scene rename, and restore native ownership when shared access is removed without changing Program");
 }
 
 inline void check(QStringList &issues, bool restart)

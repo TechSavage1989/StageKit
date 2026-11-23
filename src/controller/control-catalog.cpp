@@ -299,25 +299,94 @@ Aliases controller_controls(obs_data_array_t *out)
 	return aliases;
 }
 
-Data effective_settings(const Inventory::Filter &filter, const Alias *alias)
+void imported_controls(obs_data_array_t *out, const Inventory &inventory, const Inventory::Filter &filter,
+		       const Alias &alias)
 {
-	if (alias)
-		return object(alias->definition.get(), "settings");
+	const std::string kind = text(alias.group.get(), "kind");
+	if (kind != "modes" && kind != "one" && kind != "together")
+		return;
+	const std::string fid = obs_source_get_uuid(filter.value.get());
+	const std::string parent_id = obs_source_get_uuid(filter.parent.get());
+	const std::string where =
+		section({obs_source_get_name(filter.parent.get()), obs_source_get_name(filter.value.get())});
+	const char *filter_type = kind == "modes" ? kSceneModesId : kVisibilityLinkId;
+	auto origin = object(alias.definition.get(), "origin");
+	const bool identity = is_kind(filter.value.get(), filter_type) && text(origin.get(), "filterUuid") == fid &&
+			      text(origin.get(), "type") == filter_type &&
+			      text(alias.controller.get(), "sceneUuid") == parent_id;
+	const bool enabled = obs_source_enabled(filter.value.get()) &&
+			     obs_data_get_bool(alias.controller.get(), "enabled") &&
+			     obs_data_get_bool(alias.group.get(), "enabled");
+	const bool controller_ready = obs_data_get_bool(alias.controller.get(), "available");
+	const bool ready = identity && enabled && controller_ready && obs_data_get_bool(alias.group.get(), "available");
+	const std::string reason = !identity           ? label("Controls.Missing")
+				   : !enabled          ? label("Controls.Disabled")
+				   : !controller_ready ? text(alias.controller.get(), "reason")
+						       : text(alias.group.get(), "reason");
+	const auto action_for = [&](const std::string &choice, const char *command = "select") {
+		auto action = target("controller");
+		set_text(action.get(), "controllerId", text(alias.controller.get(), "controllerId"));
+		set_text(action.get(), "groupId", text(alias.group.get(), "id"));
+		set_text(action.get(), "choiceId", choice);
+		set_text(action.get(), "command", command);
+		set_text(action.get(), "filterUuid", fid);
+		set_text(action.get(), "parentUuid", parent_id);
+		return action;
+	};
+	// Existing pins keep the original filter/source identity, but the Views
+	// panel operates the complete imported group. The native compatibility
+	// alias still serves existing external keys with their original behavior.
+	auto choices = entries(alias.group.get(), "choices");
+	for (size_t i = 0; i < obs_data_array_count(choices.get()); ++i) {
+		auto choice = data(obs_data_array_item(choices.get(), i));
+		const std::string choice_id = text(choice.get(), "id");
+		const std::string name = text(choice.get(), "name");
+		auto action = action_for(choice_id);
+		std::string id;
+		bool member_present = true;
+		if (kind == "modes") {
+			id = stable_id("mode", {fid, choice_id});
+			set_text(action.get(), "modeId", choice_id);
+		} else if (kind == "one") {
+			const auto *item = inventory.find(parent_id, name);
+			auto member = source(obs_get_source_by_name(name.c_str()));
+			const std::string sid = item     ? item->source_id
+						: member ? obs_source_get_uuid(member.get())
+							 : "";
+			id = sid.empty() ? stable_id("link-missing", {fid, name})
+					 : stable_id("link-choice", {fid, sid});
+			set_text(action.get(), "sourceUuid", sid);
+			obs_data_set_bool(action.get(), "shown", true);
+			member_present = item && member && !obs_source_removed(member.get()) &&
+					 sid == obs_source_get_uuid(member.get());
+		} else {
+			id = stable_id("link-set", {fid, choice_id});
+			obs_data_set_bool(action.get(), "shown", choice_id == "on");
+		}
+		const bool available = ready && member_present && obs_data_get_bool(choice.get(), "available");
+		append(out, id, name, where, obs_data_get_bool(choice.get(), "active"), available,
+		       !ready            ? reason
+		       : !member_present ? label("Controls.Missing")
+					 : text(choice.get(), "reason"),
+		       false, action.get());
+	}
+	if (kind == "modes" && obs_data_get_bool(alias.group.get(), "allowNone")) {
+		auto action = action_for({}, "none");
+		append(out, stable_id("mode-none", {fid}), label("Views.None"), where,
+		       text(alias.group.get(), "current").empty(), ready, reason, false, action.get());
+	}
+}
+
+Data effective_settings(const Inventory::Filter &filter)
+{
 	auto saved = data(obs_source_get_settings(filter.value.get()));
 	auto resolved = data(obs_data_get_defaults(saved.get()));
 	obs_data_apply(resolved.get(), saved.get());
 	return resolved;
 }
-bool alias_ready(const Alias *alias)
-{
-	return !alias ||
-	       (obs_data_get_bool(alias->controller.get(), "enabled") &&
-		obs_data_get_bool(alias->controller.get(), "available") &&
-		obs_data_get_bool(alias->group.get(), "enabled") && obs_data_get_bool(alias->group.get(), "available"));
-}
 
 void legacy_modes(obs_data_array_t *out, const Inventory &inventory, const Inventory::Filter &filter,
-		  const Alias *alias, const std::vector<SceneModesLook> &looks)
+		  const std::vector<SceneModesLook> &looks)
 {
 	const std::string parent_name = obs_source_get_name(filter.parent.get());
 	const std::string filter_name = obs_source_get_name(filter.value.get());
@@ -328,8 +397,8 @@ void legacy_modes(obs_data_array_t *out, const Inventory &inventory, const Inven
 		return;
 	const auto &look = *found;
 	const std::string fid = obs_source_get_uuid(filter.value.get());
-	const bool ready = look.enabled && alias_ready(alias);
-	const auto settings = effective_settings(filter, alias);
+	const bool ready = look.enabled;
+	const auto settings = effective_settings(filter);
 	std::vector<std::string> covered{obs_source_get_uuid(filter.parent.get())};
 	bool scenes_exist = true;
 	for (const auto &name : look.scenes) {
@@ -353,7 +422,7 @@ void legacy_modes(obs_data_array_t *out, const Inventory &inventory, const Inven
 		set_text(action.get(), "command", "on");
 		append(out, stable_id("mode", {fid, mode.id}), mode.name.empty() ? mode.id : mode.name,
 		       section({parent_name, filter_name}), look.current == mode.id, ready && present,
-		       !ready ? label("Controls.Disabled") : label("Controls.Missing"), !alias, action.get());
+		       !ready ? label("Controls.Disabled") : label("Controls.Missing"), true, action.get());
 	}
 	if (look.allow_none) {
 		auto action = target("mode");
@@ -362,13 +431,13 @@ void legacy_modes(obs_data_array_t *out, const Inventory &inventory, const Inven
 		set_text(action.get(), "command", "none");
 		append(out, stable_id("mode-none", {fid}), label("Views.None"), section({parent_name, filter_name}),
 		       look.current.empty(), ready && scenes_exist,
-		       !ready ? label("Controls.Disabled") : label("Controls.Missing"), !alias, action.get());
+		       !ready ? label("Controls.Disabled") : label("Controls.Missing"), true, action.get());
 	}
 }
 
-void legacy_link(obs_data_array_t *out, const Inventory &inventory, const Inventory::Filter &filter, const Alias *alias)
+void legacy_link(obs_data_array_t *out, const Inventory &inventory, const Inventory::Filter &filter)
 {
-	auto settings = effective_settings(filter, alias);
+	auto settings = effective_settings(filter);
 	const long long mode = obs_data_get_int(settings.get(), "mode");
 	if (mode != 0 && mode != 1)
 		return; // Follow is an automatic rule, never a manual choice.
@@ -387,7 +456,7 @@ void legacy_link(obs_data_array_t *out, const Inventory &inventory, const Invent
 		if (item && item->visible)
 			++visible_count;
 	}
-	const bool enabled = obs_source_enabled(filter.value.get()) && alias_ready(alias);
+	const bool enabled = obs_source_enabled(filter.value.get());
 	const std::string reason = !enabled ? label("Controls.Disabled") : label("Controls.Missing");
 	if (mode == 0) {
 		for (const auto &name : members) {
@@ -405,7 +474,7 @@ void legacy_link(obs_data_array_t *out, const Inventory &inventory, const Invent
 							   : stable_id("link-choice", {fid, sid});
 			append(out, id, name, where, item && item->visible && visible_count == 1,
 			       enabled && present && item && member && sid == obs_source_get_uuid(member.get()), reason,
-			       !alias, action.get());
+			       true, action.get());
 		}
 	} else {
 		for (const bool shown : {true, false}) {
@@ -415,7 +484,7 @@ void legacy_link(obs_data_array_t *out, const Inventory &inventory, const Invent
 			obs_data_set_bool(action.get(), "shown", shown);
 			append(out, stable_id("link-set", {fid, shown ? "on" : "off"}),
 			       label(shown ? "Views.On" : "Views.Off"), where, present && (shown ? all_on : all_off),
-			       enabled && present, reason, !alias, action.get());
+			       enabled && present, reason, true, action.get());
 		}
 	}
 }
@@ -454,10 +523,13 @@ Array catalog()
 	for (const auto &filter : inventory.filters) {
 		const auto found = aliases.find(obs_source_get_uuid(filter.value.get()));
 		const Alias *alias = found == aliases.end() ? nullptr : &found->second;
-		if (is_kind(filter.value.get(), kSceneModesId))
-			legacy_modes(out.get(), inventory, filter, alias, looks);
+		if (alias &&
+		    (is_kind(filter.value.get(), kSceneModesId) || is_kind(filter.value.get(), kVisibilityLinkId)))
+			imported_controls(out.get(), inventory, filter, *alias);
+		else if (is_kind(filter.value.get(), kSceneModesId))
+			legacy_modes(out.get(), inventory, filter, looks);
 		else if (is_kind(filter.value.get(), kVisibilityLinkId))
-			legacy_link(out.get(), inventory, filter, alias);
+			legacy_link(out.get(), inventory, filter);
 		else if (is_kind(filter.value.get(), kShowInScenesId)) {
 			const std::string fid = obs_source_get_uuid(filter.value.get());
 			const std::string parent_name = obs_source_get_name(filter.parent.get());
@@ -570,12 +642,17 @@ bool view_control_press(obs_data_t *requested, std::string &why, bool show_scene
 		go_to_scene(std::move(go));
 		return true;
 	}
-	if (kind == "controller")
+	if (kind == "controller") {
+		// Native pins retain their identities through the controller queue.
+		// Direct controller controls have no legacy fields and use no guard.
 		return scene_controller_command(obs_data_get_string(action.get(), "controllerId"),
 						obs_data_get_string(action.get(), "groupId"),
 						obs_data_get_string(action.get(), "choiceId"),
 						obs_data_get_string(action.get(), "viewId"),
-						obs_data_get_string(action.get(), "command"), why, show_scene);
+						obs_data_get_string(action.get(), "command"), why, show_scene,
+						{text(action.get(), "filterUuid"), text(action.get(), "parentUuid"),
+						 text(action.get(), "sourceUuid")});
+	}
 	if (kind == "source")
 		return press_source(action.get(), why);
 	auto filter = source(obs_get_source_by_uuid(obs_data_get_string(action.get(), "filterUuid")));

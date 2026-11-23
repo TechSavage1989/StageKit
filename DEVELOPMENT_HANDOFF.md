@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | feat/views-icon-library, PR279 for beta257. Beta256 is published. The first icon-library revision passed Windows and shared checks; reusable sections, source captions, editor clarity and shared-scope regressions now require a new exact-head run. The owner's Component-Capture-Scene report remains under investigation. |
+| Working branch | feat/views-icon-library, PR279 for beta257. Beta256 is published. Head 6557fe21 passed all Windows and shared gates. The owner explicitly requested an implementation fix after additional scenes failed; manager discovery and existing imported panel buttons now have confirmed defects, with fixes and focused regressions in progress. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -23,92 +23,97 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Built-in icons for StageKit Views
+## Shared scene controls, reusable sections and built-in icons
 
-PR279 head c1ecf5954ac8d0b0941874051ef2dd4cca6da0ec passed the seven shared/Windows package gates
-and actual Windows frontend job 138021598025 in run 45268464499, including first run and real restart.
-The tested DLL SHA-256 was 85a8f98159fa14ad9af10e726a2792c52f78cf398f8c722549dcbcc8d7051fc5.
-Artifact 14864182586 has SHA-256 af0fd330dbe2c04fb79ce5befeaddd0f05f8ed2b778cebae453bb616cbe33653.
-Visual review found clipped icon captions despite the functional pass. Each native list item now gets
-the full tile size hint, with three lines of label space; new native-style text bounds assertions and
-another actual Windows capture are required. Do not publish the clipped initial library capture.
+The owner's latest instruction is to fix the implementation because selecting additional scenes did
+not make their controls accessible. Two production defects are confirmed by source inspection:
 
-Head 531c799275780cb854cb2a05d6f1db04870d24a2 passed all seven shared/Windows package gates.
-Windows frontend job 138039901014 in run 45273713475 passed the new shared-scope regression but failed
-the two saved-panel checks after collection switching; restart did not run. This exposed a production
-section persistence bug: customSections was an array of primitive strings, which OBS's JSON importer
-skips because its data arrays contain objects. Assigned names could be recovered from pins, but an
-unused reusable name disappeared. The editor now writes the existing value_list object records and
-reads them through values, which also accepts primitive draft input. The strict unused-name collection
-and restart assertions remain required. The adjacent collapsedSections preference had the same string
-array defect and now uses the same object-record helpers, with one collapsed list section also checked
-after collection switching and restart. The corrected source still needs another Windows run.
+- The manager filtered controllers only by their owning scene UUID. Saved group scope did not make a
+  controller discoverable while browsing another covered scene.
+- Existing panel pins for an actively imported Link Visibility filter still dispatched the original
+  compatibility alias, whose native link command targets its first scene. The group could already
+  apply a controller command across its saved scope, but an original panel pin bypassed that command.
 
+The fix keeps one controller and one group definition. Manager discovery includes effective group
+scope, inherited Scene Modes share_scenes and explicit combined-view destinations. Additional-scene
+browsing shows applicable groups/views and retains valid controller/group selection. A visible Applies
+to summary distinguishes a group's coverage from the browsed scene. Import and Remove still target
+that controller's actual owning scene. The group editor includes inherited mode scope and only
+normalizes it when the scene list is edited. Program/Preview must not change while browsing management.
+
+The catalog maps existing active-import pins to their owning controller group while preserving the
+original stable IDs and saved labels, sections, icons and order. Active/available state comes from the
+complete group. Original filter, parent, type and member identities remain guarded at acceptance and
+again before queued execution through the optional SceneControllerAliasTarget. Inactive imports
+and removed groups return to original behavior. External native filter-targeted keys and hotkeys keep
+their prior semantics; StageKit View keys target the controller scope. No all-scene defaults, duplicate
+controllers or name-based group merging are introduced.
+
+The actual OBS regression must pin an original choice before import, apply additional scope through
+the real editor, browse the second scene and find the same controller/group, and select captures with
+the owner offscreen through both the manager and original pin. Check complete actual visibility and
+state, unchanged Program, missing/disabled members, and loss of remote access after scope removal.
+The earlier regression only proved explicit controller commands and did not exercise these failed
+paths. A current user export is not a release prerequisite for these confirmed implementation fixes.
+Do not claim the user's physical capture output was tested; use the fictional Windows fixture.
+
+Read-only UI review found no further concrete defect. One follow-up timing risk remains unproven:
+a scene rename can refresh its new frontend name before the native scope-name reconciliation. Access
+recovers afterward, but a selected non-first shared group might briefly fall back to the default.
+The current fixture checks recovered access and stable identities; no additional preference-cache
+mechanism was added to this focused fix.
+
+Head 6557fe21aa3c64779cc8f07969f30fac4c474238 passed all seven shared/Windows package gates and
+actual Windows frontend job 138046845530 in run 45275714525, including first run and a real restart.
+The tested DLL SHA-256 was 142b9c243ee3a2bca7f7c483dfba34a472c46056f032cf3ef0cb2f8c1dd816c3.
+Artifact 14868731546 has SHA-256 b60b24359197cd60c46a1682521e10ee7a4f24888f80730a36c6a7360c01a082.
+All four timing trials completed their requested 450 frames; these software diagnostics do not prove
+hardware performance. The new shared-access changes require another exact-head Windows/shared run,
+actual affected UI captures and visual review before merge. Beta257 still belongs to PR279; check main
+for the next release number immediately before pushing and merging. Follow the Windows-first release
+policy and publish through the normal main workflow once the required gates pass.
+
+Earlier head 531c799275780cb854cb2a05d6f1db04870d24a2 passed the seven package/shared gates and the
+original scoped-controller tests, but Windows job 138039901014 failed unused-section persistence on
+collection switching. OBS data arrays retain objects, so primitive customSections and collapsedSections
+arrays silently lost their values. Both now use value_list object records and values readers. Strict
+unused-name and collapsed-heading assertions passed collection switching and restart at 6557fe21.
 Artifact 14866029226 has SHA-256 6331fff3e98453a032426a47ec274954a736ff8a9e993830b3528b77837a05c1.
-Its actual Windows captures were visually reviewed: all icon captions fit, the editable Section row
-and icon choices fit the panel editor, and the controller editor shows Apply changes and pending edits.
-The five affected captures are now in docs/images. These captures precede the serialization correction,
-which changes saved data only; inspect the next run's captures for any visible difference before merge.
-The imported-group core test and actual Other scenes editor/management/pinned-choice regression both
-passed on this revision. That verifies the supported workflow, not the owner's unexamined current file.
+Its actual Windows captures were visually reviewed and committed in docs/images. Four were pixel
+identical in the 6557fe21 run; the panel editor only differed in inventory order. The scope UI now needs
+new actual captures. Never substitute diagnostic or generated screenshots for the real frontend.
 
-The owner subsequently reported that the imported Captures group responds in its home layout but
-not in Component-Capture-Scene. The screenshots do not show the saved Other scenes scope. A historical
-collection contains all five capture sources in both layouts, but predates the controller setup and
-cannot establish current scope, ownership or overlapping rules. No production backend defect is yet
-confirmed. New regressions save and reopen scope through the actual editor and exercise an imported
-choose-one group with its owner offscreen, including a secondary native exclusive filter and reload.
-Do not claim the reported setup is fixed until its saved scope or current collection is verified.
+Initial head c1ecf5954ac8d0b0941874051ef2dd4cca6da0ec passed Windows and shared checks, but visual
+review caught clipped icon captions. Each native item now receives the full tile size hint with label
+space. Native text-bounds checks and actual Windows review at the later heads confirm the correction.
+The initial artifact 14864182586 has SHA-256 af0fd330dbe2c04fb79ce5befeaddd0f05f8ed2b778cebae453bb616cbe33653;
+its DLL was 85a8f98159fa14ad9af10e726a2792c52f78cf398f8c722549dcbcc8d7051fc5. Do not publish its clipped capture.
 
 The nested editor workflow was easy to mistake for a completed save. Inner group, mode and view
 buttons now say Done; the outer configuration uses Apply changes and shows pending edits. Changes
 remain an atomic draft until the outer action; Cancel still discards them. The guide names both steps.
 
-The same update now also covers reusable section presets and Show in Scenes captions. The owner asked
-for a selectable Section list and custom names offered to other controls after creation. The editor
-uses an editable preset/custom dropdown and Add section action; customSections is saved separately
-from pins in stagekit.views.panel, including unused names. Existing plain section strings seed the
-choices. Cancel keeps additions in the draft, and collection changes discard them. The owner also
-showed a source control displaying its generic Show in Scenes filter name. Catalog captions now use
-the owning source, adding the filter name only for multiple controls on that source. UUID targets and
-explicit custom labels stay unchanged. Frontend coverage checks reuse, persistence and naming.
+The panel editor now has an editable Section preset/custom dropdown and Add section action. Saved
+customSections are separate from pins, including unused names, and older pin strings seed the list.
+New names remain in the draft until Save; Cancel and collection changes discard them. Show in Scenes
+captions use the owning source, adding the filter name only when the source has several such controls.
+UUID targets and explicit custom labels remain intact. Actual frontend coverage verifies both changes.
 
-The owner asked whether scenes can be buttons as well as a dropdown, and expected both custom images
-and an integrated library using the Stream Deck artwork. Beta256 already supports direct scene pins
-under Edit panel > Scenes, shown in List or Buttons, and custom images under Choose icon. The guide now
-states the scene-button steps explicitly. The next beta adds a searchable thumbnail library alongside
-a clearly named Custom image option, with scene, source and control categories and the six existing
-StageKit color palettes. Both choices retain the bounded embedded PNG format used by saved panels.
+The icon library offers 148 semantic choices: 47 scenes, 86 sources and 15 controls. It reuses 780
+tracked companion PNG resources across Mono, Violet, Ocean, Forest, Ember and Neon, totaling 3,195,075
+bytes. scripts/make-view-icon-library.py deterministically generates the catalog, Qt resource list and
+locale block; repository checks run its --check mode. The native plugin needs no installed companion
+or external image directory. Library and Custom image choices retain bounded embedded iconPng data.
+Actual frontend coverage verifies searching, categories, palettes, no-match clearing, selection,
+cancellation, custom images, collection switching and a real restart. Library changes add no scene
+commands, per-frame inventory or saved paths. The companion remains 0.43.0.0.
 
-The library reuses existing tracked companion artwork inside a native Qt resource; it does not require
-the Stream Deck application or companion to be installed. A deterministic catalog generator and check
-keep the native choices tied to the canonical generic scene/source types and actual artwork paths.
-No original image file paths belong in scene collections. The actual OBS frontend fixture must cover
-library selection and cancellation, searching, categories, palette changes, custom images and library
-icons surviving collection reload and a real restart. Update the actual Windows editor and panel
-captures and include a library capture before merging. No user OBS configuration has been edited.
-
-The generated library contains 148 semantic choices (47 scenes, 86 sources and 15 controls), sharing
-130 unmarked images per palette across Mono, Violet, Ocean, Forest, Ember and Neon. The 780 original
-PNGs total 3,195,075 bytes. scripts/make-view-icon-library.py produces the catalog, Qt resource list
-and ViewIcons locale block; repository checks run its --check mode. Actual Qt RCC compilation and
-decoding of every resource passed locally, and every resource matched the original file's bytes.
-The frontend test preserves a custom image on one control and selects an Ocean camera library image
-on another, checking the actual pixels again after collection reload and restart. It also exercises
-category/search filtering, no-match selection clearing, palette changes, Use icon and Cancel. The
-native library adds no scene commands, per-frame work, installed companion dependency or saved paths.
-
-During this update, the owner clarified that scene/layout choice should be independent of a camera or
-content group's current selection. The existing controller supports this: clear the panel's Switch to
-selection's scene option and explicit mode/view destinations, extend one group's Other scenes scope,
-and press its controller choices alongside direct scene buttons. Choose-one sources must exist in
-each covered scene; named-mode sources may be distributed across that set. Separate same-named groups
-are not shared. Legacy imported-filter controls target their first-scene compatibility runtime, so
-use controller-group pins for shared scope. Standalone Link Visibility's Also in other scenes keeps its
-native hide-only cross-scene behavior for an exclusive selection; it is not a substitute for the
-controller's scoped command. The guide now explains these distinctions. Backend inspection supports
-this workflow, but the owner's newer report above remains unresolved pending saved-configuration
-evidence and the new actual Windows scope regression.
+For independent scene/layout and camera/content choices, clear the panel's Switch to selection's scene
+option and any explicit mode/view destinations, then include the required layouts in one group's
+Applies to list. Choose-one members must exist in every covered scene; named-mode members may be
+spread across that set. Separate same-named groups remain independent. Direct scene buttons change
+the layout without changing the selected group. Native Sources eye changes keep their established
+per-scene behavior. No user OBS configuration or private screenshots have been published or changed.
 
 Beta256 completed PR278, squash merge 9eb3bfae43e5c8bb806eed95d108cfd243219368. The final reviewed
 head d76590808b4a1683d03ceeeab8b4907eb257813e passed all eight required Windows/shared jobs, including

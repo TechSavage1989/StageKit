@@ -92,6 +92,20 @@ missing target must stay unavailable rather than binding to another source with 
 Imported originals remain resolvable for existing pins but are not duplicated on an automatic panel.
 An explicitly customized empty panel is different from automatic discovery.
 
+The manager lists a controller in its owning scene and in every scene covered by its groups, including
+inherited Scene Modes share_scenes and explicit combined-view destinations. When browsing a covered
+scene, show its applicable groups and views, retain the same controller/group identities where valid,
+and identify the actual owner. Import and Remove still operate on that owner, never the browsed scene.
+Show the selected group's effective Applies to scope. The owner is always included; additional scenes
+remain explicit. Only an actual scope edit normalizes inherited Scene Modes scope into the draft.
+Do not create per-scene copies, merge same-named groups or silently extend scope to the whole collection.
+
+Existing Views panel pins for actively imported native controls dispatch the owning controller group
+and read its complete scoped state. Preserve their legacy stable IDs and saved appearance, and still
+validate the original filter, parent, type and source identity. Disabled or missing members must not
+permit a partial scoped command. Inactive imports and removed groups retain the original fallback
+behavior. This panel mapping does not change ordinary external native filter keys or hotkey scope.
+
 The panel reads actual active and available state, never just the last button pressed. Coalesce
 native change signals on the frontend, retain the visible-only fallback, and avoid rebuilding the
 button widgets for state-only changes. Do not add per-frame inventories or render work. Close panel
@@ -141,9 +155,10 @@ panel button labels across source/filter renames and refreshed fallback names.
 
 Nested group, mode and combined-view editors update the outer configuration draft. Their Done action
 does not publish native settings. Keep Apply changes on the outer editor, a pending-change notice,
-and atomic Cancel behavior. Exercise scope through the actual Other scenes editor, then reopen it
-after applying. Scoped imported groups must accept choices with their owning scene offscreen and
-apply to every covered scene without changing Program.
+and atomic Cancel behavior. Exercise scope through the actual Applies to editor, then reopen it after
+applying. Scoped imported groups must be discoverable from each covered scene and accept choices with
+their owning scene offscreen. Test both controller choices and original pins saved before import;
+both apply to every covered scene without changing Program. Removing scope removes remote access.
 
 Panel scene navigation belongs in the native queued command, after successful validation and application.
 An explicit mode or view destination takes priority over the parent scene. Studio Mode changes Preview.

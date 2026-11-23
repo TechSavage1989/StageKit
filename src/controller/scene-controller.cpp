@@ -275,6 +275,7 @@ struct Command {
 	std::string group, choice, view, how;
 	bool show_scene = false;
 	std::string scene_uuid;
+	SceneControllerAliasTarget alias;
 };
 struct Plan {
 	std::vector<std::pair<Group *, std::string>> selections;
@@ -365,6 +366,40 @@ std::string source_choice(const Group &group, const std::string &choice)
 		if (text(ids.get(), name.c_str()) == choice)
 			return name;
 	return {};
+}
+
+bool has_alias_target(const SceneControllerAliasTarget &alias)
+{
+	return !alias.filter_uuid.empty() || !alias.parent_uuid.empty() || !alias.source_uuid.empty();
+}
+
+bool alias_target_valid(const Group &group, const std::string &choice, const SceneControllerAliasTarget &alias,
+			obs_source_t *parent, std::string &why)
+{
+	if (!has_alias_target(alias))
+		return true;
+	SourceRef original(obs_get_source_by_uuid(alias.filter_uuid.c_str()));
+	const bool modes = group.kind == "modes";
+	if (!group.imported || group.origin != alias.filter_uuid || group.owner_uuid != alias.parent_uuid ||
+	    (!modes && group.kind != "one" && group.kind != "together") || !parent || obs_source_removed(parent) ||
+	    alias.parent_uuid != obs_source_get_uuid(parent) || !original.source ||
+	    obs_source_removed(original.source) || obs_filter_get_parent(original.source) != parent ||
+	    !is_kind(original.source, modes ? kSceneModesId : kVisibilityLinkId)) {
+		why = "The original panel control is missing or no longer belongs to this imported group";
+		return false;
+	}
+	if (group.kind == "one") {
+		SourceRef member(obs_get_source_by_uuid(alias.source_uuid.c_str()));
+		if (!member.source || obs_source_removed(member.source) ||
+		    source_choice(group, choice) != obs_source_get_name(member.source)) {
+			why = "The original panel source is missing or no longer matches this choice";
+			return false;
+		}
+	} else if (!alias.source_uuid.empty()) {
+		why = "The original panel source no longer belongs to a choose-one group";
+		return false;
+	}
+	return true;
 }
 
 bool choice_available(const Group &group, const std::string &choice, std::string &why)
@@ -494,6 +529,10 @@ bool make_plan(Runtime &runtime, const Command &command, Plan &plan, std::string
 		return false;
 	}
 	if (!command.view.empty()) {
+		if (has_alias_target(command.alias)) {
+			why = "An imported panel control must select its original group";
+			return false;
+		}
 		if (!command.choice.empty() || (command.how != "select" && command.how != "on")) {
 			why = "A saved view supports Select only";
 			return false;
@@ -576,7 +615,7 @@ bool make_plan(Runtime &runtime, const Command &command, Plan &plan, std::string
 		why = "command must be select, on, next, toggle or none";
 		return false;
 	}
-	if (!choice_available(*group, choice, why))
+	if (!alias_target_valid(*group, choice, command.alias, parent, why) || !choice_available(*group, choice, why))
 		return false;
 	plan.selections.emplace_back(group, choice);
 	return plan_navigation(command, plan, parent, why);
@@ -1767,7 +1806,8 @@ bool scene_controller_configure(const char *controller_id, obs_data_t *config, s
 }
 
 bool scene_controller_command(const char *controller_id, const char *group_id, const char *choice_id,
-			      const char *view_id, const char *command, std::string &why, bool show_scene)
+			      const char *view_id, const char *command, std::string &why, bool show_scene,
+			      const SceneControllerAliasTarget &alias)
 {
 	SourceRef held(nullptr);
 	Controller *self = find_controller(controller_id, held, why);
@@ -1777,8 +1817,13 @@ bool scene_controller_command(const char *controller_id, const char *group_id, c
 		why = "command is required";
 		return false;
 	}
-	return self->command({group_id ? group_id : "", choice_id ? choice_id : "", view_id ? view_id : "", command,
-			      show_scene},
+	return self->command({group_id ? group_id : "",
+			      choice_id ? choice_id : "",
+			      view_id ? view_id : "",
+			      command,
+			      show_scene,
+			      {},
+			      alias},
 			     why);
 }
 

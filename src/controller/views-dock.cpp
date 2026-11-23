@@ -127,6 +127,61 @@ QJsonArray value_list(const QStringList &names)
 	return result;
 }
 
+QStringList additional_group_scenes(const QJsonObject &group)
+{
+	auto result = values(group["scope"]);
+	if (group["kind"].toString() == "modes")
+		for (const auto &name : values(group["settings"].toObject()["share_scenes"]))
+			if (!result.contains(name))
+				result.append(name);
+	return result;
+}
+
+QStringList group_scenes(const QJsonObject &controller, const QJsonObject &group)
+{
+	QStringList result;
+	const auto owner = controller["scene"].toString();
+	if (!owner.isEmpty())
+		result.append(owner);
+	for (const auto &name : additional_group_scenes(group))
+		if (!result.contains(name))
+			result.append(name);
+	return result;
+}
+
+QStringList view_scenes(const QJsonObject &controller, const QJsonObject &view)
+{
+	QStringList result;
+	const auto groups = controller["config"].toObject()["groups"].toArray();
+	for (const QJsonValue value : view["selections"].toArray()) {
+		const auto group = find_id(groups, value.toObject()["groupId"].toString());
+		if (!group.isEmpty())
+			for (const auto &name : group_scenes(controller, group))
+				if (!result.contains(name))
+					result.append(name);
+	}
+	const auto destination = view["scene"].toString();
+	if (!destination.isEmpty() && !result.contains(destination))
+		result.append(destination);
+	return result;
+}
+
+bool controller_covers_scene(const QJsonObject &controller, const QString &uuid, const QString &name)
+{
+	if (controller["sceneUuid"].toString() == uuid)
+		return true;
+	if (name.isEmpty())
+		return false;
+	const auto config = controller["config"].toObject();
+	for (const QJsonValue value : config["groups"].toArray())
+		if (group_scenes(controller, value.toObject()).contains(name))
+			return true;
+	for (const QJsonValue value : config["views"].toArray())
+		if (value.toObject()["scene"].toString() == name)
+			return true;
+	return false;
+}
+
 struct Scene {
 	QString uuid, name;
 };
@@ -282,6 +337,10 @@ void edit_group(QWidget *parent, const QString &scene_uuid, QJsonObject group, s
 	if (creating)
 		group = {{"id", fresh_id()}, {"kind", "modes"}, {"enabled", true}, {"settings", QJsonObject{}}};
 	const QJsonObject original = group["settings"].toObject();
+	OBSSourceAutoRelease owner = obs_get_source_by_uuid(scene_uuid.toUtf8().constData());
+	const QString owner_name = owner ? QString::fromUtf8(obs_source_get_name(owner)) : QString();
+	auto initial_scope = additional_group_scenes(group);
+	initial_scope.removeAll(owner_name);
 	auto *dialog = new QDialog(parent);
 	dialog->setObjectName("viewsGroupEditor");
 	dialog->setAttribute(Qt::WA_DeleteOnClose);
@@ -334,14 +393,14 @@ void edit_group(QWidget *parent, const QString &scene_uuid, QJsonObject group, s
 	rules_layout->addWidget(mode_help);
 	auto *members_label = note(rules, text("Views.Members"));
 	rules_layout->addWidget(members_label);
-	auto *members = checks(rules, "viewsGroupItems", source_names(scene_uuid, values(group["scope"])),
-			       values(original["items"]));
+	auto *members =
+		checks(rules, "viewsGroupItems", source_names(scene_uuid, initial_scope), values(original["items"]));
 	members->setDragDropMode(QAbstractItemView::InternalMove);
 	rules_layout->addWidget(members, 1);
 	auto *leaders_label = note(rules, text("Views.Leaders"));
 	rules_layout->addWidget(leaders_label);
-	auto *leaders = checks(rules, "viewsGroupLeads", source_names(scene_uuid, values(group["scope"])),
-			       values(original["leads"]));
+	auto *leaders =
+		checks(rules, "viewsGroupLeads", source_names(scene_uuid, initial_scope), values(original["leads"]));
 	rules_layout->addWidget(leaders, 1);
 	auto *lead_rule = new QComboBox(rules);
 	lead_rule->setObjectName("viewsLeadRule");
@@ -357,17 +416,28 @@ void edit_group(QWidget *parent, const QString &scene_uuid, QJsonObject group, s
 	auto *scope_page = new QWidget(tabs);
 	auto *scope_layout = new QVBoxLayout(scope_page);
 	scope_layout->addWidget(note(scope_page, text("Views.ScopeHelp")));
+	scope_layout->addWidget(
+		note(scope_page, text("Views.OwnerSceneIncluded").arg(owner_name), "viewsGroupOwnerScene"));
 	QStringList other_scenes;
 	for (const auto &scene : scenes())
 		if (scene.uuid != scene_uuid)
 			other_scenes.append(scene.name);
-	auto *scope = checks(scope_page, "viewsGroupScope", other_scenes, values(group["scope"]));
+	auto *scope = checks(scope_page, "viewsGroupScope", other_scenes, initial_scope);
 	scope_layout->addWidget(scope, 1);
+	auto *applies = note(scope_page, {}, "viewsGroupAppliesTo");
+	scope_layout->addWidget(applies);
+	auto show_scope = [=] {
+		auto names = checked_names(scope);
+		if (!owner_name.isEmpty() && !names.contains(owner_name))
+			names.prepend(owner_name);
+		applies->setText(text("Views.AppliesTo").arg(names.join(", ")));
+	};
+	show_scope();
 	auto *elsewhere_label = note(scope_page, text("Views.Elsewhere"));
 	scope_layout->addWidget(elsewhere_label);
 	auto *elsewhere = checks(scope_page, "viewsGroupElsewhere", all_source_names(), values(original["elsewhere"]));
 	scope_layout->addWidget(elsewhere, 1);
-	tabs->addTab(scope_page, text("Views.OtherScenes"));
+	tabs->addTab(scope_page, text("Views.AppliesToTab"));
 	auto *transition_page = new QWidget(tabs);
 	auto *transition_form = new QFormLayout(transition_page);
 	auto *show =
@@ -416,9 +486,11 @@ void edit_group(QWidget *parent, const QString &scene_uuid, QJsonObject group, s
 	};
 	QObject::connect(kind, &QComboBox::currentIndexChanged, dialog, update_kind);
 	QObject::connect(scope, &QListWidget::itemChanged, dialog, [=] {
+		scope->setProperty("viewsEdited", true);
 		const auto available = source_names(scene_uuid, checked_names(scope));
 		fill_checks(members, available, checked_names(members));
 		fill_checks(leaders, available, checked_names(leaders));
+		show_scope();
 	});
 	QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
 	QObject::connect(buttons, &QDialogButtonBox::accepted, dialog, [=]() mutable {
@@ -447,6 +519,8 @@ void edit_group(QWidget *parent, const QString &scene_uuid, QJsonObject group, s
 			settings["hide_ms"] = hide_ms->value();
 		if (selected == "modes") {
 			settings["allow_none"] = allow_none->isChecked();
+			if (scope->property("viewsEdited").toBool())
+				settings["share_scenes"] = value_list(checked_names(scope));
 		} else {
 			settings["items"] = value_list(checked_names(members));
 			settings["leads"] = value_list(checked_names(leaders));
@@ -469,7 +543,8 @@ void edit_group(QWidget *parent, const QString &scene_uuid, QJsonObject group, s
 			origin["activate"] = ownership->isChecked();
 			group["origin"] = origin;
 		}
-		group["scope"] = value_list(checked_names(scope));
+		if (creating || scope->property("viewsEdited").toBool())
+			group["scope"] = value_list(checked_names(scope));
 		group["settings"] = settings;
 		accept(group);
 		dialog->accept();
@@ -499,12 +574,12 @@ void edit_mode(QWidget *parent, const QString &scene_uuid, const QJsonObject &gr
 	form->addRow(text("Views.Name"), name);
 	layout->addLayout(form);
 	layout->addWidget(note(dialog, text("Views.ModeHelp")));
-	auto *members = checks(dialog, "viewsModeItems", source_names(scene_uuid, values(group["scope"])),
+	auto *members = checks(dialog, "viewsModeItems", source_names(scene_uuid, additional_group_scenes(group)),
 			       values(original[prefix + "sources"]));
 	layout->addWidget(members, 1);
 	auto *hide_label = note(dialog, text("Views.ModeHide"));
 	layout->addWidget(hide_label);
-	auto *hide = checks(dialog, "viewsModeHide", source_names(scene_uuid, values(group["scope"])),
+	auto *hide = checks(dialog, "viewsModeHide", source_names(scene_uuid, additional_group_scenes(group)),
 			    values(original[prefix + "hide"]));
 	layout->addWidget(hide, 1);
 	auto *change_scene = new QCheckBox(text("Views.ChangeScene"), dialog);
@@ -2572,6 +2647,8 @@ public:
 		scope_ = new QComboBox(this);
 		scope_->setObjectName("viewsScope");
 		form->addRow(text("Views.Show"), scope_);
+		applies_ = note(this, {}, "viewsAppliesTo");
+		layout->addWidget(applies_);
 		list_ = new QListWidget(this);
 		list_->setObjectName("viewsList");
 		list_->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -2601,9 +2678,9 @@ public:
 		layout->addLayout(actions);
 		connect(scenes_, &QComboBox::currentIndexChanged, this, [this] {
 			selected_scene_ = scenes_->currentData().toString();
-			selected_controller_.clear();
-			selected_scope_.clear();
 			refresh(true);
+			if (scope_is_views_ && visible_views().isEmpty() && scope_->count() > 1)
+				scope_->setCurrentIndex(1);
 			persist_selection();
 		});
 		connect(controllers_, &QComboBox::currentIndexChanged, this, [this] {
@@ -2628,6 +2705,7 @@ public:
 		});
 		connect(list_, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) { select(item); });
 		connect(list_, &QListWidget::itemActivated, this, [this](QListWidgetItem *item) { select(item); });
+		connect(list_, &QListWidget::currentItemChanged, this, [this] { show_applies_to(); });
 		connect(create_, &QToolButton::clicked, this, [this] { create(); });
 		connect(configure_, &QPushButton::clicked, this, [this] { configure(); });
 		connect(import_, &QPushButton::clicked, this, [this] { import_legacy(); });
@@ -2890,6 +2968,7 @@ private:
 			scene_items.append({scene.name, scene.uuid});
 		combo_items(scenes_, scene_items, selected_scene_);
 		selected_scene_ = scenes_->currentData().toString();
+		selected_scene_name_ = scenes_->currentText();
 		OBSDataAutoRelease response = obs_data_create();
 		if (loaded_)
 			scene_controller_list(response);
@@ -2897,16 +2976,21 @@ private:
 		QList<QPair<QString, QString>> controller_items;
 		for (const QJsonValue entry : object(response)["controllers"].toArray()) {
 			const auto controller = entry.toObject();
-			if (controller["sceneUuid"].toString() != selected_scene_)
+			if (!controller_covers_scene(controller, selected_scene_, selected_scene_name_))
 				continue;
-			controller_items.append({controller["name"].toString(), controller["controllerId"].toString()});
+			const QString name =
+				controller["sceneUuid"].toString() == selected_scene_
+					? controller["name"].toString()
+					: text("Views.ControllerFromScene")
+						  .arg(controller["name"].toString(), controller["scene"].toString());
+			controller_items.append({name, controller["controllerId"].toString()});
 			if (controller["controllerId"].toString() == selected_controller_ || next.isEmpty())
 				next = controller;
 		}
-		if (!next.isEmpty())
-			selected_controller_ = next["controllerId"].toString();
-		else
-			selected_controller_.clear();
+		const QString next_id = next["controllerId"].toString();
+		if (next_id != selected_controller_)
+			selected_scope_.clear();
+		selected_controller_ = next_id;
 		combo_items(controllers_, controller_items, selected_controller_);
 		const bool changed_state = force || next != state_;
 		state_ = next;
@@ -2920,10 +3004,16 @@ private:
 		QList<QPair<QString, QString>> scope_items{{text("Views.CombinedViews"), "views"}};
 		for (const QJsonValue entry : state_["groups"].toArray()) {
 			const auto group = entry.toObject();
+			if (!group_covers_browsed_scene(group["id"].toString()))
+				continue;
 			scope_items.append({group["name"].toString(), group["id"].toString()});
 		}
+		if (!scope_is_views_ &&
+		    std::none_of(scope_items.cbegin() + 1, scope_items.cend(),
+				 [this](const auto &item) { return item.second == selected_scope_; }))
+			selected_scope_.clear();
 		if (selected_scope_.isEmpty()) {
-			scope_is_views_ = !state_["views"].toArray().isEmpty() || scope_items.size() == 1;
+			scope_is_views_ = !visible_views().isEmpty() || scope_items.size() == 1;
 			selected_scope_ = scope_is_views_ ? QStringLiteral("views") : scope_items[1].second;
 		}
 		combo_items(scope_, scope_items, selected_scope_);
@@ -2946,11 +3036,60 @@ private:
 			redraw_state();
 	}
 
+	bool group_covers_browsed_scene(const QString &id) const
+	{
+		if (state_["sceneUuid"].toString() == selected_scene_)
+			return true;
+		const auto group = find_id(state_["config"].toObject()["groups"].toArray(), id);
+		return !group.isEmpty() && group_scenes(state_, group).contains(selected_scene_name_);
+	}
+
+	QJsonArray visible_views() const
+	{
+		if (state_["sceneUuid"].toString() == selected_scene_)
+			return state_["views"].toArray();
+		QJsonArray result;
+		const auto definitions = state_["config"].toObject()["views"].toArray();
+		for (const QJsonValue value : state_["views"].toArray()) {
+			const auto view = value.toObject();
+			const auto definition = find_id(definitions, view["id"].toString());
+			if (view_scenes(state_, definition).contains(selected_scene_name_))
+				result.append(view);
+		}
+		return result;
+	}
+
+	void show_applies_to()
+	{
+		applies_->setVisible(loaded_ && !state_.isEmpty());
+		if (!loaded_ || state_.isEmpty()) {
+			applies_->clear();
+			return;
+		}
+		const auto config = state_["config"].toObject();
+		QStringList names;
+		if (scope_is_views_) {
+			const auto *item = list_->currentItem();
+			const auto view = item ? find_id(config["views"].toArray(), item->data(Qt::UserRole).toString())
+					       : QJsonObject{};
+			if (view.isEmpty()) {
+				applies_->setText(text("Views.ViewScopeHelp"));
+				return;
+			}
+			names = view_scenes(state_, view);
+		} else {
+			const auto group = find_id(config["groups"].toArray(), selected_scope_);
+			names = group_scenes(state_, group);
+		}
+		applies_->setText(text("Views.AppliesTo").arg(names.join(", ")));
+	}
+
 	void redraw_state()
 	{
 		const QSignalBlocker block(list_);
 		list_->clear();
 		if (!loaded_ || state_.isEmpty()) {
+			show_applies_to();
 			status_->setText(text(loaded_ ? "Views.NoController" : "Views.Loading"));
 			return;
 		}
@@ -2960,7 +3099,7 @@ private:
 		const auto group = is_views ? QJsonObject{} : find_id(state_["groups"].toArray(), selected_scope_);
 		const bool group_enabled = is_views || group["enabled"].toBool();
 		const bool group_available = is_views || group["available"].toBool();
-		QJsonArray entries = is_views ? state_["views"].toArray() : group["choices"].toArray();
+		QJsonArray entries = is_views ? visible_views() : group["choices"].toArray();
 		if (!is_views && group["kind"].toString() == "modes" && group["allowNone"].toBool())
 			entries.append(QJsonObject{{"id", ""},
 						   {"name", text("Views.None")},
@@ -2992,6 +3131,7 @@ private:
 			if (active)
 				list_->setCurrentItem(item);
 		}
+		show_applies_to();
 		if (!enabled)
 			status_->setText(text("Views.ControllerOff"));
 		else if (!group_enabled)
@@ -3097,7 +3237,8 @@ private:
 	{
 		const auto current = state_;
 		auto *confirm = new QMessageBox(QMessageBox::Question, text("Views.RemoveController"),
-						text("Views.RemoveControllerPrompt").arg(current["name"].toString()),
+						text("Views.RemoveControllerPrompt")
+							.arg(current["name"].toString(), current["scene"].toString()),
 						QMessageBox::Yes | QMessageBox::No, this);
 		confirm->setObjectName("viewsRemoveControllerConfirm");
 		confirm->setAttribute(Qt::WA_DeleteOnClose);
@@ -3129,15 +3270,22 @@ private:
 		if (raise_import())
 			return;
 		const QString controller_id = selected_controller_;
+		const auto current = snapshot(controller_id);
+		if (current.isEmpty()) {
+			status_->setText(text("Views.ControllerMissing"));
+			return;
+		}
 		auto *dialog = new QDialog(this);
 		dialog->setObjectName("viewsImportDialog");
 		dialog->setAttribute(Qt::WA_DeleteOnClose);
 		dialog->setWindowTitle(text("Views.ImportTitle"));
 		auto *layout = new QVBoxLayout(dialog);
-		layout->addWidget(note(dialog, text("Views.ImportHelp")));
+		layout->addWidget(
+			note(dialog, text("Views.ImportHelp").arg(current["scene"].toString()), "viewsImportHelp"));
 		auto *filters = new QComboBox(dialog);
 		filters->setObjectName("viewsImportFilter");
-		OBSSourceAutoRelease scene = obs_get_source_by_uuid(selected_scene_.toUtf8().constData());
+		OBSSourceAutoRelease scene =
+			obs_get_source_by_uuid(current["sceneUuid"].toString().toUtf8().constData());
 		if (scene)
 			obs_source_enum_filters(
 				scene,
@@ -3221,14 +3369,14 @@ private:
 	QComboBox *scenes_ = nullptr, *controllers_ = nullptr, *scope_ = nullptr;
 	QCheckBox *enabled_ = nullptr;
 	QListWidget *list_ = nullptr;
-	QLabel *status_ = nullptr;
+	QLabel *status_ = nullptr, *applies_ = nullptr;
 	QToolButton *create_ = nullptr;
 	QPushButton *configure_ = nullptr, *import_ = nullptr;
 	QAction *rename_ = nullptr, *remove_ = nullptr;
 	QPointer<ViewsEditor> editor_;
 	QTimer fallback_;
 	QJsonObject state_;
-	QString selected_scene_, selected_controller_, selected_scope_;
+	QString selected_scene_, selected_scene_name_, selected_controller_, selected_scope_;
 	bool loaded_ = false, closed_ = false, pending_ = false, force_refresh_ = false, scope_is_views_ = true;
 };
 
