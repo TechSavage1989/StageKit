@@ -8981,6 +8981,37 @@ static void restore_hidden_test()
 	obs_source_release(before_out);
 }
 
+// Modern OBS retains ordinary scenes on its main canvas. Standalone fixtures
+// must release that ownership and finish deferred destruction before module unload.
+static void release_canvas_scene_fixture(obs_scene_t *scene)
+{
+#if LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(31, 1, 0)
+	obs_canvas_scene_remove(scene);
+#endif
+	obs_scene_release(scene);
+}
+
+static void check_fixture_sources_released(const std::vector<obs_weak_source_t *> &weak, const char *label)
+{
+	std::string left;
+	for (int attempt = 0; attempt < 150; ++attempt) {
+		left.clear();
+		for (auto *ref : weak) {
+			auto *source = obs_weak_source_get_source(ref);
+			if (source)
+				left += std::string(left.empty() ? "" : ", ") + obs_source_get_name(source);
+			obs_source_release(source);
+		}
+		if (left.empty())
+			break;
+		sleep_ms(10);
+	}
+	CHECK(left.empty(), "%s releases its scenes, sources and filters before shutdown (%s)", label,
+	      left.empty() ? "nothing held" : left.c_str());
+	for (auto *ref : weak)
+		obs_weak_source_release(ref);
+}
+
 static void link_follow_sources_test()
 {
 	printf("\n[link visibility: follow sources, several leads and their followers]\n");
@@ -9029,6 +9060,10 @@ static void link_follow_sources_test()
 		obs_data_t *ld = obs_data_create();
 		obs_data_set_int(ld, "mode", 0);
 		obs_source_t *link = obs_source_create("stagekit_visibility_link", "LF Win Link", ld, nullptr);
+		const std::vector<obs_weak_source_t *> weak = {obs_source_get_weak_source(obs_scene_get_source(scene)),
+							       obs_source_get_weak_source(a),
+							       obs_source_get_weak_source(b),
+							       obs_source_get_weak_source(link)};
 		obs_data_release(ld);
 		obs_source_filter_add(obs_scene_get_source(scene), link);
 		obs_properties_t *props = obs_source_properties(link);
@@ -9061,9 +9096,10 @@ static void link_follow_sources_test()
 		      label.c_str(), items_label.c_str());
 		obs_source_filter_remove(obs_scene_get_source(scene), link);
 		obs_source_release(link);
-		obs_scene_release(scene);
+		release_canvas_scene_fixture(scene);
 		obs_source_release(a);
 		obs_source_release(b);
+		check_fixture_sources_released(weak, "Link Visibility settings fixture");
 	}
 
 	// Twice: the Show only one link before the follow link, then after; on
@@ -9290,6 +9326,9 @@ static void link_follow_sources_test()
 		obs_data_set_int(ld, "mode", 2);
 		obs_data_set_string(ld, "transition", "none");
 		obs_source_t *link = obs_source_create("stagekit_visibility_link", "LF Old Link", ld, nullptr);
+		const std::vector<obs_weak_source_t *> weak = {
+			obs_source_get_weak_source(scene_src), obs_source_get_weak_source(a),
+			obs_source_get_weak_source(b), obs_source_get_weak_source(c), obs_source_get_weak_source(link)};
 		obs_data_release(ld);
 		obs_source_filter_add(scene_src, link);
 		auto state = [&] {
@@ -9332,9 +9371,10 @@ static void link_follow_sources_test()
 		obs_source_filter_remove(scene_src, link);
 		obs_source_release(link);
 		sleep_ms(100);
-		obs_scene_release(scene);
+		release_canvas_scene_fixture(scene);
 		for (obs_source_t *s : {a, b, c})
 			obs_source_release(s);
+		check_fixture_sources_released(weak, "Legacy Link Visibility fixture");
 	}
 
 	switch_is_command_test();
@@ -9403,6 +9443,14 @@ static void capture_hide_restores_test()
 	obs_data_set_int(fd, "mode", 2); // follow
 	obs_data_set_string(fd, "transition", "none");
 	obs_source_t *mode = obs_source_create("stagekit_visibility_link", "CH Mode", fd, nullptr);
+	const std::vector<obs_weak_source_t *> weak = {obs_source_get_weak_source(obs_scene_get_source(live)),
+						       obs_source_get_weak_source(obs_scene_get_source(chat)),
+						       obs_source_get_weak_source(obs_scene_get_source(standby)),
+						       obs_source_get_weak_source(dslr),
+						       obs_source_get_weak_source(window),
+						       obs_source_get_weak_source(text),
+						       obs_source_get_weak_source(only),
+						       obs_source_get_weak_source(mode)};
 	obs_data_release(fd);
 	obs_source_filter_add(obs_scene_get_source(standby), mode);
 	sleep_ms(300);
@@ -9546,11 +9594,12 @@ static void capture_hide_restores_test()
 	obs_source_filter_remove(obs_scene_get_source(standby), mode);
 	obs_source_release(mode);
 	sleep_ms(100);
-	obs_scene_release(live);
-	obs_scene_release(chat);
-	obs_scene_release(standby);
+	release_canvas_scene_fixture(live);
+	release_canvas_scene_fixture(chat);
+	release_canvas_scene_fixture(standby);
 	for (obs_source_t *s : {dslr, window, text})
 		obs_source_release(s);
+	check_fixture_sources_released(weak, "Capture hide/restore fixture");
 }
 
 // What the item Morph holds now: its entries (transitions of items) and the

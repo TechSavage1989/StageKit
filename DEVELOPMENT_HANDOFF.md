@@ -59,6 +59,16 @@ the CI build adds an explicit obs-studio (>= 32.2.2) dependency while retaining 
 system-library dependencies. Ubuntu pull requests now produce an actual DEB and check its OBS, libc
 and Qt dependency fields before publication. The README states this Linux package requirement.
 
+The pinned-dependency run at b5d74fba completed Ubuntu DEB generation and verified the expected OBS,
+libc, Qt, curl and C++ runtime dependencies. Its Linux replacement renderer and real OBS frontend
+passed, including Scene Controller. The separate LINK_FOLLOW standalone process passed its behavior
+assertions but crashed during shutdown with eight sources retained by five fixture scenes on the
+modern OBS main canvas. The fixture cleanup now releases that canvas ownership and checks weak
+references after draining deferred UI destruction. Production behavior and all previous assertions
+remain unchanged. The initial Windows frontend attempt missed intermediate camera travel while its
+final pixels and controller checks passed; its unmodified targeted retry is retained in CI history.
+Neither that failed attempt nor the interrupted Linux job produced a complete timing comparison.
+
 The final corrected head must pass the Windows/shared gates, macOS compilation and Ubuntu DEB packaging
 before this platform follow-up is merged. Native Linux runtime results are recorded separately from
 package compilation and software-renderer timing; an infrastructure failure is never a passing runtime

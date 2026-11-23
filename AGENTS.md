@@ -96,6 +96,11 @@ supplement its dependencies with the verified OBS package version for the pinned
 actual DEB packaging on pull requests and inspect its OBS, libc and Qt dependencies before release;
 a passing tar archive build does not validate the Debian package metadata.
 
+The standalone LINK_FOLLOW settings and legacy fixtures and its nested capture-hide fixture must remove
+their scenes from the modern OBS main canvas before releasing them. Otherwise canvas ownership retains
+their sources until after module unload. Keep the weak-reference release assertions and pump deferred UI
+work during teardown, as in the existing MORPH_HOLDS and MAKE_ROOM fixtures.
+
 Run the REVIEW_CONTROLS test when changing saved defaults, Apply Layout framing, Morph scene rules
 or shared transition controls. OBS calls load after creating sources from a saved collection, including
 a filter with empty settings. Keep the original choice for those filters. Keep the Move Scene Item
