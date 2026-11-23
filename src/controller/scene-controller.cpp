@@ -288,10 +288,42 @@ bool scene_exists(const std::string &name)
 bool present(const std::string &scene_name, const std::string &source_name, bool *shown = nullptr)
 {
 	SourceRef scene(obs_get_source_by_name(scene_name.c_str()));
-	obs_sceneitem_t *item = scene.source ? find_item(scene.source, source_name) : nullptr;
+	struct Presence {
+		const std::string &name;
+		bool found = false, shown = false;
+		bool read(obs_sceneitem_t *item)
+		{
+			const char *candidate = obs_source_get_name(obs_sceneitem_get_source(item));
+			if (candidate && name == candidate) {
+				found = true;
+				shown = obs_sceneitem_visible(item);
+			}
+			return !found;
+		}
+	} presence{source_name};
+	// Vendor snapshots run outside the video thread. Read while enumeration
+	// holds the scene lock and item reference; never retain a borrowed item.
+	// Keep OBS's first-match order: each item, then its group's children.
+	if (!source_name.empty())
+		obs_scene_enum_items(
+			scene_of(scene.source),
+			[](obs_scene_t *, obs_sceneitem_t *item, void *opaque) {
+				auto *presence = static_cast<Presence *>(opaque);
+				if (!presence->read(item))
+					return false;
+				if (obs_sceneitem_is_group(item))
+					obs_sceneitem_group_enum_items(
+						item,
+						[](obs_scene_t *, obs_sceneitem_t *child, void *opaque) {
+							return static_cast<Presence *>(opaque)->read(child);
+						},
+						opaque);
+				return !presence->found;
+			},
+			&presence);
 	if (shown)
-		*shown = item && obs_sceneitem_visible(item);
-	return item != nullptr;
+		*shown = presence.shown;
+	return presence.found;
 }
 
 bool group_enabled(const Group &group)

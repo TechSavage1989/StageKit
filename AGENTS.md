@@ -66,6 +66,10 @@ releasing the controller: a legacy request can retain its weak forwarding target
 strong source pins outside the shared mode registry lock. Reserve active imported filter ownership for
 loaded/copied definitions as well as public edits. Queue replacement configuration atomically and order
 source-setting publication so a tick cannot overwrite a newly accepted edit before OBS saves it.
+Vendor snapshots and command preflight can run outside the video thread. Read item presence and eye
+state inside retained scene-enumeration callbacks; recursive lookup returns a borrowed item after
+unlocking, which can be removed before a later visibility read. Saved-view dock requests carry only
+viewId, not the same ID again as choiceId; the backend rejects mixed targets before making changes.
 
 Emit SceneControllerChanged and stagekit_scene_controller_changed only after releasing engine locks.
 The event carries only controllerId; subscribers coalesce a later snapshot refresh. Native editing is

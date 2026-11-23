@@ -59,6 +59,11 @@ the callback. Editing source/configuration objects belongs to the frontend threa
 are validated before queuing and applied by the controller tick. The emitter never enumerates a snapshot
 under engine locks.
 
+The first Windows candidate compiled and passed the native/controller migration and callback-removal
+fixtures. Its real dock click test caught a mixed-target request for saved views; the dock now sends only
+the view ID in that case. A bounded source-lifetime review also moved API presence/visibility reads into
+retained scene enumeration. The next Windows candidate must exercise both changes before release.
+
 Validation is in progress. The shared native fixture exercises independent groups, nested items, shared
 scenes, Together and Follow rules, combined selections, invalid/disabled requests, renames, source reload,
 complete import settings, copied-import ownership, old key forwarding and removal from a visibility callback. The real frontend fixture edits the

@@ -1427,8 +1427,9 @@ private:
 			return;
 		const QByteArray controller = selected_controller_.toUtf8();
 		const QByteArray group = scope_is_views_ ? QByteArray() : selected_scope_.toUtf8();
-		const QByteArray choice = item->data(Qt::UserRole).toString().toUtf8();
-		const QByteArray view = scope_is_views_ ? choice : QByteArray();
+		const QByteArray selected = item->data(Qt::UserRole).toString().toUtf8();
+		const QByteArray choice = scope_is_views_ ? QByteArray() : selected;
+		const QByteArray view = scope_is_views_ ? selected : QByteArray();
 		std::string why;
 		const char *command = !group.isEmpty() && choice.isEmpty() ? "none" : "select";
 		if (!scene_controller_command(controller.constData(), group.constData(), choice.constData(),
