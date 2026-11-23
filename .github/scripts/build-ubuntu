@@ -200,6 +200,12 @@ ${_usage_host:-}"
           -DCMAKE_INSTALL_PREFIX=/usr
         )
 
+        if [[ -n ${STAGEKIT_CI_OBS_VERSION:-} ]] {
+          # The official OBS package omits shlibs metadata. Retain its dependency
+          # alongside CPack's automatic dependency discovery for the other libraries.
+          cmake_args+=("-DCPACK_DEBIAN_PACKAGE_DEPENDS=obs-studio (>= ${STAGEKIT_CI_OBS_VERSION})")
+        }
+
         local cmake_version
         read -r _ _ cmake_version <<< "$(cmake --version)"
 

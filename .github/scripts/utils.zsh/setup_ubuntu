@@ -13,6 +13,7 @@ if (( ! ${+target} )) {
 pushd ${project_root}
 
 typeset -g QT_VERSION
+typeset -g STAGEKIT_CI_OBS_VERSION=''
 
 local -a apt_args=(
   ${CI:+-y}
@@ -35,15 +36,35 @@ if (( ! (${skips[(Ie)all]} + ${skips[(Ie)deps]}) )) {
     sudo apt-get install ${apt_args} gcc-${${target##*-}//_/-}-linux-gnu g++-${${target##*-}//_/-}-linux-gnu
   }
 
-  sudo add-apt-repository --yes ppa:obsproject/obs-studio
-  sudo apt update
+  local obs_package='obs-studio'
+  if [[ -n ${CI:-} ]] {
+    local -r obs_version='32.2.2'
+    local -r obs_deb="${RUNNER_TEMP}/OBS-Studio-${obs_version}-Ubuntu-24.04-x86_64.deb"
+    curl --fail --location --retry 3 --retry-delay 2 --retry-max-time 180 --connect-timeout 15 --max-time 180 \
+      --output "${obs_deb}" \
+      "https://github.com/obsproject/obs-studio/releases/download/${obs_version}/OBS-Studio-${obs_version}-Ubuntu-24.04-x86_64.deb"
+    printf '%s  %s\n' b6557ca2059287210332accc94c267094050489cffffc5c832e746e3a418dab0 "${obs_deb}" | sha256sum --check --strict
+    sudo apt-get -o Acquire::Retries=3 -o APT::Update::Error-Mode=any update -qq
+    apt_args+=(-o Acquire::Retries=3)
+    obs_package=${obs_deb}
+  } else {
+    sudo add-apt-repository --yes ppa:obsproject/obs-studio
+    sudo apt update
+  }
 
   sudo apt-get install ${apt_args} \
     build-essential \
     libgles2-mesa-dev \
     libcurl4-openssl-dev \
     libsimde-dev \
-    obs-studio
+    "${obs_package}"
+
+  if [[ -n ${CI:-} ]] {
+    sudo ldconfig
+    test "$(dpkg-query -W -f='${Version}' obs-studio)" = "${obs_version}"
+    test "$(pkg-config --modversion libobs)" = "${obs_version}"
+    STAGEKIT_CI_OBS_VERSION=${obs_version}
+  }
 
   local -a _qt_packages=()
 

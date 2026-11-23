@@ -113,7 +113,8 @@ does not point anywhere. Release notes are kept in [docs/releases](docs/releases
 
 ## Requirements
 
-- OBS Studio 31 or newer. Builds are compiled against OBS 31.1.1.
+- OBS Studio 31 or newer on Windows and macOS. Those builds are compiled against OBS 31.1.1.
+- The Ubuntu package requires OBS Studio 32.2.2 or newer and uses the verified OBS 32.2.2 SDK.
 - Windows x64, macOS (Apple silicon and Intel) or Ubuntu 24.04 x86_64.
 - Automated tests exercise Linux OpenGL and the Windows OBS 32.2.2 frontend with software Direct3D 11.
   Those results do not establish frame times on a physical Windows GPU. macOS runtime testing remains

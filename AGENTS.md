@@ -80,6 +80,27 @@ compatibility, removal rollback and an actual OBS restart. Capture the Windows d
 guide. Source renames use source_settings_renamed for nested generic/per-source transition settings and
 scene_modes_rename_settings for mode membership and saved placements.
 
+Use explicit const QJsonValue values when range-iterating QJsonArray in the dock. Its iterator can yield
+a temporary value or proxy, and Clang rejects a deduced const-reference binding under the macOS warning
+policy. Keep references for containers whose iterators return actual elements.
+
+The Ubuntu CI package build and Linux native/frontend job use the checksum-pinned official OBS 32.2.2
+Ubuntu 24.04 package rather than an unversioned PPA install. An unavailable PPA can leave apt using
+Ubuntu OBS 30 without the required SDK. Verify the package before installing and check its actual SDK
+version. The official package uses /usr/local; the native job's CI-only aliases for the two existing
+headless module/data paths must target those real directories and must never overwrite a different
+existing installation. Local developer builds retain their existing dependency path.
+
+The official OBS package omits shlibs metadata. Keep CPack's automatic dependency discovery enabled and
+supplement its dependencies with the verified OBS package version for the pinned CI build. Exercise
+actual DEB packaging on pull requests and inspect its OBS, libc and Qt dependencies before release;
+a passing tar archive build does not validate the Debian package metadata.
+
+The standalone LINK_FOLLOW settings and legacy fixtures and its nested capture-hide fixture must remove
+their scenes from the modern OBS main canvas before releasing them. Otherwise canvas ownership retains
+their sources until after module unload. Keep the weak-reference release assertions and pump deferred UI
+work during teardown, as in the existing MORPH_HOLDS and MAKE_ROOM fixtures.
+
 Run the REVIEW_CONTROLS test when changing saved defaults, Apply Layout framing, Morph scene rules
 or shared transition controls. OBS calls load after creating sources from a saved collection, including
 a filter with empty settings. Keep the original choice for those filters. Keep the Move Scene Item

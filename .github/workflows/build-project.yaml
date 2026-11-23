@@ -222,7 +222,30 @@ jobs:
         with:
           target: x86_64
           config: ${{ needs.check-event.outputs.config }}
-          package: ${{ fromJSON(needs.check-event.outputs.package) }}
+          package: ${{ github.event_name == 'pull_request' || fromJSON(needs.check-event.outputs.package) }}
+
+      - name: Verify Debian runtime dependencies
+        if: ${{ github.event_name == 'pull_request' || fromJSON(needs.check-event.outputs.package) }}
+        env:
+          DEB_PACKAGE: release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-x86_64-linux-gnu.deb
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import subprocess
+
+          package = os.environ['DEB_PACKAGE']
+          depends = subprocess.check_output(['dpkg-deb', '--field', package, 'Depends'], text=True).strip()
+          obs_version = subprocess.check_output(['dpkg-query', '-W', '-f=${Version}', 'obs-studio'], text=True).strip()
+          dependencies = [entry.strip() for entry in depends.split(',')]
+          required_obs = f'obs-studio (>= {obs_version})'
+          if required_obs not in dependencies:
+              raise SystemExit(f'Missing OBS dependency {required_obs}: {depends}')
+          for library in ('libc6', 'libqt6core6t64', 'libqt6widgets6t64'):
+              if not any(re.fullmatch(re.escape(library) + r'(?: \([^)]*\))?', entry) for entry in dependencies):
+                  raise SystemExit(f'Missing automatic runtime dependency {library}: {depends}')
+          print(f'Verified Debian runtime dependencies: {depends}')
+          PY
 
       - name: Upload Source Tarball 🗜️
         uses: actions/upload-artifact@v4
@@ -238,7 +261,7 @@ jobs:
 
       - name: Upload debug symbol artifacts 🪲
         uses: actions/upload-artifact@v4
-        if: ${{ fromJSON(needs.check-event.outputs.package) }}
+        if: ${{ github.event_name == 'pull_request' || fromJSON(needs.check-event.outputs.package) }}
         with:
           name: ${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-${{ matrix.os }}-x86_64-${{ needs.check-event.outputs.commitHash }}-dbgsym
           path: ${{ github.workspace }}/release/${{ steps.setup.outputs.pluginName }}-${{ steps.setup.outputs.pluginVersion }}-x86_64*-dbgsym.ddeb
