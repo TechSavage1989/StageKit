@@ -2539,6 +2539,12 @@ to (the two update choices are kept with the plugin instead). Replacing the plug
   size in screen pixels, Ambient Background's live capture) look again when something in a scene
   changes rather than many times a second. A Multiview or a projector shows every scene, so with
   one open they all count as on screen.
+  Visible-pixel placement reuses its first measurement when an unfiltered source has the same
+  complete and base dimensions. Scene Fit keeps its entry list between ticks. When Scene Blur
+  redraws a single Scene Shadow layer in the same frame, it can reuse the prepared shadow and
+  glow. These remove repeated work without changing measurement accuracy, blur quality or the
+  update schedule, and without adding retained graphics textures. The saving depends on which
+  filters and sources the scene uses.
 <!-- ==== end scene-filters:perf (Frame time) ==== -->
 
 ## Development
@@ -2571,6 +2577,16 @@ per-call mean, p50, p95 and longest, beside OBS's own `tick_sources` (`tests/per
 two runs side by side). `PLUGIN=<other stagekit.so>` measures another build the same way. It is not
 part of `run-tests.sh`, and its times are llvmpipe's: compare runs with each other, not with a real
 OBS.
+
+For a matched performance comparison, run `bash tests/check-render-performance.sh build-ports`
+after building the native tests. It builds the frozen beta250 plugin, then uses the candidate
+harness for both plugins in baseline/candidate/candidate/baseline order. The large Scene Fit
+collection and a focused Scene Shadow plus Scene Blur scene use the same automatically selected
+canvas scale, six seconds of warmup and 450 measured frames per trial. Results, complete logs,
+commit identities and renderer details are saved under `build-ports/performance-results` and
+uploaded by the native CI check. The summaries separate whole OBS frame, render and tick
+distributions from per-filter inclusive times. Missing or incomplete measurements fail the
+check; timing variation on a shared software renderer does not establish a hardware speedup.
 <!-- ==== end scene-filters:perf (Measuring) ==== -->
 
 Windows and macOS builds come from GitHub Actions, based on the official

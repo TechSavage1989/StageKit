@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | fix/timer-cycle-deadline, based on beta249. Release notes in docs/releases/0.1.0-beta250.md, numbered after checking fresh main. |
+| Working branch | fix/render-overhead, based on beta250 (7a7bdf3ae7d6780b2a0896aa8136a67cdb399ac7). Release notes in docs/releases/0.1.0-beta251.md, numbered after checking fresh main. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -22,6 +22,24 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
+
+## Rendering overhead
+
+The owner made Windows-first release a standing priority on 2026-11-23. Validate the exact head's Windows build and OBS 32.2.2 frontend, plus repository, formatting and companion checks, then publish and verify the Windows installer promptly. macOS/Linux builds and Linux-only performance measurements follow without delaying Windows. Resolve any shared defect affecting Windows before publication. The existing publisher already exposes Windows assets before adding later platform assets.
+
+This change removes three kinds of repeated work while preserving the existing rendering and update rules. Visible-pixel placement reuses its first Drawn result only for a synchronous source with no filters, exactly equal base and complete dimensions, and dimensions unchanged by that draw. It checks the filter count again after drawing. Filtered sources, different dimensions and asynchronous video retain their existing path. Empty pixels, crop transforms, alpha thresholds and fringe handling retain the same meaning.
+
+Scene Fit publishes an immutable shared entry-list snapshot when the list changes. Each tick retains the list rather than copying its vector and every entry reference. The entries and engines remain alive for the entire tick, with the same mutex, entry updates, attach/detach handling, solving passes, rest checks and visible-pixel glance schedule.
+
+Scene Shadow can reuse a single layer's prepared shadow and Neon halo when Scene Blur asks for the same look again in that frame. The preparation borrows existing private textures; it adds no retained graphics targets. The complete source and final composition still render normally. Settings, dimensions, color mode, another preparation, a later frame, multiple layers and active transitions must prevent reuse when the original inputs cannot be proven identical. Ordinary source filters continue to render their input afresh on every draw, including Standby's real-source and stand-in draws within one frame.
+
+Shared native fixtures compare exact rendered pixels and measurement results and count the work performed. Both the Linux renderer and Windows OBS 32.2.2 frontend run the fixtures. Performance comparisons use frozen beta250 and the candidate on the same Linux runner, with identical settings and canvas scale, six seconds of warmup and 450 measured frames per trial in baseline/candidate/candidate/baseline order. OBS's whole graphics, render and tick samples are reported separately from nested filter timings. Local native OBS execution is unavailable in this workspace; Windows validation and the general checks run in CI before release, while the Linux comparison can finish afterward. Review any completed trials and summaries in the PR's stagekit-render-performance artifact. Software-renderer timings must not be presented as a hardware-backed frame-time guarantee.
+
+The initial Windows run found two color-mode guard assertions in the new fixture while the compared pixels remained exactly equal. OBS_TASK_GRAPHICS runs on the video thread without entering a graphics context. Both queued fixture callbacks now enter graphics before changing linear color state and leave after restoring it. The exact-output, preparation, reuse and fallback assertions remain intact. No production rendering change was needed for that fixture correction.
+
+The Stream Deck companion remains 0.42.0.0. There are no new controls or visible layout changes, so existing screenshots remain representative.
+
+The matched comparison command is bash tests/check-render-performance.sh build-ports. It writes metadata, calibration, all eight trial JSON files and complete logs, and two summaries beneath build-ports/performance-results. CI uploads stagekit-render-performance separately from the functional test artifacts. It uses the existing large collection generator's Scene Fit mode and a separate synthetic Shadow plus Blur fixture. Baseline and candidate use the same candidate harness, and both actual tested commit and PR head are recorded when GitHub builds a merge ref.
 
 ## Countdown Timer cycle key deadline
 

@@ -12,11 +12,23 @@ on:
       - 'scripts/*obs-ports.py'
       - 'src/components/**'
       - 'src/common/alpha-bounds.hpp'
+      - 'src/common/kawase-blur.*'
+      - 'src/common/timing.*'
       - 'src/ambient/ambient-background.cpp'
       - 'src/placement/fit-engine.cpp'
+      - 'src/placement/scene-fit.cpp'
       - 'src/dock/arrange.cpp'
+      - 'src/dock/stagekit-dock.cpp'
+      - 'src/look/look-paint.*'
       - 'src/look/scene-shadow.cpp'
       - 'tests/alpha-bounds-test.cpp'
+      - 'tests/visible-bounds-reuse-test.hpp'
+      - 'tests/shadow-reuse-test.hpp'
+      - 'tests/check-render-performance.sh'
+      - 'tests/collection-perf.cpp'
+      - 'tests/perf-compare.py'
+      - 'tests/make-perf-collection.py'
+      - 'tests/make-shadow-perf-collection.py'
       - 'src/countdown/**'
       - 'src/capture/app-capture.cpp'
       - 'src/frame/**'
@@ -44,8 +56,11 @@ permissions:
 jobs:
   native:
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Check visible pixel bounds
         run: |
           c++ -std=c++17 -O2 tests/alpha-bounds-test.cpp -o "$RUNNER_TEMP/alpha-bounds"
@@ -103,6 +118,16 @@ jobs:
       - name: Open the replacement catalog in a fresh OBS frontend
         if: always() && hashFiles('build-ports/tests/stagekit-replacement-probe.so') != ''
         run: bash tests/check-replacement-frontend.sh build-ports
+      - name: Compare frame and filter costs against the frozen baseline
+        timeout-minutes: 25
+        env:
+          STAGEKIT_PERF_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash tests/check-render-performance.sh build-ports
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stagekit-render-performance
+          path: build-ports/performance-results/
       - uses: actions/upload-artifact@v4
         if: always()
         with:

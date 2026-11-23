@@ -216,7 +216,8 @@ private:
 			   const std::function<uint8_t(obs_sceneitem_t *)> &flags_of,
 			   const std::function<void(obs_sceneitem_t *)> &draw, const ShadowLook &look, uint32_t cx,
 			   uint32_t cy);
-	void finish(const ShadowLook &look, uint64_t frame, uint32_t cx, uint32_t cy, bool linear, bool each);
+	void finish(const ShadowLook &look, uint64_t frame, uint32_t cx, uint32_t cy, bool linear, bool each,
+		    uint64_t settings_revision, bool steady);
 	bool has_new_items(obs_source_t *parent);
 
 	obs_source_t *source_;
@@ -248,6 +249,7 @@ private:
 	uint64_t seen_rev_ = 0; // scene_revision() when its items were last checked for new ones
 	std::atomic<uint64_t> wanted_ns_{0};
 	std::atomic<bool> settings_changed_{true};
+	std::atomic<uint64_t> settings_revision_{0};
 
 	// On the drawing thread only.
 	std::unique_ptr<LookPaint> paint_;
@@ -276,6 +278,9 @@ private:
 	uint32_t last_cx_ = 0, last_cy_ = 0;
 	bool last_linear_ = false;
 	bool have_out_ = false;
+	uint64_t last_settings_revision_ = 0;
+	bool last_steady_ = false;
+	bool test_reuse_bypass_ = false; // the render fixture only; never saved
 	std::atomic<int> draws_{0};
 	std::atomic<int> layers_{0}; // the layers the last frame was drawn in
 };
@@ -300,6 +305,35 @@ SceneShadow::SceneShadow(obs_data_t *settings, obs_source_t *source) : source_(s
 		obs_source_get_proc_handler(source), "void layers(out int count)",
 		[](void *data, calldata_t *cd) {
 			calldata_set_int(cd, "count", static_cast<SceneShadow *>(data)->layers());
+		},
+		this);
+	proc_handler_add(
+		obs_source_get_proc_handler(source),
+		"void shadow_reuse_test(in bool bypass, in bool redraw, in bool refresh, out ptr texture, out int preparations, out int reuses, out int passes, out int stages, out int settings)",
+		[](void *data, calldata_t *cd) {
+			auto *self = static_cast<SceneShadow *>(data);
+			obs_enter_graphics();
+			bool bypass;
+			if (calldata_get_bool(cd, "bypass", &bypass))
+				self->test_reuse_bypass_ = bypass;
+			// The fixture can apply the real native update and redraw the
+			// retained input in one graphics task. OBS normally defers video
+			// updates to the next tick, which cannot exercise that guard.
+			if (calldata_bool(cd, "refresh")) {
+				obs_data_t *settings = obs_source_get_settings(self->source_);
+				self->update(settings);
+				obs_data_release(settings);
+			}
+			if (calldata_bool(cd, "redraw"))
+				calldata_set_ptr(cd, "texture",
+						 self->lay_over(gs_texrender_get_texture(self->tr_scene_),
+								self->last_cx_, self->last_cy_));
+			calldata_set_int(cd, "preparations", (long long)self->paint_->preparations());
+			calldata_set_int(cd, "reuses", (long long)self->paint_->reuses());
+			calldata_set_int(cd, "passes", (long long)self->paint_->preparation_passes());
+			calldata_set_int(cd, "stages", (long long)self->stages_.size());
+			calldata_set_int(cd, "settings", (long long)self->settings_revision_.load());
+			obs_leave_graphics();
 		},
 		this);
 	update(settings);
@@ -371,6 +405,7 @@ void SceneShadow::update(obs_data_t *settings)
 	chosen_ = pick_list_read(settings, "shadow_sources", false);
 	auto_background_ = obs_data_get_bool(settings, "auto_background");
 	settings_changed_ = true;
+	settings_revision_++;
 }
 
 // Which items cast, are background or are kept clear, and whether the filter
@@ -538,13 +573,16 @@ void SceneShadow::render()
 	wanted_ns_ = os_gettime_ns();
 	ShadowLook look;
 	bool usable, each;
+	uint64_t settings_revision;
 	{
 		std::lock_guard lock(mutex_);
 		look = look_;
 		usable = classified_ && !blocked_ && !wide_ && !on_group_;
 		each = from_ == From::Each;
+		settings_revision = settings_revision_.load();
 	}
-	look = scaled_look(look, ramp_.level());
+	const double level = ramp_.level();
+	look = scaled_look(look, level);
 	// An Ambient Background fill: the background in this scene before any
 	// other (kept by the lookup; Morph and Scene Blur get the same one).
 	if (look.design.ambient_fill() && look.outline)
@@ -586,6 +624,10 @@ void SceneShadow::render()
 			return true;
 		},
 		&items);
+	// Borrow the prepared shadow only while no source is in a transition
+	// and the filter's own ramp is settled. A fading stage keeps its original
+	// preparation path, including a transient Morph layer.
+	const bool steady = level == 1.0 && std::none_of(items.begin(), items.end(), LookPaint::may_fade);
 	auto flags_of = [&](obs_sceneitem_t *item) -> uint8_t {
 		const auto found = flags.find(obs_sceneitem_get_id(item));
 		if (found != flags.end())
@@ -631,7 +673,7 @@ void SceneShadow::render()
 			skip_filter_input(source_);
 			return;
 		}
-		finish(look, frame, cx, cy, linear, true);
+		finish(look, frame, cx, cy, linear, true, settings_revision, steady);
 		return;
 	}
 	layers_ = 1;
@@ -678,7 +720,7 @@ void SceneShadow::render()
 		skip_filter_input(source_);
 		return;
 	}
-	finish(look, frame, cx, cy, linear, false);
+	finish(look, frame, cx, cy, linear, false, settings_revision, steady);
 }
 
 // The stages for the casting sources among items lo up to hi (`boxes`: only
@@ -772,7 +814,8 @@ void SceneShadow::add_stages(const std::vector<obs_sceneitem_t *> &items,
 	}
 }
 
-void SceneShadow::finish(const ShadowLook &look, uint64_t frame, uint32_t cx, uint32_t cy, bool linear, bool each)
+void SceneShadow::finish(const ShadowLook &look, uint64_t frame, uint32_t cx, uint32_t cy, bool linear, bool each,
+			 uint64_t settings_revision, bool steady)
 {
 	paint_->draw_out(cx, cy);
 	draws_++;
@@ -783,6 +826,8 @@ void SceneShadow::finish(const ShadowLook &look, uint64_t frame, uint32_t cx, ui
 	last_cx_ = cx;
 	last_cy_ = cy;
 	last_linear_ = linear;
+	last_settings_revision_ = settings_revision;
+	last_steady_ = steady;
 }
 
 // Each source by itself: the items in layers whose shadows cannot reach one
@@ -845,6 +890,14 @@ gs_texture_t *SceneShadow::lay_over(gs_texture_t *picture, uint32_t cx, uint32_t
 	if (!picture || !have_out_ || !obs_source_enabled(source_) || now < last_frame_ ||
 	    now - last_frame_ > two_frames || cx != last_cx_ || cy != last_cy_)
 		return nullptr;
+	// Only this immediate redraw may borrow the private scratch. Its look,
+	// cast, mask and ring are the same; compose_again also checks the frame,
+	// size and colour state. Off-thread callers tolerated by the old path,
+	// settings edits, multiple stages and transitions all prepare as before.
+	if (!test_reuse_bypass_ && last_steady_ && stages_.size() == 1 && now == last_frame_ &&
+	    last_linear_ == gs_get_linear_srgb() && last_settings_revision_ == settings_revision_.load() &&
+	    paint_->compose_again(picture, cx, cy, tr_over_))
+		return gs_texrender_get_texture(tr_over_);
 	return paint_->compose_stages(picture, stages_, last_look_, cx, cy, tr_over_)
 		       ? gs_texrender_get_texture(tr_over_)
 		       : nullptr;

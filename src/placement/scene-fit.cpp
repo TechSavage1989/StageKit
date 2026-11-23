@@ -508,12 +508,13 @@ private:
 		const bool same = same_for_all(settings);
 		const std::string look = same ? kGroupPrefix : std::string();
 		const std::string look_lists = same ? kGroupLists : std::string();
-		std::vector<std::shared_ptr<Entry>> was;
+		std::shared_ptr<const Entries> was;
 		{
 			std::lock_guard lock(mutex_);
 			was = entries_;
 		}
-		std::vector<std::shared_ptr<Entry>> now;
+		auto now = std::make_shared<Entries>();
+		now->reserve(names.size());
 		for (const std::string &name : names) {
 			// An entry switched off is no entry: no placing, no claim, as
 			// for a source not fitted (its engine, gone, takes its claim
@@ -521,7 +522,7 @@ private:
 			if (!entry_on(settings, name))
 				continue;
 			std::shared_ptr<Entry> entry;
-			for (const auto &old : was)
+			for (const auto &old : *was)
 				if (old->name == name)
 					entry = old;
 			if (entry) {
@@ -537,10 +538,10 @@ private:
 				if (parent_)
 					entry->engine->attach(parent_, false);
 			}
-			now.push_back(entry);
+			now->push_back(entry);
 		}
 		std::lock_guard lock(mutex_);
-		entries_ = now;
+		entries_ = std::move(now);
 	}
 
 	// With All sources: the scene's sources counted again, twice a second
@@ -585,7 +586,7 @@ public:
 		parent_ = parent;
 		glance_forget(parent);
 		std::lock_guard lock(mutex_);
-		for (const auto &entry : entries_)
+		for (const auto &entry : *entries_)
 			entry->engine->attach(parent, false);
 		forget_ = true;
 	}
@@ -593,7 +594,7 @@ public:
 	{
 		glance_forget(parent_);
 		std::lock_guard lock(mutex_);
-		for (const auto &entry : entries_)
+		for (const auto &entry : *entries_)
 			entry->engine->detach(false);
 		parent_ = nullptr;
 	}
@@ -603,16 +604,19 @@ private:
 		std::string name;
 		std::unique_ptr<FitEngine> engine;
 	};
+	using Entries = std::vector<std::shared_ptr<Entry>>;
 	obs_source_t *source_;
 	OwnerRef owner_;
 	obs_source_t *parent_ = nullptr;
 	std::mutex mutex_;
-	std::vector<std::shared_ptr<Entry>> entries_; // under mutex_
-	bool all_ = false;                            // All sources (under mutex_)
-	std::vector<std::string> unlisted_;           // the sources fitted besides the listed ones (under mutex_)
-	bool count_now_ = true;                       // (under mutex_)
-	double count_s_ = 0.0;                        // on the tick only
-	uint64_t count_rev_ = 0;                      // scene_revision() at the last count (on the tick only)
+	// Under mutex_: a tick holds the list alive without copying every
+	// entry, including when it only passes time on and otherwise rests.
+	std::shared_ptr<const Entries> entries_ = std::make_shared<Entries>();
+	bool all_ = false;                  // All sources (under mutex_)
+	std::vector<std::string> unlisted_; // the sources fitted besides the listed ones (under mutex_)
+	bool count_now_ = true;             // (under mutex_)
+	double count_s_ = 0.0;              // on the tick only
+	uint64_t count_rev_ = 0;            // scene_revision() at the last count (on the tick only)
 	// One look at what is in the way for each way of measuring the
 	// entries use (normally one): by visible pixels, without shadows.
 	std::map<int, FitScan> scans_;
@@ -635,7 +639,7 @@ private:
 	size_t entries_count()
 	{
 		std::lock_guard lock(mutex_);
-		return entries_.size();
+		return entries_->size();
 	}
 	void glance_at_rest();
 	uint64_t unsettled_logged_ = 0;
@@ -645,10 +649,10 @@ private:
 
 void SceneFit::tick(float seconds)
 {
-	std::vector<std::shared_ptr<Entry>> entries;
+	std::shared_ptr<const Entries> snapshot;
 	{
 		std::lock_guard lock(mutex_);
-		entries = entries_;
+		snapshot = entries_;
 	}
 	// Not on a group (a group is only as large as what is in it), not
 	// while a collection loads, not while switched off. (Switched off, the
@@ -663,7 +667,7 @@ void SceneFit::tick(float seconds)
 		count_now_ = true;
 	}
 	if (!parent_ || !obs_source_enabled(source_) || obs_source_is_group(parent_) || !scenes_loaded()) {
-		for (const auto &entry : entries)
+		for (const auto &entry : *snapshot)
 			claim_clear(entry->engine.get());
 		return;
 	}
@@ -677,10 +681,10 @@ void SceneFit::tick(float seconds)
 		std::lock_guard lock(mutex_);
 		asked = count_now_;
 	}
-	for (const auto &entry : entries)
+	for (const auto &entry : *snapshot)
 		asked = asked || entry->engine->pending();
 	const RestKey key{scene_revision(), claims_revision(), glance_revision(), shadow_room_revision(),
-			  entries.size()};
+			  snapshot->size()};
 	if (showing != rest_showing_ || asked || !(key == rest_key_))
 		quiet_ = 0;
 	rest_showing_ = showing;
@@ -688,7 +692,7 @@ void SceneFit::tick(float seconds)
 					     : ++idle_turn_ % kIdleEvery != 0);
 	if (skip) {
 		count_s_ += seconds;
-		for (const auto &entry : entries)
+		for (const auto &entry : *snapshot)
 			entry->engine->skip_time(seconds);
 		// The glances go on (every other frame is as often as they can
 		// be started and read back), so a widget that starts or stops
@@ -701,9 +705,10 @@ void SceneFit::tick(float seconds)
 	bool all;
 	{
 		std::lock_guard lock(mutex_);
-		entries = entries_;
+		snapshot = entries_;
 		all = all_;
 	}
+	const Entries &entries = *snapshot;
 	// Switched on (it was seen off): every entry takes its item as it is
 	// now, the layout made by hand while the filter was off (FitEngine::
 	// switched_on). Not after loading: a filter saved on goes by its homes

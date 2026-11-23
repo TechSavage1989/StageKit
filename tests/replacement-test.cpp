@@ -6,6 +6,8 @@
 #include "countdown-test.hpp"
 #include "window-morph-test.hpp"
 #include "capture-settings-test.hpp"
+#include "visible-bounds-reuse-test.hpp"
+#include "shadow-reuse-test.hpp"
 #include <graphics/vec2.h>
 #include <QApplication>
 #include <dlfcn.h>
@@ -137,6 +139,9 @@ int main(int argc, char **argv)
 	if (!load_module((std::string(sys_bin) + "/image-source.so").c_str(),
 			 (std::string(sys_data) + "/image-source").c_str()))
 		return 1;
+	if (!load_module((std::string(sys_bin) + "/obs-transitions.so").c_str(),
+			 (std::string(sys_data) + "/obs-transitions").c_str()))
+		return 1;
 	if (!load_module(plugin_bin, plugin_data))
 		return 1;
 
@@ -146,6 +151,8 @@ int main(int argc, char **argv)
 	countdown_test::check(native_issues, QString::fromStdString(out + "/countdown-timer.png"));
 	window_morph_test::check(native_issues, QString::fromStdString(out + "/window-morph.png"));
 	capture_settings_test::check(native_issues);
+	visible_bounds_reuse_test::check(native_issues);
+	shadow_reuse_test::check(native_issues);
 	obs_hotkey_enable_callback_rerouting(false);
 	check(native_issues.isEmpty(),
 	      "native component renders and saved IDs: " + native_issues.join(", ").toStdString());

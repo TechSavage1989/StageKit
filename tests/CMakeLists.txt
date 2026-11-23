@@ -10,7 +10,7 @@ set_target_properties(stagekit-ambient-test PROPERTIES CXX_STANDARD 17)
 
 # What a scene collection costs a frame (tests/run-perf.sh); not run by run-tests.sh.
 add_executable(collection-perf collection-perf.cpp)
-target_link_libraries(collection-perf PRIVATE OBS::libobs ${CMAKE_DL_LIBS})
+target_link_libraries(collection-perf PRIVATE OBS::libobs Qt6::Widgets ${CMAKE_DL_LIBS})
 set_target_properties(collection-perf PROPERTIES CXX_STANDARD 17)
 
 add_executable(stagekit-replacement-test replacement-test.cpp)

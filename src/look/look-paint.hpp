@@ -284,6 +284,7 @@ public:
 	// are free again.
 	void begin_frame()
 	{
+		prepared_.valid = false;
 		spare_ = 0;
 		if (rects_)
 			rects_->begin_frame();
@@ -349,6 +350,19 @@ public:
 	};
 	bool compose_stages(gs_texture_t *scene, const std::vector<Stage> &stages, const ShadowLook &look, uint32_t cx,
 			    uint32_t cy, gs_texrender_t *into = nullptr);
+	// Scene Blur's redraw of a single, unchanged stage in this same frame.
+	// The exact look and shapes are kept from compose_stages; only the scene
+	// underneath changes. Borrows the existing private blur pictures, with no
+	// extra render targets. False after another preparation, begin_frame, a
+	// new video frame, another size or a different linear-light mode.
+	bool compose_again(gs_texture_t *scene, uint32_t cx, uint32_t cy, gs_texrender_t *into);
+	// Cumulative work, read in a graphics context by the render tests.
+	uint64_t preparations() const { return preparations_; }
+	uint64_t reuses() const { return reuses_; }
+	uint64_t preparation_passes() const
+	{
+		return outline_passes_ + blur_->passes() + (halo_blur_ ? halo_blur_->passes() : 0);
+	}
 	// Two pictures compose made (`into`), the second `t` of the way over the
 	// first in linear light, for draw_out. False when it could not be done.
 	bool mix(gs_texture_t *a, gs_texture_t *b, double t, uint32_t cx, uint32_t cy);
@@ -392,6 +406,19 @@ public:
 private:
 	gs_texrender_t *spare();
 	gs_texture_t *picture_of(const ItemDraw &d);
+	struct Prepared {
+		ShadowLook look;
+		Stage stage;
+		gs_texture_t *softened = nullptr, *halo = nullptr;
+		uint32_t cx = 0, cy = 0;
+		uint64_t frame = 0;
+		bool linear = false, valid = false;
+	};
+	bool compose_impl(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *mask, const ShadowLook &look,
+			  uint32_t cx, uint32_t cy, gs_texrender_t *into, bool scene_straight, gs_texture_t *ring,
+			  gs_texture_t *presence, const Prepared *reuse);
+	Prepared prepared_;
+	uint64_t preparations_ = 0, reuses_ = 0, outline_passes_ = 0;
 
 	gs_effect_t *effect_ = nullptr;
 	gs_eparam_t *p_image_ = nullptr;
