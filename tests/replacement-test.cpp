@@ -151,7 +151,6 @@ int main(int argc, char **argv)
 	countdown_test::check(native_issues, QString::fromStdString(out + "/countdown-timer.png"));
 	window_morph_test::check(native_issues, QString::fromStdString(out + "/window-morph.png"));
 	capture_settings_test::check(native_issues);
-	visible_bounds_reuse_test::check(native_issues);
 	shadow_reuse_test::check(native_issues);
 	obs_hotkey_enable_callback_rerouting(false);
 	check(native_issues.isEmpty(),
@@ -167,6 +166,10 @@ int main(int argc, char **argv)
 			return 1;
 	}
 	obs_post_load_modules();
+	// The dock's measurement procedure is registered during module post-load.
+	QStringList bounds_issues;
+	visible_bounds_reuse_test::check(bounds_issues);
+	check(bounds_issues.isEmpty(), "visible bounds reuse: " + bounds_issues.join(", ").toStdString());
 	const char *original_name = obs_get_module_name(obs_get_module("move-transition"));
 	const char *bundled_name = obs_get_module_name(obs_get_module("stagekit-port-move"));
 	check(original_name && strcmp(original_name, "Move Transition") == 0 && bundled_name &&

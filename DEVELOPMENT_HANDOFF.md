@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | fix/render-overhead, based on beta250 (7a7bdf3ae7d6780b2a0896aa8136a67cdb399ac7). Release notes in docs/releases/0.1.0-beta251.md, numbered after checking fresh main. |
+| Working branch | fix/headless-bounds-check, based on published beta251 (25ce0297450135924cbf26ddcfff006f297608b9). Test initialization follow-up only; no new release version. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -24,6 +24,10 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
 ## Rendering overhead
+
+Beta251 is published. PR272 merged as 25ce0297450135924cbf26ddcfff006f297608b9 after all eight Windows and shared release gates passed. Windows OBS 32.2.2 job137497674668 passed the exact-output, work-count, color-mode, module ownership, shutdown and restart checks. The installer was downloaded and its SHA-256 verified as c6e8a10c7f08143e633fa0347f369e6baf035dc9d95f90799b457f393585ae1d. The publisher subsequently completed all seven platform/source/companion assets. Companion 0.42.0.0 was downloaded and its checksum and manifest verified.
+
+The Linux headless renderer called the visible-bounds fixture before module post-load had registered its measurement procedure. All of that fixture's calls were therefore unavailable; the real Linux and Windows OBS frontends passed. This test-only follow-up runs the fixture after the existing obs_post_load_modules call, with a separate issue assertion. It leaves production source and published binaries unchanged. The failed attempt skipped its performance step and produced no timing measurements. The matched comparison must complete before reporting a whole-frame gain.
 
 The owner made Windows-first release a standing priority on 2026-11-23. Validate the exact head's Windows build and OBS 32.2.2 frontend, plus repository, formatting and companion checks, then publish and verify the Windows installer promptly. macOS/Linux builds and Linux-only performance measurements follow without delaying Windows. Resolve any shared defect affecting Windows before publication. The existing publisher already exposes Windows assets before adding later platform assets.
 
