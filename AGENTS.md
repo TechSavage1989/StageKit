@@ -121,10 +121,13 @@ policy. Keep references for containers whose iterators return actual elements.
 Avoid local identifiers named signals or slots in Qt translation units; Qt expands those words as
 macros. Use handler for an OBS signal handler pointer.
 Custom wrapped QPushButton size hints cover the whole button. Set WA_LayoutUsesWidgetRect so the native
-style's layout-item margins do not alter that rectangle. Its vertical policy must allow shrinking when
-heightForWidth is smaller than sizeHint: Minimum can force a 58-pixel widget into a 48-pixel row even
-with that attribute. Keep the explicit minimum height and use Preferred. Assert button geometry fits
-its section and inspect the actual Windows capture after responsive layout changes.
+style's layout-item margins do not alter that rectangle. Keep the explicit minimum height and Preferred
+vertical policy so wrapped labels can determine their row height. OBS themes can impose a maximum
+button height below that minimum: Qt centers the smaller maximum rectangle, then expands the widget
+to its minimum, making it protrude from a correctly sized section. After normal QPushButton processing
+of Polish and StyleChange, clear that inherited height cap with QWIDGETSIZE_MAX. Preserve native theme
+painting. Assert containment and maximumHeight >= heightForWidth at normal and resized dock widths,
+and inspect the actual Windows capture after responsive layout changes.
 
 The native control catalog's available value is the panel's readiness gate. The frontend collection
 event arrives before scenes_loaded allows a complete catalog; never enable Edit panel solely from

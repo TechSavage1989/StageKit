@@ -1079,8 +1079,7 @@ class ViewControlButton final : public QPushButton {
 public:
 	ViewControlButton(const QString &label, QWidget *parent) : QPushButton(label, parent)
 	{
-		// These wrapped size hints describe the full button. Native button
-		// layout margins must not place its last row outside the section.
+		// These wrapped size hints describe the full widget rectangle.
 		setAttribute(Qt::WA_LayoutUsesWidgetRect);
 	}
 	QSize sizeHint() const override { return {150, 58}; }
@@ -1094,6 +1093,18 @@ public:
 	}
 
 protected:
+	bool event(QEvent *event) override
+	{
+		const bool handled = QPushButton::event(event);
+		if (event->type() == QEvent::Polish || event->type() == QEvent::StyleChange) {
+			// OBS themes can cap ordinary buttons below our wrapped minimum.
+			// Clear that cap after polish so the grid can use heightForWidth()
+			// without centering a smaller maximum rectangle inside the row.
+			setMaximumHeight(QWIDGETSIZE_MAX);
+		}
+		return handled;
+	}
+
 	void paintEvent(QPaintEvent *) override
 	{
 		QStylePainter painter(this);
@@ -1523,8 +1534,8 @@ private:
 			button->setCheckable(true);
 			button->setStyleSheet(
 				"QPushButton:checked { background-color: palette(highlight); color: palette(highlighted-text); }");
-			// A short wrapped label can use less than sizeHint().height().
-			// Minimum would force 58px into the grid's 48px height-for-width row.
+			// Let short labels use a shorter row than the preferred size hint;
+			// longer labels can grow through heightForWidth().
 			auto policy = QSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 			policy.setHeightForWidth(true);
 			button->setSizePolicy(policy);

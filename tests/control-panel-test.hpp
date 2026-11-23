@@ -1,6 +1,7 @@
 #pragma once
 
 #include "scene-controller-dock-test.hpp"
+#include <QGridLayout>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
@@ -76,7 +77,9 @@ inline bool buttons_fit_sections(QWidget *panel, QString *detail = nullptr)
 			continue;
 		found = true;
 		const auto *section = candidate->parentWidget();
-		if (!section || !section->rect().contains(candidate->geometry())) {
+		const int wrapped_height = candidate->heightForWidth(candidate->width());
+		if (!section || !section->rect().contains(candidate->geometry()) ||
+		    candidate->maximumHeight() < wrapped_height) {
 			if (detail) {
 				auto rect = [](const QRect &value) {
 					return QString("(%1,%2 %3x%4)")
@@ -90,14 +93,43 @@ inline bool buttons_fit_sections(QWidget *panel, QString *detail = nullptr)
 				};
 				const auto policy = candidate->sizePolicy();
 				*detail =
-					QString("%1: button=%2 section=%3 hfw=%4 hint=%5 minHint=%6 minSize=%7 policy=%8/%9")
+					QString("%1: button=%2 section=%3 hfw=%4 hint=%5 minHint=%6 minSize=%7 maxSize=%8 "
+						"policy=%9/%10 widgetRect=%11")
 						.arg(candidate->text(), rect(candidate->geometry()),
 						     section ? rect(section->rect()) : "missing")
-						.arg(candidate->heightForWidth(candidate->width()))
+						.arg(wrapped_height)
 						.arg(size(candidate->sizeHint()), size(candidate->minimumSizeHint()),
-						     size(candidate->minimumSize()))
+						     size(candidate->minimumSize()), size(candidate->maximumSize()))
 						.arg(int(policy.horizontalPolicy()))
-						.arg(int(policy.verticalPolicy()));
+						.arg(int(policy.verticalPolicy()))
+						.arg(candidate->testAttribute(Qt::WA_LayoutUsesWidgetRect));
+				auto layout_detail = [&](const QLayout *layout) {
+					if (!layout)
+						return QStringLiteral("missing");
+					const auto margins = layout->contentsMargins();
+					return QString("rect=%1 hint=%2 min=%3 max=%4 hfw=%5 spacing=%6 margins=%7,%8,%9,%10")
+						.arg(rect(layout->geometry()), size(layout->sizeHint()),
+						     size(layout->minimumSize()), size(layout->maximumSize()))
+						.arg(layout->heightForWidth(layout->geometry().width()))
+						.arg(layout->spacing())
+						.arg(margins.left())
+						.arg(margins.top())
+						.arg(margins.right())
+						.arg(margins.bottom());
+				};
+				if (section) {
+					*detail += "; layout={" + layout_detail(section->layout()) + "}; grid={" +
+						   layout_detail(section->findChild<QGridLayout *>()) + "}";
+					if (const auto *label =
+						    section->findChild<QLabel *>("viewsPanelSectionHeading"))
+						*detail +=
+							QString("; heading={rect=%1 hint=%2 minHint=%3 min=%4 max=%5 hfw=%6}")
+								.arg(rect(label->geometry()), size(label->sizeHint()),
+								     size(label->minimumSizeHint()),
+								     size(label->minimumSize()),
+								     size(label->maximumSize()))
+								.arg(label->heightForWidth(label->width()));
+				}
 			}
 			return false;
 		}

@@ -88,15 +88,24 @@ the section at normal and resized dock widths. The next Windows run must verify 
 provide the updated panel capture; the editor capture is unchanged.
 
 Head63862d13a12bea9f9de7f1e8ecf9f33a97e79855 confirmed that the rectangle attribute alone was
-insufficient: a vertical Minimum policy still forced the 58-pixel size hint into a 48-pixel wrapped
-row. The button now uses Preferred with its explicit 48-pixel minimum, and failed geometry assertions
-report actual rectangles, hints and policies. The empty-editor check also exposed a real readiness
+insufficient. The button uses Preferred with its explicit 48-pixel minimum, and failed geometry
+assertions report actual rectangles, hints and policies. The empty-editor check also exposed a real readiness
 mismatch: the dock ignored the catalog's available=false during the existing two-second collection
 loading guard. Both panel readiness and opening a fresh editor now honor that value. Collection return
 and restart assertions wait for the same ready state; inventory and board-emptiness checks are
 separate. All three native controller/migration checks passed again. One earlier camera test also
 missed intermediate hide motion on that runner; its existing assertions and production behavior remain
 unchanged and must pass in the complete release run.
+
+Head c2e548cd7ea852af715af8d65e6afabb4edd6923 passed the collection, intentionally empty panel,
+native migration and camera assertions; only the two button-containment checks failed. A Qt 6.11.1
+scratch probe reproduced the exact six-pixel protrusion: a theme maximum of 36 pixels conflicts with
+the explicit 48-pixel minimum. Qt centers the smaller rectangle, then expands the widget to its
+minimum. The section and grid sizing were correct; changing the vertical policy alone did not fix
+the cause. ViewControlButton now clears the themed maximum after normal Polish and StyleChange
+processing. The probe fits at both dock widths and after a second constrained stylesheet, with a
+larger bold font and wrapped label. The fixture checks the maximum and includes full layout geometry
+on failure. Actual Windows validation, restart and a clean panel capture remain required.
 
 ## Deferred platform follow-up after Windows beta253
 
