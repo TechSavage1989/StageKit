@@ -121,8 +121,16 @@ policy. Keep references for containers whose iterators return actual elements.
 Avoid local identifiers named signals or slots in Qt translation units; Qt expands those words as
 macros. Use handler for an OBS signal handler pointer.
 Custom wrapped QPushButton size hints cover the whole button. Set WA_LayoutUsesWidgetRect so the native
-style's layout-item margins cannot clip a final button row at a zero-margin section boundary. Assert
-button geometry fits its section and inspect the actual Windows capture after responsive layout changes.
+style's layout-item margins do not alter that rectangle. Its vertical policy must allow shrinking when
+heightForWidth is smaller than sizeHint: Minimum can force a 58-pixel widget into a 48-pixel row even
+with that attribute. Keep the explicit minimum height and use Preferred. Assert button geometry fits
+its section and inspect the actual Windows capture after responsive layout changes.
+
+The native control catalog's available value is the panel's readiness gate. The frontend collection
+event arrives before scenes_loaded allows a complete catalog; never enable Edit panel solely from
+the dock's loaded flag or the presence of saved fallback buttons. Check a fresh catalog before opening
+an editor. Collection and restart fixtures wait for that same ready state, and distinguish an empty
+available inventory from an intentionally empty customized board.
 
 The Ubuntu CI package build and Linux native/frontend job use the checksum-pinned official OBS 32.2.2
 Ubuntu 24.04 package rather than an unversioned PPA install. An unavailable PPA can leave apt using

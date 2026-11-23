@@ -87,6 +87,17 @@ The custom wrapped button now uses WA_LayoutUsesWidgetRect, and the fixture chec
 the section at normal and resized dock widths. The next Windows run must verify both corrections and
 provide the updated panel capture; the editor capture is unchanged.
 
+Head63862d13a12bea9f9de7f1e8ecf9f33a97e79855 confirmed that the rectangle attribute alone was
+insufficient: a vertical Minimum policy still forced the 58-pixel size hint into a 48-pixel wrapped
+row. The button now uses Preferred with its explicit 48-pixel minimum, and failed geometry assertions
+report actual rectangles, hints and policies. The empty-editor check also exposed a real readiness
+mismatch: the dock ignored the catalog's available=false during the existing two-second collection
+loading guard. Both panel readiness and opening a fresh editor now honor that value. Collection return
+and restart assertions wait for the same ready state; inventory and board-emptiness checks are
+separate. All three native controller/migration checks passed again. One earlier camera test also
+missed intermediate hide motion on that runner; its existing assertions and production behavior remain
+unchanged and must pass in the complete release run.
+
 ## Deferred platform follow-up after Windows beta253
 
 PR276 merged as 826c98857f304cd2260cf6b3c7c8d8e1d52b22cb for beta254. Final head

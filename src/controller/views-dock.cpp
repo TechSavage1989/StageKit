@@ -1523,7 +1523,9 @@ private:
 			button->setCheckable(true);
 			button->setStyleSheet(
 				"QPushButton:checked { background-color: palette(highlight); color: palette(highlighted-text); }");
-			auto policy = QSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+			// A short wrapped label can use less than sizeHint().height().
+			// Minimum would force 58px into the grid's 48px height-for-width row.
+			auto policy = QSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 			policy.setHeightForWidth(true);
 			button->setSizePolicy(policy);
 			button->setMinimumHeight(48);
@@ -1572,7 +1574,10 @@ private:
 		}
 		OBSDataAutoRelease response = obs_data_create();
 		view_controls_list(response);
-		set_inventory(object(response)["controls"].toArray(), loaded_);
+		const bool ready = loaded_ && obs_data_get_bool(response, "available");
+		set_inventory(object(response)["controls"].toArray(), ready);
+		if (!ready)
+			return;
 		editor_ = new ViewPanelEditor(this, inventory_, effective_pins(), [this](QJsonArray pins, bool custom) {
 			config_ = {{"schema", 1}, {"customized", custom}, {"pins", pins}};
 			set_inventory(inventory_, loaded_);
@@ -1963,7 +1968,8 @@ private:
 		OBSDataAutoRelease controls = obs_data_create();
 		if (loaded_)
 			view_controls_list(controls);
-		panel_->set_inventory(object(controls)["controls"].toArray(), loaded_);
+		panel_->set_inventory(object(controls)["controls"].toArray(),
+				      loaded_ && obs_data_get_bool(controls, "available"));
 		if (loaded_ && pages_->currentWidget() != manager_)
 			return;
 		const QSignalBlocker scene_block(scenes_), controller_block(controllers_), scope_block(scope_),

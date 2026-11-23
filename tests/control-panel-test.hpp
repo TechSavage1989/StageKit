@@ -62,7 +62,13 @@ inline bool checked(QWidget *panel, const QString &id)
 	return found && found->isChecked();
 }
 
-inline bool buttons_fit_sections(QWidget *panel)
+inline bool panel_ready(QWidget *panel)
+{
+	const auto *edit = panel->findChild<QAbstractButton *>("viewsPanelEdit");
+	return edit && edit->isEnabled();
+}
+
+inline bool buttons_fit_sections(QWidget *panel, QString *detail = nullptr)
 {
 	bool found = false;
 	for (auto *candidate : panel->findChildren<QAbstractButton *>()) {
@@ -70,10 +76,44 @@ inline bool buttons_fit_sections(QWidget *panel)
 			continue;
 		found = true;
 		const auto *section = candidate->parentWidget();
-		if (!section || !section->rect().contains(candidate->geometry()))
+		if (!section || !section->rect().contains(candidate->geometry())) {
+			if (detail) {
+				auto rect = [](const QRect &value) {
+					return QString("(%1,%2 %3x%4)")
+						.arg(value.x())
+						.arg(value.y())
+						.arg(value.width())
+						.arg(value.height());
+				};
+				auto size = [](const QSize &value) {
+					return QString("%1x%2").arg(value.width()).arg(value.height());
+				};
+				const auto policy = candidate->sizePolicy();
+				*detail =
+					QString("%1: button=%2 section=%3 hfw=%4 hint=%5 minHint=%6 minSize=%7 policy=%8/%9")
+						.arg(candidate->text(), rect(candidate->geometry()),
+						     section ? rect(section->rect()) : "missing")
+						.arg(candidate->heightForWidth(candidate->width()))
+						.arg(size(candidate->sizeHint()), size(candidate->minimumSizeHint()),
+						     size(candidate->minimumSize()))
+						.arg(int(policy.horizontalPolicy()))
+						.arg(int(policy.verticalPolicy()));
+			}
 			return false;
+		}
 	}
+	if (!found && detail)
+		*detail = "No control buttons were present";
 	return found;
+}
+
+inline void check_geometry(QWidget *panel, QStringList &issues, const char *message)
+{
+	if (until([&] { return buttons_fit_sections(panel); }))
+		return;
+	QString detail;
+	buttons_fit_sections(panel, &detail);
+	issues.append(QStringLiteral("StageKit controls: ") + QString::fromUtf8(message) + "; " + detail);
 }
 
 inline bool press_button(QWidget *panel, const QString &id)
@@ -168,10 +208,9 @@ inline void check_collection_isolation(QWidget *panel, QStringList &issues)
 	if (!created)
 		return;
 	expect(until([&] {
-		       const auto *edit = panel->findChild<QAbstractButton *>("viewsPanelEdit");
 		       return (!draft || !draft->isVisible()) &&
 			      panel->findChild<QWidget *>("viewsOperatorBoard")->isVisible() && !button(panel, {}) &&
-			      edit && edit->isEnabled();
+			      panel_ready(panel);
 	       }),
 	       "collection change retained a draft, management page or another collection's pins");
 	if (click(panel, "viewsPanelEdit") && until([&] { return dialog("viewsPanelEditor"); })) {
@@ -197,20 +236,23 @@ inline void check_collection_isolation(QWidget *panel, QStringList &issues)
 		QPointer<QDialog> editor = dialog("viewsPanelEditor");
 		if (editor) {
 			auto *available = editor->findChild<QListWidget *>("viewsPanelAvailable");
-			expect(available && available->count() > 0 && !button(panel, {}),
-			       "automatic discovery replaced an intentionally empty panel");
+			expect(available && available->count() > 0,
+			       "panel editor opened before the new collection's control inventory was available");
+			expect(!button(panel, {}), "automatic discovery replaced an intentionally empty panel");
 			editor->reject();
 		}
 	}
 	obs_frontend_save();
 	obs_frontend_set_current_scene_collection(original.toUtf8().constData());
-	expect(until([&] { return collection_name() == original && button(panel, {}); }) && check_saved_panel(panel),
+	expect(until([&] { return collection_name() == original && panel_ready(panel) && button(panel, {}); }) &&
+		       check_saved_panel(panel),
 	       "original pins, labels or order did not return after switching collections");
 	obs_frontend_set_current_scene_collection(temporary.toUtf8().constData());
-	expect(until([&] { return collection_name() == temporary && !button(panel, {}); }),
+	expect(until([&] { return collection_name() == temporary && panel_ready(panel) && !button(panel, {}); }),
 	       "the second collection did not retain its intentionally empty panel");
 	obs_frontend_set_current_scene_collection(original.toUtf8().constData());
-	expect(until([&] { return collection_name() == original && button(panel, {}); }) && check_saved_panel(panel),
+	expect(until([&] { return collection_name() == original && panel_ready(panel) && button(panel, {}); }) &&
+		       check_saved_panel(panel),
 	       "collection round trip changed the saved panel");
 	obs_frontend_save();
 }
@@ -231,7 +273,7 @@ inline void check(QStringList &issues, bool restart)
 	auto *board = panel->findChild<QWidget *>("viewsOperatorBoard");
 	expect(board && board->isVisible(), "operator panel was not visible");
 	if (restart) {
-		expect(until([&] { return button(panel, {}); }) && check_saved_panel(panel),
+		expect(until([&] { return panel_ready(panel) && button(panel, {}); }) && check_saved_panel(panel),
 		       "saved pins, target identities, labels, sections or order did not survive restart");
 		if (issues.size() == before)
 			blog(LOG_INFO,
@@ -575,8 +617,7 @@ inline void check(QStringList &issues, bool restart)
 		scope->setCurrentIndex(scope->findData(old_scope));
 		expect(click(panel, "viewsBackToControls") && check_saved_panel(panel),
 		       "custom labels, sections or saved order changed while importing controls");
-		expect(until([&] { return buttons_fit_sections(panel); }),
-		       "a control button extended outside its section at the normal dock width");
+		check_geometry(panel, issues, "a control button extended outside its section at the normal dock width");
 		obs_frontend_save();
 
 		const QString capture = qEnvironmentVariable("STAGEKIT_VIEWS_CAPTURE");
@@ -588,8 +629,8 @@ inline void check(QStringList &issues, bool restart)
 				dock = qobject_cast<QDockWidget *>(parent);
 			if (dock)
 				dock->resize(520, 600);
-			expect(until([&] { return buttons_fit_sections(panel); }),
-			       "a control button was clipped by its section after resizing the dock");
+			check_geometry(panel, issues,
+				       "a control button was clipped by its section after resizing the dock");
 			expect(panel->grab().save(directory.filePath("stagekit-controls.png")),
 			       "could not capture the real operator panel");
 			expect(click(panel, "viewsPanelEdit") && until([&] { return dialog("viewsPanelEditor"); }),
