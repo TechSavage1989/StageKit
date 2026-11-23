@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | feat/compact-views-panel. Beta255 is published. The next update adds a compact list, easier panel editing, icons, button sizing and scene navigation when selecting a mode or view. |
+| Working branch | feat/compact-views-panel, PR278 for beta256. Beta255 is published. Compact controls and direct scene switching passed the complete Windows OBS run; the final guide/capture revision is awaiting its exact-head release gates. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -46,7 +46,7 @@ Mode. The option off retains existing native destination behavior. Direct source
 controls and existing Stream Deck/vendor/hotkey defaults remain unchanged. The parent fallback must
 not guess a scene for a group or rebind a deleted destination to a same-name replacement.
 
-Implementation and validation are in progress. Preserve the beta255 panel's stable identities,
+Implementation is complete. Preserve the beta255 panel's stable identities,
 per-collection saved selections, empty custom panels, collection readiness and state-only refresh
 behavior. Actual Windows captures of the list, icon buttons and revised editor belong in this PR.
 The exact final head must pass Windows build/package, OBS frontend/restart and shared checks before
@@ -61,6 +61,17 @@ update, while execution still rejects a changed destination UUID. The icon failu
 selectFile call leaving its visible filename field empty; entering that real field reaches the working
 production image loader. The fixture keeps its strict icon and persistence assertions, captures compact
 buttons with every selected control visible, and restores the saved nondefault size before restart.
+
+Corrected head 5a62ca5986c1d837f532ff6d57e3ebeecafc2267 passed Windows frontend job 137992344279 in
+run 45260125245. Both result.txt and ndi-restart.txt report PASS, including the immediate destination
+edit/press regression, icons after removing their original files, nondefault Buttons/navigation settings,
+size 64, imported-original compatibility and collection isolation. All four quiet timing trials completed
+450 frames each; those software-renderer diagnostics do not establish hardware performance. The tested
+DLL SHA-256 is 6baed41e0be60cfc90b01dc1870cb39f52b514e4f0e9962cddda0619b3b26f16. Artifact 14861696305
+has SHA-256 646f4ea56587f3f150b11cd5827bcacfe7614d13f6a817acbb13602f8cd31324. The actual Windows list,
+compact icon buttons and checkbox editor were visually reviewed and copied into docs/images. Windows
+packaging and all shared checks passed on this head. The final screenshot/documentation head must pass
+those exact-head gates before merge; no further runtime change is planned.
 
 ## One persistent StageKit Views control panel
 
