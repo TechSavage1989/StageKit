@@ -541,8 +541,157 @@ inline OBSDataAutoRelease imported_group(const std::string &controller, obs_sour
 	return nullptr;
 }
 
+inline void check_original_removal(QStringList &issues)
+{
+	const auto before = issues.size();
+	auto expect = [&](bool value, const char *message) {
+		if (!value)
+			issues.append(QStringLiteral("Scene Controller original removal: ") +
+				      QString::fromUtf8(message));
+	};
+	Fixture f;
+	if (!f.controller) {
+		expect(false, "controller was unavailable");
+		return;
+	}
+	auto *main = f.add("Cleanup main picture");
+	auto *detail = f.add("Cleanup detail picture");
+	auto *first = f.add("Cleanup first camera", true);
+	auto *second = f.add("Cleanup second camera");
+	std::string mode_group, link_group, first_choice, second_choice, mode_uuid, link_uuid;
+	{
+		OBSDataAutoRelease mode_settings = modes("Cleanup main picture", "Cleanup detail picture");
+		obs_data_set_int(mode_settings, "mode|detail|place_ms", 725);
+		OBSSourceAutoRelease legacy =
+			obs_source_create("stagekit_scene_modes", "Cleanup original modes", mode_settings, nullptr);
+		OBSDataAutoRelease link_settings = obs_data_create();
+		list(link_settings, "items", {"Cleanup first camera", "Cleanup second camera"});
+		obs_data_set_int(link_settings, "mode", 0);
+		obs_data_set_string(link_settings, "transition", "none");
+		obs_data_set_string(link_settings, "hide_transition", "none");
+		OBSSourceAutoRelease link = obs_source_create("stagekit_visibility_link", "Cleanup original cameras",
+							      link_settings, nullptr);
+		obs_source_filter_add(obs_scene_get_source(f.scene), legacy);
+		obs_source_filter_add(obs_scene_get_source(f.scene), link);
+		mode_uuid = obs_source_get_uuid(legacy);
+		link_uuid = obs_source_get_uuid(link);
+		OBSDataAutoRelease imported_modes = import_legacy(f.id, legacy, true);
+		OBSDataAutoRelease imported_links = import_legacy(f.id, link, true);
+		expect(obs_data_get_bool(imported_modes, "success") && obs_data_get_bool(imported_links, "success"),
+		       "active imports were rejected");
+		expect(until([&] { return bool(imported_group(f.id, legacy)) && bool(imported_group(f.id, link)); }),
+		       "active groups were not stored");
+		OBSDataAutoRelease mode_definition = imported_group(f.id, legacy);
+		OBSDataAutoRelease link_definition = imported_group(f.id, link);
+		mode_group = obs_data_get_string(mode_definition, "id");
+		link_group = obs_data_get_string(link_definition, "id");
+		first_choice = choice(f.id, link_group.c_str(), "Cleanup first camera");
+		second_choice = choice(f.id, link_group.c_str(), "Cleanup second camera");
+		expect(!mode_group.empty() && !link_group.empty() && !first_choice.empty() && !second_choice.empty(),
+		       "imported controls did not have stable IDs");
+		expect(press(f.id, mode_group.c_str(), "detail") &&
+			       press(f.id, link_group.c_str(), second_choice.c_str()) && until([&] {
+				       return obs_sceneitem_visible(detail) && !obs_sceneitem_visible(main) &&
+					      obs_sceneitem_visible(second) && !obs_sceneitem_visible(first);
+			       }),
+		       "imported controls did not start");
+
+		// OBS undo retains detached filters. Their stored controller groups
+		// must remain valid even while UUID lookup still finds those originals.
+		obs_source_set_enabled(link, false);
+		obs_source_filter_remove(obs_scene_get_source(f.scene), legacy);
+		obs_source_filter_remove(obs_scene_get_source(f.scene), link);
+		expect(!obs_filter_get_parent(legacy) && !obs_filter_get_parent(link),
+		       "original filters were not detached");
+		OBSDataAutoRelease state = get(f.id);
+		OBSDataAutoRelease config = obs_data_get_obj(state, "config");
+		OBSDataAutoRelease switched = row(config, "groups", link_group);
+		expect(!obs_data_get_bool(switched, "enabled"),
+		       "removal lost an original's enabled change made immediately before deletion");
+		obs_data_set_bool(switched, "enabled", true);
+		expect(configure(f.id, config), "retained detached originals invalidated their existing groups");
+		expect(until([&] {
+			       OBSDataAutoRelease now = get(f.id);
+			       OBSDataAutoRelease group = row(now, "groups", link_group);
+			       return obs_data_get_bool(group, "enabled");
+		       }) && !obs_source_enabled(link),
+		       "the removed original's switch overrode a surviving group's enabled edit");
+		expect(press(f.id, mode_group.c_str(), "front") &&
+			       press(f.id, link_group.c_str(), first_choice.c_str()) && until([&] {
+				       return obs_sceneitem_visible(main) && !obs_sceneitem_visible(detail) &&
+					      obs_sceneitem_visible(first) && !obs_sceneitem_visible(second);
+			       }),
+		       "controls stopped after removing originals retained for undo");
+		state = get(f.id);
+		config = obs_data_get_obj(state, "config");
+		switched = row(config, "groups", link_group);
+		obs_data_set_bool(switched, "enabled", false);
+		expect(configure(f.id, config) && until([&] {
+			       OBSDataAutoRelease now = get(f.id);
+			       OBSDataAutoRelease group = row(now, "groups", link_group);
+			       return !obs_data_get_bool(group, "enabled");
+		       }) && !press(f.id, link_group.c_str(), second_choice.c_str()),
+		       "a surviving group could not be disabled after removing its original");
+		obs_data_set_bool(switched, "enabled", true);
+		expect(configure(f.id, config) && until([&] {
+			       OBSDataAutoRelease now = get(f.id);
+			       OBSDataAutoRelease group = row(now, "groups", link_group);
+			       return obs_data_get_bool(group, "enabled");
+		       }),
+		       "a surviving group could not be enabled again after removing its original");
+		OBSDataAutoRelease invalid = obs_data_create_from_json(obs_data_get_json(config));
+		OBSDataAutoRelease changed = row(invalid, "groups", mode_group);
+		obs_data_set_string(changed, "id", "new-detached-import");
+		expect(!configure(f.id, invalid), "a new group could claim an already detached original");
+	}
+	// Releasing the last original handles represents deletion without undo.
+	expect(until([&] {
+		       OBSSourceAutoRelease mode_original = obs_get_source_by_uuid(mode_uuid.c_str());
+		       OBSSourceAutoRelease link_original = obs_get_source_by_uuid(link_uuid.c_str());
+		       return !mode_original && !link_original;
+	       }),
+	       "removed original handles remained alive");
+	expect(press(f.id, mode_group.c_str(), "detail") && press(f.id, link_group.c_str(), second_choice.c_str()) &&
+		       until([&] {
+			       return current(f.id, mode_group.c_str()) == "detail" && obs_sceneitem_visible(detail) &&
+				      !obs_sceneitem_visible(main) && obs_sceneitem_visible(second) &&
+				      !obs_sceneitem_visible(first);
+		       }),
+	       "controls stopped after the originals were fully released");
+	settle();
+	OBSDataAutoRelease saved = obs_save_source(f.controller);
+	f.remove_controller();
+	settle();
+	f.controller = obs_load_source(saved);
+	if (f.controller) {
+		obs_source_filter_add(obs_scene_get_source(f.scene), f.controller);
+		obs_source_load(f.controller);
+	}
+	expect(f.controller && f.id == obs_source_get_uuid(f.controller) &&
+		       obs_source_filter_count(obs_scene_get_source(f.scene)) == 1 &&
+		       until([&] { return current(f.id, mode_group.c_str()) == "detail"; }) &&
+		       choice(f.id, link_group.c_str(), "Cleanup second camera") == second_choice,
+	       "source reload without originals lost controller, group, mode or choice identity");
+	OBSDataAutoRelease state = get(f.id);
+	OBSDataAutoRelease config = obs_data_get_obj(state, "config");
+	OBSDataAutoRelease mode_definition = row(config, "groups", mode_group);
+	OBSDataAutoRelease mode_settings = obs_data_get_obj(mode_definition, "settings");
+	expect(obs_data_get_int(mode_settings, "mode|detail|place_ms") == 725,
+	       "source reload lost imported native settings");
+	expect(press(f.id, mode_group.c_str(), "front") && press(f.id, link_group.c_str(), first_choice.c_str()) &&
+		       until([&] {
+			       return obs_sceneitem_visible(main) && !obs_sceneitem_visible(detail) &&
+				      obs_sceneitem_visible(first) && !obs_sceneitem_visible(second);
+		       }),
+	       "reloaded groups could not execute without their originals");
+	if (issues.size() == before)
+		blog(LOG_INFO,
+		     "[Scene Controller test] PASS: active imports survive retained original removal, full deletion and source-record reload with stable controls");
+}
+
 inline void check_migration(QStringList &issues)
 {
+	check_original_removal(issues);
 	const auto before = issues.size();
 	auto expect = [&](bool value, const char *message) {
 		if (!value)

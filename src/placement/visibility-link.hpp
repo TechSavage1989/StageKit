@@ -22,6 +22,13 @@ inline constexpr const char *kVisibilityLinkId = "stagekit_visibility_link";
 // "show only one of these" or "show and hide these together".
 void register_visibility_link();
 
+// A frontend control queues a press on the video thread without creating
+// another engine. The caller retains the filter. Only-one selects a named
+// member; together uses an empty source and shown=true/false. Active imports
+// follow their controller. Success means accepted; state changes after the
+// queued task revalidates the retained filter, parent and source identities.
+bool visibility_link_press(obs_source_t *filter, const char *source, bool shown, std::string &why);
+
 // True when an enabled Link Visibility in `scene` set to "Follow sources"
 // has the item's source among its followers, and every such filter that
 // lists it has its lead sources saying hidden (none shown, or not all with

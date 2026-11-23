@@ -6,6 +6,7 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "views-dock.hpp"
 #include "scene-controller.hpp"
+#include "control-catalog.hpp"
 #include "../common/item-transition.hpp"
 
 #include <obs-frontend-api.h>
@@ -19,7 +20,9 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <QDoubleSpinBox>
 #include <QDockWidget>
 #include <QFormLayout>
+#include <QGridLayout>
 #include <QHBoxLayout>
+#include <QHideEvent>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -31,6 +34,11 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <QPointer>
 #include <QPushButton>
 #include <QSet>
+#include <QScrollArea>
+#include <QStackedWidget>
+#include <QShowEvent>
+#include <QStylePainter>
+#include <QStyleOptionButton>
 #include <QSignalBlocker>
 #include <QStyle>
 #include <QTabWidget>
@@ -44,6 +52,7 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <cstring>
 #include <functional>
 #include <utility>
+#include <vector>
 
 namespace stagekit {
 namespace {
@@ -570,7 +579,7 @@ void edit_view(QWidget *parent, const QJsonArray &groups, QJsonObject view, std:
 	auto *table = new QTableWidget(dialog);
 	table->setObjectName("viewsViewGroups");
 	table->setColumnCount(2);
-	table->setHorizontalHeaderLabels({text("Views.Group"), text("Views.Selection")});
+	table->setHorizontalHeaderLabels({text("Views.ViewControl"), text("Views.ViewSetTo")});
 	table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
 	table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
 	table->verticalHeader()->hide();
@@ -1065,13 +1074,586 @@ void combo_items(QComboBox *box, const QList<QPair<QString, QString>> &items, co
 	box->setCurrentIndex(found >= 0 ? found : box->count() ? 0 : -1);
 }
 
+// A native button keeps the OBS theme while wrapping long, user-provided names.
+class ViewControlButton final : public QPushButton {
+public:
+	ViewControlButton(const QString &label, QWidget *parent) : QPushButton(label, parent)
+	{
+		// These wrapped size hints describe the full widget rectangle.
+		setAttribute(Qt::WA_LayoutUsesWidgetRect);
+	}
+	QSize sizeHint() const override { return {150, 58}; }
+	QSize minimumSizeHint() const override { return {105, 48}; }
+	int heightForWidth(int width) const override
+	{
+		return std::max(48, fontMetrics().boundingRect(QRect(0, 0, std::max(40, width - 20), 1000),
+							       Qt::TextWordWrap | Qt::AlignCenter, text())
+						    .height() +
+					    20);
+	}
+
+protected:
+	bool event(QEvent *event) override
+	{
+		const bool handled = QPushButton::event(event);
+		if (event->type() == QEvent::Polish || event->type() == QEvent::StyleChange) {
+			// OBS themes can cap ordinary buttons below our wrapped minimum.
+			// Clear that cap after polish so the grid can use heightForWidth()
+			// without centering a smaller maximum rectangle inside the row.
+			setMaximumHeight(QWIDGETSIZE_MAX);
+		}
+		return handled;
+	}
+
+	void paintEvent(QPaintEvent *) override
+	{
+		QStylePainter painter(this);
+		QStyleOptionButton option;
+		initStyleOption(&option);
+		option.text.clear();
+		painter.drawControl(QStyle::CE_PushButton, option);
+		const auto group = isEnabled() ? QPalette::Active : QPalette::Disabled;
+		painter.setPen(palette().color(group, isChecked() && isEnabled() ? QPalette::HighlightedText
+										 : QPalette::ButtonText));
+		painter.drawText(rect().adjusted(10, 8, -10, -8), Qt::TextWordWrap | Qt::AlignCenter, text());
+	}
+};
+
+QJsonObject panel_pin(const QJsonObject &control)
+{
+	return {{"id", control["id"]},
+		{"target", control["target"]},
+		{"name", control["name"]},
+		{"context", control["section"]}};
+}
+
+QString panel_title(const QJsonObject &pin, const QJsonObject &control)
+{
+	const QString custom = pin["label"].toString().trimmed();
+	return !custom.isEmpty() ? custom : control["name"].toString(pin["name"].toString());
+}
+
+QString panel_section(const QJsonObject &pin, const QJsonObject &control)
+{
+	const QString custom = pin["section"].toString().trimmed();
+	const QString section = !custom.isEmpty() ? custom : control["section"].toString(pin["context"].toString());
+	return section.isEmpty() ? text("Controls.General") : section;
+}
+
+class ViewPanelEditor final : public QDialog {
+public:
+	ViewPanelEditor(QWidget *parent, const QJsonArray &inventory, const QJsonArray &pins,
+			std::function<void(QJsonArray, bool)> apply)
+		: QDialog(parent),
+		  inventory_(inventory),
+		  apply_(std::move(apply))
+	{
+		setObjectName("viewsPanelEditor");
+		setAttribute(Qt::WA_DeleteOnClose);
+		setWindowTitle(text("Controls.EditPanel"));
+		auto *layout = new QVBoxLayout(this);
+		layout->addWidget(note(this, text("Controls.EditorHelp")));
+		auto *columns = new QHBoxLayout;
+		layout->addLayout(columns, 1);
+		auto *available_column = new QVBoxLayout;
+		columns->addLayout(available_column, 1);
+		available_column->addWidget(note(this, text("Controls.Available")));
+		search_ = new QLineEdit(this);
+		search_->setObjectName("viewsPanelSearch");
+		search_->setPlaceholderText(text("Controls.Search"));
+		available_column->addWidget(search_);
+		available_ = new QListWidget(this);
+		available_->setObjectName("viewsPanelAvailable");
+		available_->setSelectionMode(QAbstractItemView::ExtendedSelection);
+		available_->setWordWrap(true);
+		available_column->addWidget(available_, 1);
+		auto *add = new QPushButton(text("Controls.AddSelected"), this);
+		add->setObjectName("viewsPanelAdd");
+		available_column->addWidget(add);
+		auto *selected_column = new QVBoxLayout;
+		columns->addLayout(selected_column, 1);
+		selected_column->addWidget(note(this, text("Controls.OnPanel")));
+		pins_ = new QListWidget(this);
+		pins_->setObjectName("viewsPanelPins");
+		pins_->setWordWrap(true);
+		selected_column->addWidget(pins_, 1);
+		auto *tools = new QHBoxLayout;
+		selected_column->addLayout(tools);
+		auto *remove = new QPushButton(text("Views.Remove"), this);
+		remove->setObjectName("viewsPanelRemove");
+		tools->addWidget(remove, 1);
+		for (const int direction : {-1, 1}) {
+			auto *move = new QToolButton(this);
+			move->setObjectName(direction < 0 ? "viewsPanelUp" : "viewsPanelDown");
+			move->setArrowType(direction < 0 ? Qt::UpArrow : Qt::DownArrow);
+			move->setAccessibleName(text(direction < 0 ? "Views.MoveUp" : "Views.MoveDown"));
+			move->setToolTip(move->accessibleName());
+			tools->addWidget(move);
+			connect(move, &QToolButton::clicked, this, [this, direction] {
+				const int from = pins_->currentRow(), to = from + direction;
+				if (from < 0 || to < 0 || to >= pins_->count())
+					return;
+				automatic_ = false;
+				auto *item = pins_->takeItem(from);
+				pins_->insertItem(to, item);
+				pins_->setCurrentRow(to);
+			});
+		}
+		auto *form = new QFormLayout;
+		selected_column->addLayout(form);
+		label_ = new QLineEdit(this);
+		label_->setObjectName("viewsPanelLabel");
+		label_->setPlaceholderText(text("Controls.UseName"));
+		form->addRow(text("Controls.Label"), label_);
+		section_ = new QLineEdit(this);
+		section_->setObjectName("viewsPanelSection");
+		section_->setPlaceholderText(text("Controls.UseSection"));
+		form->addRow(text("Controls.Section"), section_);
+		context_ = note(this, {}, "viewsPanelContext");
+		selected_column->addWidget(context_);
+		auto *automatic = new QPushButton(text("Controls.Automatic"), this);
+		automatic->setObjectName("viewsPanelAutomatic");
+		layout->addWidget(automatic, 0, Qt::AlignLeft);
+		status_ = note(this, {}, "viewsPanelEditorStatus");
+		layout->addWidget(status_);
+		auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, this);
+		buttons->button(QDialogButtonBox::Save)->setObjectName("viewsPanelSave");
+		layout->addWidget(buttons);
+		for (const QJsonValue value : pins)
+			append_pin(value.toObject());
+		fill_available();
+		connect(search_, &QLineEdit::textChanged, this, [this] { filter_available(); });
+		connect(add, &QPushButton::clicked, this, [this] {
+			automatic_ = false;
+			for (auto *item : available_->selectedItems()) {
+				const QString id = item->data(Qt::UserRole).toString();
+				if (!has_pin(id))
+					append_pin(panel_pin(find_id(inventory_, id)));
+			}
+			fill_available();
+			if (pins_->currentRow() < 0 && pins_->count())
+				pins_->setCurrentRow(pins_->count() - 1);
+		});
+		connect(remove, &QPushButton::clicked, this, [this] {
+			automatic_ = false;
+			delete pins_->takeItem(pins_->currentRow());
+			fill_available();
+			show_pin();
+		});
+		connect(pins_, &QListWidget::currentRowChanged, this, [this] { show_pin(); });
+		connect(label_, &QLineEdit::textChanged, this, [this] { edit_pin(); });
+		connect(section_, &QLineEdit::textChanged, this, [this] { edit_pin(); });
+		connect(automatic, &QPushButton::clicked, this, [this] {
+			automatic_ = true;
+			pins_->clear();
+			for (const QJsonValue value : inventory_)
+				if (value.toObject()["defaultVisible"].toBool())
+					append_pin(panel_pin(value.toObject()));
+			fill_available();
+			show_pin();
+			status_->setText(text("Controls.AutomaticPending"));
+		});
+		connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+		connect(buttons, &QDialogButtonBox::accepted, this, [this] {
+			QJsonArray pins;
+			for (int i = 0; i < pins_->count(); ++i)
+				pins.append(
+					QJsonObject::fromVariantMap(pins_->item(i)->data(Qt::UserRole + 1).toMap()));
+			apply_(pins, !automatic_);
+			accept();
+		});
+		if (pins_->count())
+			pins_->setCurrentRow(0);
+		show_pin();
+		resize(800, 580);
+	}
+
+private:
+	bool has_pin(const QString &id) const
+	{
+		for (int i = 0; i < pins_->count(); ++i)
+			if (pins_->item(i)->data(Qt::UserRole).toString() == id)
+				return true;
+		return false;
+	}
+
+	void set_pin_text(QListWidgetItem *item, const QJsonObject &pin)
+	{
+		const auto control = find_id(inventory_, pin["id"].toString());
+		QString name = panel_title(pin, control);
+		if (control.isEmpty())
+			name = text("Views.MissingItem").arg(name);
+		item->setText(name + "\n" + panel_section(pin, control));
+	}
+
+	void append_pin(const QJsonObject &pin)
+	{
+		if (pin["id"].toString().isEmpty() || has_pin(pin["id"].toString()))
+			return;
+		auto *item = new QListWidgetItem(pins_);
+		item->setData(Qt::UserRole, pin["id"].toString());
+		item->setData(Qt::UserRole + 1, pin.toVariantMap());
+		set_pin_text(item, pin);
+	}
+
+	void fill_available()
+	{
+		available_->clear();
+		for (const QJsonValue value : inventory_) {
+			const auto control = value.toObject();
+			if (has_pin(control["id"].toString()))
+				continue;
+			auto *item = new QListWidgetItem(
+				control["name"].toString() + "\n" + control["section"].toString(), available_);
+			item->setData(Qt::UserRole, control["id"].toString());
+			item->setData(Qt::UserRole + 1, control.toVariantMap());
+			item->setToolTip(control["reason"].toString());
+		}
+		filter_available();
+	}
+
+	void filter_available()
+	{
+		const QString query = search_->text().trimmed();
+		for (int i = 0; i < available_->count(); ++i)
+			available_->item(i)->setHidden(
+				!available_->item(i)->text().contains(query, Qt::CaseInsensitive));
+	}
+
+	void show_pin()
+	{
+		const QSignalBlocker label_block(label_), section_block(section_);
+		const auto *item = pins_->currentItem();
+		const auto pin = item ? QJsonObject::fromVariantMap(item->data(Qt::UserRole + 1).toMap())
+				      : QJsonObject{};
+		label_->setEnabled(item != nullptr);
+		section_->setEnabled(item != nullptr);
+		label_->setText(pin["label"].toString());
+		section_->setText(pin["section"].toString());
+		const auto control = find_id(inventory_, pin["id"].toString());
+		context_->setText(item ? control["section"].toString(pin["context"].toString()) + "\n" +
+						  control["name"].toString(pin["name"].toString())
+				       : QString());
+	}
+
+	void edit_pin()
+	{
+		auto *item = pins_->currentItem();
+		if (!item)
+			return;
+		automatic_ = false;
+		status_->clear();
+		auto pin = QJsonObject::fromVariantMap(item->data(Qt::UserRole + 1).toMap());
+		pin["label"] = label_->text();
+		pin["section"] = section_->text();
+		item->setData(Qt::UserRole + 1, pin.toVariantMap());
+		set_pin_text(item, pin);
+	}
+
+	QJsonArray inventory_;
+	std::function<void(QJsonArray, bool)> apply_;
+	QLineEdit *search_ = nullptr, *label_ = nullptr, *section_ = nullptr;
+	QListWidget *available_ = nullptr, *pins_ = nullptr;
+	QLabel *context_ = nullptr, *status_ = nullptr;
+	bool automatic_ = false;
+};
+
+class ViewsControlPanel final : public QWidget {
+public:
+	ViewsControlPanel(QWidget *parent, std::function<void()> manage, std::function<void()> changed)
+		: QWidget(parent),
+		  changed_(std::move(changed))
+	{
+		setObjectName("viewsOperatorBoard");
+		auto *layout = new QVBoxLayout(this);
+		layout->setContentsMargins(0, 0, 0, 0);
+		auto *tools = new QHBoxLayout;
+		layout->addLayout(tools);
+		edit_ = new QPushButton(text("Controls.EditPanel"), this);
+		edit_->setObjectName("viewsPanelEdit");
+		tools->addWidget(edit_);
+		auto *configure = new QPushButton(text("Controls.Manage"), this);
+		configure->setObjectName("viewsManageControllers");
+		tools->addWidget(configure);
+		connect(configure, &QPushButton::clicked, this, std::move(manage));
+		connect(edit_, &QPushButton::clicked, this, [this] { edit(); });
+		scroll_ = new QScrollArea(this);
+		scroll_->setObjectName("viewsPanelScroll");
+		scroll_->setWidgetResizable(true);
+		scroll_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+		scroll_->setFrameShape(QFrame::NoFrame);
+		scroll_->viewport()->installEventFilter(this);
+		content_ = new QWidget(scroll_);
+		content_->setObjectName("viewsPanelContent");
+		content_layout_ = new QVBoxLayout(content_);
+		content_layout_->setContentsMargins(0, 0, 0, 0);
+		content_layout_->setSpacing(12);
+		scroll_->setWidget(content_);
+		layout->addWidget(scroll_, 1);
+		status_ = note(this, {}, "viewsPanelStatus");
+		layout->addWidget(status_);
+	}
+
+	void clear_collection()
+	{
+		if (editor_)
+			editor_->close();
+		config_ = {};
+		set_inventory({}, false);
+	}
+
+	void load(obs_data_t *root)
+	{
+		OBSDataAutoRelease data = obs_data_get_obj(root, "stagekit.views.panel");
+		config_ = object(data);
+	}
+
+	void save(obs_data_t *root)
+	{
+		if (config_["customized"].toBool()) {
+			// Refresh only fallback names. Targets and custom labels keep their identities.
+			auto pins = config_["pins"].toArray();
+			for (int i = 0; i < pins.size(); ++i) {
+				auto pin = pins[i].toObject();
+				const auto control = find_id(inventory_, pin["id"].toString());
+				if (!control.isEmpty()) {
+					pin["name"] = control["name"];
+					pin["context"] = control["section"];
+					pins[i] = pin;
+				}
+			}
+			config_["pins"] = pins;
+		}
+		const QByteArray json = QJsonDocument(config_).toJson(QJsonDocument::Compact);
+		OBSDataAutoRelease data = obs_data_create_from_json(json.constData());
+		obs_data_set_obj(root, "stagekit.views.panel", data);
+	}
+
+	void set_inventory(const QJsonArray &inventory, bool loaded)
+	{
+		inventory_ = inventory;
+		loaded_ = loaded;
+		edit_->setEnabled(loaded && !editor_);
+		QJsonArray appearance;
+		for (const QJsonValue value : effective_pins()) {
+			const auto pin = value.toObject();
+			const auto control = find_id(inventory_, pin["id"].toString());
+			appearance.append(QJsonObject{{"id", pin["id"]},
+						      {"target", pin["target"]},
+						      {"name", panel_title(pin, control)},
+						      {"section", panel_section(pin, control)}});
+		}
+		if (appearance != appearance_) {
+			appearance_ = appearance;
+			rebuild();
+		}
+		for (auto *button : buttons_) {
+			const auto control = find_id(inventory_, button->property("viewsControlId").toString());
+			const bool available = loaded && control["available"].toBool();
+			const bool active = available && control["active"].toBool();
+			const QSignalBlocker blocker(button);
+			button->setChecked(active);
+			button->setEnabled(available);
+			QFont font = button->font();
+			font.setBold(active);
+			button->setFont(font);
+			QString reason = available           ? QString()
+					 : control.isEmpty() ? text("Controls.Missing")
+							     : control["reason"].toString();
+			if (!available && reason.isEmpty())
+				reason = text("Controls.NotReady");
+			const QString context = button->property("viewsControlContext").toString();
+			button->setToolTip(context + (reason.isEmpty() ? QString() : "\n" + reason));
+			button->setAccessibleDescription(context + "\n" + (active ? text("Controls.Active") : reason));
+		}
+		status_->setText(!loaded              ? text("Views.Loading")
+				 : buttons_.isEmpty() ? text(config_["customized"].toBool() ? "Controls.EmptyCustom"
+											    : "Controls.Empty")
+						      : QString());
+	}
+
+protected:
+	bool eventFilter(QObject *watched, QEvent *event) override
+	{
+		if (watched == scroll_->viewport() && event->type() == QEvent::Resize)
+			reflow();
+		return QWidget::eventFilter(watched, event);
+	}
+
+private:
+	QJsonArray effective_pins() const
+	{
+		if (config_["customized"].toBool())
+			return config_["pins"].toArray();
+		QJsonArray pins;
+		for (const QJsonValue value : inventory_)
+			if (value.toObject()["defaultVisible"].toBool())
+				pins.append(panel_pin(value.toObject()));
+		return pins;
+	}
+
+	void rebuild()
+	{
+		buttons_.clear();
+		sections_.clear();
+		while (auto *item = content_layout_->takeAt(0)) {
+			if (auto *widget = item->widget())
+				delete widget;
+			delete item;
+		}
+		for (const QJsonValue value : appearance_) {
+			const auto entry = value.toObject();
+			const QString title = entry["section"].toString();
+			int at = 0;
+			while (at < sections_.size() && sections_[at].title != title)
+				++at;
+			if (at == sections_.size()) {
+				auto *section = new QWidget(content_);
+				auto *layout = new QVBoxLayout(section);
+				layout->setContentsMargins(0, 0, 0, 0);
+				auto *label = new QLabel(title, section);
+				label->setTextFormat(Qt::PlainText);
+				label->setWordWrap(true);
+				label->setObjectName("viewsPanelSectionHeading");
+				QFont font = label->font();
+				font.setBold(true);
+				label->setFont(font);
+				layout->addWidget(label);
+				auto *grid = new QGridLayout;
+				grid->setSpacing(6);
+				layout->addLayout(grid);
+				content_layout_->addWidget(section);
+				sections_.append({title, grid, {}});
+			}
+			auto *button = new ViewControlButton(entry["name"].toString(), content_);
+			button->setObjectName("viewsPanelButton-" + entry["id"].toString());
+			button->setProperty("viewsControlId", entry["id"].toString());
+			button->setProperty("viewsControlTarget", entry["target"].toObject().toVariantMap());
+			button->setProperty("viewsControlContext", entry["section"].toString());
+			button->setAccessibleName(entry["name"].toString());
+			button->setCheckable(true);
+			button->setStyleSheet(
+				"QPushButton:checked { background-color: palette(highlight); color: palette(highlighted-text); }");
+			// Let short labels use a shorter row than the preferred size hint;
+			// longer labels can grow through heightForWidth().
+			auto policy = QSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+			policy.setHeightForWidth(true);
+			button->setSizePolicy(policy);
+			button->setMinimumHeight(48);
+			sections_[at].buttons.append(button);
+			buttons_.append(button);
+			connect(button, &QPushButton::clicked, this, [this, button] {
+				// Only a native snapshot determines active state, including rejected presses.
+				const auto control = find_id(inventory_, button->property("viewsControlId").toString());
+				button->setChecked(control["available"].toBool() && control["active"].toBool());
+				const auto target =
+					QJsonObject::fromVariantMap(button->property("viewsControlTarget").toMap());
+				const QByteArray json = QJsonDocument(target).toJson(QJsonDocument::Compact);
+				OBSDataAutoRelease data = obs_data_create_from_json(json.constData());
+				std::string why;
+				if (!view_control_press(data, why))
+					status_->setText(QString::fromStdString(why));
+				else {
+					status_->setText(text("Views.Applying"));
+					changed_();
+				}
+			});
+		}
+		content_layout_->addStretch(1);
+		reflow();
+	}
+
+	void reflow()
+	{
+		const int columns = std::clamp((scroll_->viewport()->width() + 6) / 150, 1, 6);
+		for (auto &section : sections_) {
+			for (auto *button : section.buttons)
+				section.grid->removeWidget(button);
+			for (int i = 0; i < 6; ++i)
+				section.grid->setColumnStretch(i, i < columns ? 1 : 0);
+			for (int i = 0; i < section.buttons.size(); ++i)
+				section.grid->addWidget(section.buttons[i], i / columns, i % columns);
+		}
+	}
+
+	void edit()
+	{
+		if (editor_) {
+			editor_->raise();
+			editor_->activateWindow();
+			return;
+		}
+		OBSDataAutoRelease response = obs_data_create();
+		view_controls_list(response);
+		const bool ready = loaded_ && obs_data_get_bool(response, "available");
+		set_inventory(object(response)["controls"].toArray(), ready);
+		if (!ready)
+			return;
+		editor_ = new ViewPanelEditor(this, inventory_, effective_pins(), [this](QJsonArray pins, bool custom) {
+			config_ = {{"schema", 1}, {"customized", custom}, {"pins", pins}};
+			set_inventory(inventory_, loaded_);
+			obs_frontend_save();
+		});
+		connect(editor_, &QDialog::finished, this, [this] {
+			editor_ = nullptr;
+			edit_->setEnabled(loaded_);
+		});
+		edit_->setEnabled(false);
+		editor_->open();
+	}
+
+	struct Section {
+		QString title;
+		QGridLayout *grid;
+		QList<ViewControlButton *> buttons;
+	};
+	QList<Section> sections_;
+	QList<ViewControlButton *> buttons_;
+	QJsonArray inventory_, appearance_;
+	QJsonObject config_;
+	std::function<void()> changed_;
+	QPushButton *edit_ = nullptr;
+	QScrollArea *scroll_ = nullptr;
+	QWidget *content_ = nullptr;
+	QVBoxLayout *content_layout_ = nullptr;
+	QLabel *status_ = nullptr;
+	QPointer<ViewPanelEditor> editor_;
+	bool loaded_ = false;
+};
+
 class ViewsDock final : public QWidget {
 public:
 	ViewsDock()
 	{
 		setObjectName("stagekitViewsDock");
-		auto *layout = new QVBoxLayout(this);
-		layout->setContentsMargins(8, 8, 8, 8);
+		auto *outer = new QVBoxLayout(this);
+		outer->setContentsMargins(8, 8, 8, 8);
+		pages_ = new QStackedWidget(this);
+		pages_->setObjectName("viewsPages");
+		outer->addWidget(pages_);
+		panel_ = new ViewsControlPanel(
+			pages_,
+			[this] {
+				pages_->setCurrentWidget(manager_);
+				refresh(true);
+			},
+			[this] {
+				queue_refresh(true);
+				QTimer::singleShot(150, this, [this] { queue_refresh(); });
+			});
+		pages_->addWidget(panel_);
+		manager_ = new QWidget(pages_);
+		manager_->setObjectName("viewsControllerManager");
+		pages_->addWidget(manager_);
+		auto *layout = new QVBoxLayout(manager_);
+		layout->setContentsMargins(0, 0, 0, 0);
+		auto *back = new QPushButton(text("Controls.Back"), manager_);
+		back->setObjectName("viewsBackToControls");
+		layout->addWidget(back);
+		connect(back, &QPushButton::clicked, this, [this] {
+			pages_->setCurrentWidget(panel_);
+			queue_refresh(true);
+		});
 		auto *form = new QFormLayout;
 		layout->addLayout(form);
 		scenes_ = new QComboBox(this);
@@ -1162,8 +1744,9 @@ public:
 			if (loaded_ && isVisible())
 				refresh(false);
 		});
-		for (const char *signal :
-		     {"source_create", "source_remove", "source_rename", "stagekit_scene_controller_changed"})
+		for (const char *signal : {"source_create", "source_remove"})
+			signal_handler_connect(obs_get_signal_handler(), signal, structure_changed, this);
+		for (const char *signal : {"source_rename", "stagekit_scene_controller_changed"})
 			signal_handler_connect(obs_get_signal_handler(), signal, changed, this);
 		refresh(false);
 	}
@@ -1176,9 +1759,12 @@ public:
 			return;
 		closed_ = true;
 		fallback_.stop();
-		for (const char *signal :
-		     {"source_create", "source_remove", "source_rename", "stagekit_scene_controller_changed"})
+		for (const char *signal : {"source_create", "source_remove"})
+			signal_handler_disconnect(obs_get_signal_handler(), signal, structure_changed, this);
+		for (const char *signal : {"source_rename", "stagekit_scene_controller_changed"})
 			signal_handler_disconnect(obs_get_signal_handler(), signal, changed, this);
+		unwatch();
+		panel_->clear_collection();
 		if (editor_)
 			editor_->close();
 	}
@@ -1187,6 +1773,10 @@ public:
 	{
 		loaded_ = false;
 		fallback_.stop();
+		unwatch();
+		watch_dirty_ = true;
+		panel_->clear_collection();
+		pages_->setCurrentWidget(panel_);
 		if (editor_)
 			editor_->close();
 		for (auto *dialog : findChildren<QDialog *>())
@@ -1203,7 +1793,8 @@ public:
 		if (closed_)
 			return;
 		loaded_ = true;
-		fallback_.start();
+		if (isVisible())
+			fallback_.start();
 		queue_refresh();
 	}
 
@@ -1218,8 +1809,10 @@ public:
 			obs_data_set_string(settings, "scope", selected_scope_.toUtf8().constData());
 			obs_data_set_string(settings, "scope_kind", scope_is_views_ ? "views" : "group");
 			obs_data_set_obj(root, "stagekit.views", settings);
+			panel_->save(root);
 		} else if (!closed_) {
 			clear_collection();
+			panel_->load(root);
 			OBSDataAutoRelease settings = obs_data_get_obj(root, "stagekit.views");
 			selected_scene_ = QString::fromUtf8(obs_data_get_string(settings, "scene"));
 			selected_controller_ = QString::fromUtf8(obs_data_get_string(settings, "controller"));
@@ -1244,6 +1837,7 @@ public:
 
 	void show_controller(const QString &id)
 	{
+		pages_->setCurrentWidget(manager_);
 		if (raise_import())
 			return;
 		if (editor_ && editor_->controller_id() != id) {
@@ -1259,22 +1853,115 @@ public:
 		selected_controller_ = id;
 		selected_scope_.clear();
 		loaded_ = true;
-		refresh(true);
 		if (auto *container = qobject_cast<QDockWidget *>(parentWidget())) {
 			container->show();
 			container->raise();
 		}
+		refresh(true);
 		persist_selection();
 		configure();
 	}
 
+protected:
+	void showEvent(QShowEvent *event) override
+	{
+		QWidget::showEvent(event);
+		if (loaded_ && !closed_)
+			fallback_.start();
+		queue_refresh(true);
+	}
+
+	void hideEvent(QHideEvent *event) override
+	{
+		fallback_.stop();
+		QWidget::hideEvent(event);
+	}
+
 private:
+	static void structure_changed(void *data, calldata_t *)
+	{
+		auto *self = static_cast<ViewsDock *>(data);
+		QMetaObject::invokeMethod(
+			self,
+			[self] {
+				self->watch_dirty_ = true;
+				self->queue_refresh();
+			},
+			Qt::QueuedConnection);
+	}
+
 	static void changed(void *data, calldata_t *)
 	{
 		auto *self = static_cast<ViewsDock *>(data);
 		// Backend notifications can originate on the video thread. Snapshot
 		// only after returning to the UI, and combine bursts into one refresh.
 		QMetaObject::invokeMethod(self, [self] { self->queue_refresh(); }, Qt::QueuedConnection);
+	}
+
+	void unwatch()
+	{
+		std::vector<obs_weak_source_t *> watched;
+		watched.swap(watched_);
+		for (auto *weak : watched) {
+			OBSSourceAutoRelease source = obs_weak_source_get_source(weak);
+			if (source) {
+				auto *handler = obs_source_get_signal_handler(source);
+				if (obs_source_get_type(source) == OBS_SOURCE_TYPE_SCENE) {
+					for (const char *signal : {"item_add", "item_remove", "reorder", "refresh"})
+						signal_handler_disconnect(handler, signal, structure_changed, this);
+					signal_handler_disconnect(handler, "item_visible", changed, this);
+				} else {
+					signal_handler_disconnect(handler, "enable", changed, this);
+				}
+			}
+			obs_weak_source_release(weak);
+		}
+	}
+
+	void watch()
+	{
+		watch_dirty_ = false;
+		unwatch();
+		std::vector<obs_source_t *> held;
+		const auto collect = [](void *data, obs_source_t *source) {
+			auto &out = *static_cast<std::vector<obs_source_t *> *>(data);
+			if (obs_source_get_type(source) == OBS_SOURCE_TYPE_SCENE)
+				if (auto *ref = obs_source_get_ref(source))
+					out.push_back(ref);
+			obs_source_enum_filters(
+				source,
+				[](obs_source_t *, obs_source_t *filter, void *opaque) {
+					const char *id = obs_source_get_unversioned_id(filter);
+					if (!id || (std::strcmp(id, "stagekit_scene_controller") != 0 &&
+						    std::strcmp(id, "stagekit_scene_modes") != 0 &&
+						    std::strcmp(id, "stagekit_visibility_link") != 0 &&
+						    std::strcmp(id, "stagekit_show_in_scenes") != 0))
+						return;
+					if (auto *ref = obs_source_get_ref(filter))
+						static_cast<std::vector<obs_source_t *> *>(opaque)->push_back(ref);
+				},
+				data);
+			return true;
+		};
+		obs_enum_sources(collect, &held);
+		obs_enum_scenes(collect, &held);
+		QSet<QString> seen;
+		for (auto *source : held) {
+			const QString uuid = QString::fromUtf8(obs_source_get_uuid(source));
+			if (!seen.contains(uuid) && !obs_source_removed(source)) {
+				seen.insert(uuid);
+				auto *handler = obs_source_get_signal_handler(source);
+				if (obs_source_get_type(source) == OBS_SOURCE_TYPE_SCENE) {
+					for (const char *signal : {"item_add", "item_remove", "reorder", "refresh"})
+						signal_handler_connect(handler, signal, structure_changed, this);
+					signal_handler_connect(handler, "item_visible", changed, this);
+				} else {
+					signal_handler_connect(handler, "enable", changed, this);
+				}
+				watched_.push_back(obs_source_get_weak_source(source));
+			}
+			obs_source_release(source);
+		}
 	}
 
 	void persist_selection()
@@ -1285,7 +1972,16 @@ private:
 
 	void refresh(bool force)
 	{
-		if (closed_)
+		if (closed_ || (loaded_ && !isVisible()))
+			return;
+		if (loaded_ && watch_dirty_)
+			watch();
+		OBSDataAutoRelease controls = obs_data_create();
+		if (loaded_)
+			view_controls_list(controls);
+		panel_->set_inventory(object(controls)["controls"].toArray(),
+				      loaded_ && obs_data_get_bool(controls, "available"));
+		if (loaded_ && pages_->currentWidget() != manager_)
 			return;
 		const QSignalBlocker scene_block(scenes_), controller_block(controllers_), scope_block(scope_),
 			enabled_block(enabled_);
@@ -1458,7 +2154,6 @@ private:
 				    selected_scope_.clear();
 				    refresh(true);
 				    persist_selection();
-				    QTimer::singleShot(0, this, [this] { configure(); });
 				    return true;
 			    });
 	}
@@ -1570,12 +2265,32 @@ private:
 		auto *error = note(dialog, filters->count() ? QString() : text("Views.NoLegacy"), "viewsImportError");
 		layout->addWidget(error);
 		auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, dialog);
-		auto *import_button = buttons->addButton(text("Views.Import"), QDialogButtonBox::AcceptRole);
+		auto *import_button = buttons->addButton(text("Views.Import"), QDialogButtonBox::ActionRole);
 		import_button->setObjectName("viewsImportConfirm");
 		import_button->setEnabled(filters->count() > 0);
+		auto *import_all = buttons->addButton(text("Views.ImportAll"), QDialogButtonBox::ActionRole);
+		import_all->setObjectName("viewsImportAll");
+		import_all->setToolTip(text("Views.ImportAllHelp"));
+		import_all->setEnabled(filters->count() > 0);
 		layout->addWidget(buttons);
 		connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
-		connect(buttons, &QDialogButtonBox::accepted, dialog, [=] {
+		connect(import_all, &QPushButton::clicked, dialog, [=] {
+			OBSDataAutoRelease response = obs_data_create();
+			std::string why;
+			if (!scene_controller_import_all(controller_id.toUtf8().constData(), activate->isChecked(),
+							 response, why)) {
+				error->setText(QString::fromStdString(why));
+				return;
+			}
+			selected_scope_.clear();
+			obs_frontend_save();
+			queue_refresh();
+			error->setText(text("Views.ImportAllResult")
+					       .arg(obs_data_get_int(response, "importedCount"))
+					       .arg(obs_data_get_int(response, "skippedCount")));
+			buttons->button(QDialogButtonBox::Cancel)->setText(text("Views.Close"));
+		});
+		connect(import_button, &QPushButton::clicked, dialog, [=] {
 			OBSDataAutoRelease response = obs_data_create();
 			std::string why;
 			if (!scene_controller_import(controller_id.toUtf8().constData(),
@@ -1604,6 +2319,11 @@ private:
 		return false;
 	}
 
+	QStackedWidget *pages_ = nullptr;
+	QWidget *manager_ = nullptr;
+	ViewsControlPanel *panel_ = nullptr;
+	std::vector<obs_weak_source_t *> watched_;
+	bool watch_dirty_ = true;
 	QComboBox *scenes_ = nullptr, *controllers_ = nullptr, *scope_ = nullptr;
 	QCheckBox *enabled_ = nullptr;
 	QListWidget *list_ = nullptr;

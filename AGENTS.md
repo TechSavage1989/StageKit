@@ -80,9 +80,60 @@ compatibility, removal rollback and an actual OBS restart. Capture the Windows d
 guide. Source renames use source_settings_renamed for nested generic/per-source transition settings and
 scene_modes_rename_settings for mode membership and saved placements.
 
+StageKit Views opens on one collection-wide control panel. Keep scene/controller selectors on its
+management page; ordinary operation must not require browsing them. Discover existing native controls
+without requiring import, and preserve saved panel pins, labels, sections and order per collection.
+Use stable controller/group/choice IDs, filter and source UUIDs, and owning scene-item identities.
+Re-resolve a pressed catalog ID against current native state. Renaming cannot break a pin, and a
+missing target must stay unavailable rather than binding to another source with the same name.
+Imported originals remain resolvable for existing pins but are not duplicated on an automatic panel.
+An explicitly customized empty panel is different from automatic discovery.
+
+The panel reads actual active and available state, never just the last button pressed. Coalesce
+native change signals on the frontend, retain the visible-only fallback, and avoid rebuilding the
+button widgets for state-only changes. Do not add per-frame inventories or render work. Close panel
+drafts on collection changes and return to the control panel on collection load or OBS restart.
+Keep the existing dock ID and manager object names. Exercise control-panel-test.hpp in the real OBS
+frontend, including multi-scene controls, native visibility actions, pin identity and restart, and
+capture the actual Windows panel and its editor for the guide.
+
+Import all applies only to supported Scene Modes and Link Visibility filters on the controller's own
+scene. Retain discovered filters, deep-clone the prospective definition, preserve complete settings
+and enabled states, then validate and publish the complete batch once. Skip imports already in this
+controller and active ownership elsewhere. An invalid batch cannot publish a partial import. Reuse
+the single-import definition builder so migration semantics do not diverge.
+
+Deleting an actively imported original must preserve its controller group and stable choices. OBS can
+retain the detached filter for Undo; treat that detached original as absent, while still rejecting a
+wrong-type or reparented original and a new import of a detached filter. Exercise both retained and
+fully released originals plus a controller source-record reload. Existing filter-targeted keys still
+require the original or must be retargeted to the controller. Show in Scenes is not imported by this
+path; its panel button still uses the real filter.
+
+Queue frontend Link Visibility presses on OBS's video task queue so runtime_press cannot race tick's
+applying marker or transition state. Retain and revalidate the filter, parent and member identities,
+and enter graphics for native item-transition resource work. Accepted is not the same as applied;
+the panel must continue displaying actual native state.
+
 Use explicit const QJsonValue values when range-iterating QJsonArray in the dock. Its iterator can yield
 a temporary value or proxy, and Clang rejects a deduced const-reference binding under the macOS warning
 policy. Keep references for containers whose iterators return actual elements.
+Avoid local identifiers named signals or slots in Qt translation units; Qt expands those words as
+macros. Use handler for an OBS signal handler pointer.
+Custom wrapped QPushButton size hints cover the whole button. Set WA_LayoutUsesWidgetRect so the native
+style's layout-item margins do not alter that rectangle. Keep the explicit minimum height and Preferred
+vertical policy so wrapped labels can determine their row height. OBS themes can impose a maximum
+button height below that minimum: Qt centers the smaller maximum rectangle, then expands the widget
+to its minimum, making it protrude from a correctly sized section. After normal QPushButton processing
+of Polish and StyleChange, clear that inherited height cap with QWIDGETSIZE_MAX. Preserve native theme
+painting. Assert containment and maximumHeight >= heightForWidth at normal and resized dock widths,
+and inspect the actual Windows capture after responsive layout changes.
+
+The native control catalog's available value is the panel's readiness gate. The frontend collection
+event arrives before scenes_loaded allows a complete catalog; never enable Edit panel solely from
+the dock's loaded flag or the presence of saved fallback buttons. Check a fresh catalog before opening
+an editor. Collection and restart fixtures wait for that same ready state, and distinguish an empty
+available inventory from an intentionally empty customized board.
 
 The Ubuntu CI package build and Linux native/frontend job use the checksum-pinned official OBS 32.2.2
 Ubuntu 24.04 package rather than an unversioned PPA install. An unavailable PPA can leave apt using
