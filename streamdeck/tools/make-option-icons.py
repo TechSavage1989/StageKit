@@ -560,6 +560,8 @@ def rounded(x0, y0, x1, y1, r):
 
 # The Scene Mode key: modes stacked, one of them on.
 DRAWINGS["mode"] = [("frame", 14, 2, 50, 10), ("box", 14, 14, 50, 22), ("frame", 14, 26, 50, 34)]
+# A View: one layout panel and a selected saved choice.
+DRAWINGS["view"] = [("frame", 3, 2, 61, 34), ("box", 9, 8, 27, 28), ("line", 36, 11, 53, 11), ("line", 35, 24, 41, 29), ("line", 41, 29, 55, 19)]
 # The scene filters' keys: a scene with its sources, and what the filter does
 # to all of them at once.
 DRAWINGS["scene-fit"] = [("frame", 4, 2, 60, 34), ("box", 9, 7, 38, 29), ("box", 46, 7, 55, 29)] + arrow(39, 18, 44, 18, 3)
@@ -628,7 +630,7 @@ DRAWINGS.update(HOOK_TYPES)
 # The ones that are a filter's key, with an "on" and an "off" look.
 SWITCHES = ["scene", "zoom", "fit", "overlap", "source-switcher", "window-switcher", "trigger", "link", "show-hide", "limit", "slide-to-edge", "every-scene", "keep-shape", "snap", "guides", "plain-switch"]
 SWITCHES += list(GROUPED)
-SWITCHES += [type_name(t) for t in TYPES] + ["mode", "scene-fit", "scene-shadow", "scene-corners"]
+SWITCHES += [type_name(t) for t in TYPES] + ["mode", "view", "scene-fit", "scene-shadow", "scene-corners"]
 SWITCHES += [type_name(t) for t in MORE_TYPES] + ["scene-type-" + s.replace("_", "-") for s in SCENE_TYPES]
 SWITCHES += ["style-" + s for s in STYLES]
 SWITCHES += ["match-item", "scene-transitions"]

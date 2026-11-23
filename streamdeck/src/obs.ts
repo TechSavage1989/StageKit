@@ -10,6 +10,7 @@ import OBSWebSocket from "obs-websocket-js/json";
 import { decodeItem } from "./scene-item-target.ts";
 import { type FilterInfo, isStageKit } from "./kinds.ts";
 import { readSceneBlurs, type SceneBlurFilter } from "./scene-blurs.ts";
+import { readSceneController, readSceneControllers, type SceneController, type ViewCommand } from "./views.ts";
 
 export type Connection = {
 	host?: string;
@@ -99,6 +100,7 @@ class ObsLink extends EventEmitter {
 			if (ev.vendorName === "StageKit" && ev.eventType === "SwitcherChanged") this.emit("switcher");
 			// A Scene Modes filter changed its mode, or its list of modes.
 			if (ev.vendorName === "StageKit" && ev.eventType === "SceneModeChanged") this.emit("mode", ev.eventData);
+			if (ev.vendorName === "StageKit" && ev.eventType === "SceneControllerChanged") this.emit("scenecontroller", ev.eventData);
 			// A Scene Blur was switched on or off.
 			if (ev.vendorName === "StageKit" && ev.eventType === "SceneBlurChanged") this.emit("sceneblur", ev.eventData);
 			// A Standby Image was shown over its source on purpose, or taken away.
@@ -494,6 +496,22 @@ class ObsLink extends EventEmitter {
 	async setSceneMode(scene: string, filter: string, mode: string, how: "on" | "toggle" | "next" | "none"): Promise<boolean> {
 		// (Next and none need no mode.)
 		return (await this.stageKit("SetSceneMode", how === "next" || how === "none" ? { scene, filter, how } : { scene, filter, mode, how })) !== undefined;
+	}
+
+	/** Saved controller choices shared with the StageKit Views dock. */
+	async sceneControllers(): Promise<SceneController[]> {
+		return readSceneControllers(await this.stageKit("ListSceneControllers"));
+	}
+
+	async sceneController(controllerId: string): Promise<SceneController | undefined> {
+		if (!controllerId) return undefined;
+		return readSceneController(await this.stageKit("GetSceneController", { controllerId }), controllerId);
+	}
+
+	/** Acceptance does not predict the selected state; SceneControllerChanged reports application. */
+	async sceneControllerCommand(command: ViewCommand): Promise<boolean> {
+		if (!command.controllerId) return false;
+		return (await this.stageKit("SceneControllerCommand", command))?.success === true;
 	}
 
 	/**

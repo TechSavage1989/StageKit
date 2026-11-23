@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.42.0.0"
+VERSION = "0.43.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -271,6 +271,52 @@ FOLLOW_MODE = """
 			const again = () => setTimeout(() => lists.forEach((l) => l.refresh()), 300);
 			modeFilter.addEventListener("valuechange", again);
 			modeFilter.addEventListener("change", again);
+		</script>
+"""
+
+FOLLOW_VIEW = """
+		<script>
+			(() => {
+				const controls = Object.fromEntries(Array.from(document.querySelectorAll("[setting]"),
+					(element) => [element.getAttribute("setting"), element]));
+				const value = (setting) => controls[setting]?.value || controls[setting]?.getAttribute("default") || "";
+				const visible = (setting, show) => {
+					const row = controls[setting]?.closest("sdpi-item");
+					if (row) { row.hidden = !show; row.style.display = show ? "" : "none"; }
+				};
+				const client = window.SDPIComponents?.streamDeckClient;
+				const update = () => {
+					const group = value("viewTarget") !== "view";
+					visible("groupId", group);
+					visible("choiceId", group && value("viewPress") !== "next");
+					visible("viewId", !group);
+				};
+				const status = () => Promise.resolve().then(() => client?.send("sendToPlugin", { event: "getViewStatus" })).catch(() => {});
+				client?.sendToPropertyInspector?.subscribe((ev) => {
+					if (ev?.payload?.event === "getViewStatus" && typeof ev.payload.text === "string")
+						document.getElementById("viewStatus").textContent = ev.payload.text;
+				});
+				const dependencies = { controllerId: ["groupId", "choiceId", "viewId", "viewPress"], groupId: ["choiceId", "viewPress"], viewTarget: ["viewPress"] };
+				const pending = new Set();
+				let timer;
+				const refresh = (setting) => {
+					update();
+					for (const child of dependencies[setting] || []) pending.add(child);
+					clearTimeout(timer);
+					timer = setTimeout(() => {
+						const lists = [...pending];
+						pending.clear();
+						for (const child of lists) controls[child]?.refresh();
+						status();
+					}, 300);
+				};
+				for (const setting of ["controllerId", "viewTarget", "groupId", "choiceId", "viewId", "viewPress"])
+					for (const event of ["change", "valuechange"]) controls[setting]?.addEventListener(event, () => refresh(setting));
+				client?.didReceiveSettings?.subscribe(() => requestAnimationFrame(update));
+				customElements.whenDefined("sdpi-select").then(() => requestAnimationFrame(update));
+				update();
+				status();
+			})();
 		</script>
 """
 
@@ -639,6 +685,23 @@ def main():
     page("mode", "StageKit scene mode", mode_page_html(), FOLLOW_MODE, lists=False)
     add("mode", "Scene Mode", "Works one scene's Scene Modes: switches a mode on, off, toggles it or goes to the next mode. Shows the mode that is on.", "mode", "imgs/actions/switch/icon", two("mode"))
 
+    view = features["view"]
+    key_pictures("view", "options/view-on", "options/view-off")
+    page("view", "StageKit View",
+         one_list("Scene Controller", "getSceneControllers", "controllerId", "Choose a controller",
+                  "The Scene Controller saved in OBS. Its groups and combined views are shared with the StageKit Views dock.")
+         + options("Select from", "viewTarget", "group", [("group", "Group choices"), ("view", "Saved views")],
+                   "Choose one option in a group, or a saved view that selects several groups together.")
+         + one_list("Group", "getViewGroups", "groupId", "Choose a group", "Choose a Modes, One or Together group. Follow rules are controlled by their leads in OBS.")
+         + one_list("Choice", "getViewChoices", "choiceId", "Choose a choice", "An option saved in the selected group. Together groups offer On and Off.")
+         + one_list("Saved view", "getSavedViews", "viewId", "Choose a saved view", "A combined selection configured and saved in OBS.")
+         + '<sdpi-item label="On press" title="Select applies the chosen option or view. Next choice follows the order saved in a Modes or One group. The key lights while its choice or saved view is selected.">\n'
+         '<sdpi-select setting="viewPress" datasource="getViewCommands" default="select"></sdpi-select>\n'
+         '</sdpi-item>\n'
+         '<sdpi-item label="Status" title="Availability of the selected controller and choice, as reported by OBS."><span id="viewStatus">Configure groups and views in the StageKit Views dock in OBS.</span></sdpi-item>\n',
+         FOLLOW_VIEW)
+    add("view", view["name"], view["tip"], "view", "imgs/actions/view/icon", two("view"))
+
     # The keys for a filter on a scene that act through StageKit's own requests.
     for feature in features["scenes"]:
         on, off = PICTURES[feature["kind"]]
@@ -785,7 +848,7 @@ def main():
     add("move", "Move (older)", "Runs a Move Source, Move Scene Item, Apply Layout or Aspect Ratio Preset filter once.", "move", "imgs/actions/move/icon", one("anymove"), visible=False)
 
     groups = [
-        ("scene", "mode", "scenetransitions", "showhide", "showinscenes", "visibilitylink"),
+        ("scene", "mode", "view", "scenetransitions", "showhide", "showinscenes", "visibilitylink"),
         ("hook", "autocapture", "appcapture", "activeapp", "appswitch", "autoframe", "measurebars", "rememberratio", "measureandremember", "shape", "standby", "scenestandby", "programtrigger"),
         ("sendto", "placeitem", "matchitem", "layout", "fititem", "scenefit", "fitoverlap", "slide", "tool", "option"),
         ("blur", "sceneblur", "blurall", "shadow", "sceneshadow", "corners", "scenecorners", "zoom"),

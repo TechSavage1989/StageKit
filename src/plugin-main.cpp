@@ -34,6 +34,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include "capture/program-trigger.hpp"
 #include "common/start-image.hpp"
 #include "countdown/countdown.hpp"
+#include "controller/scene-controller.hpp"
+#include "controller/views-dock.hpp"
 #include "dock/stagekit-dock.hpp"
 #include "frame/auto-frame.hpp"
 #include "placement/fit-item.hpp"
@@ -165,6 +167,7 @@ bool obs_module_load(void)
 	stagekit::register_fade_zoom();
 	// ==== scene-filters:modes ====
 	stagekit::register_scene_modes();
+	stagekit::register_scene_controller();
 	stagekit::vendor_api_add_test_calls();
 	stagekit::outline_pattern_add_test_calls();
 	stagekit::outline_ambient_add_test_calls();
@@ -222,10 +225,13 @@ void obs_module_post_load(void)
 	stagekit::vendor_api_register();
 	stagekit::register_dock();
 	stagekit::register_countdown_dock();
+	stagekit::register_views_dock();
 }
 
 void obs_module_unload(void)
 {
+	stagekit::unregister_views_dock();
+	stagekit::unregister_scene_controller();
 	stagekit::unregister_countdown_dock();
 	obs_frontend_remove_save_callback(frontend_save_load, nullptr);
 	for (GlobalHotkey &hk : g_hotkeys)

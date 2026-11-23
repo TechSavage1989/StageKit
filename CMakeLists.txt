@@ -106,6 +106,10 @@ target_sources(
     src/countdown/countdown.hpp
     src/countdown/countdown-dock.cpp
     src/countdown/timer-options.cpp
+    src/controller/scene-controller.cpp
+    src/controller/scene-controller.hpp
+    src/controller/views-dock.cpp
+    src/controller/views-dock.hpp
     src/dock/arrange.cpp
     src/dock/arrange.hpp
     src/dock/arrange-tools.cpp

@@ -49,10 +49,12 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/holds-hidden.hpp"
 #include "../common/item-transition.hpp"
 #include "../common/loading.hpp"
+#include "../common/owner-ref.hpp"
 #include "../common/pick-list.hpp"
 #include "../common/scene-rev.hpp"
 #include "../common/scene-util.hpp"
 #include "../common/tooltip.hpp"
+#include "../controller/views-dock.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -63,6 +65,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <map>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <thread>
 #include <utility>
@@ -165,7 +168,7 @@ struct Changes {
 	}
 };
 
-class VisibilityLink {
+class VisibilityLink : public VisibilityLinkRuntime {
 	// What the tick goes by, made in `update` and shared with the tick as it
 	// is (never copied a frame: the lists and each source's own change are
 	// strings).
@@ -185,26 +188,40 @@ class VisibilityLink {
 	};
 
 public:
-	VisibilityLink(obs_data_t *settings, obs_source_t *source) : source_(source)
+	VisibilityLink(obs_data_t *settings, obs_source_t *source, bool enabled = true, bool internal = false)
+		: source_(source),
+		  owner_(source),
+		  runtime_on_(enabled),
+		  internal_(internal)
 	{
 		update(settings);
 		std::lock_guard lock(g_links_mutex);
 		g_links.push_back(this);
+		registered_ = true;
 	}
 
 	~VisibilityLink()
 	{
-		{
-			std::lock_guard lock(g_links_mutex);
-			g_links.erase(std::remove(g_links.begin(), g_links.end(), this), g_links.end());
-		}
+		if (internal_)
+			runtime_retire();
+		unregister_runtime();
 		detach();
+	}
+
+	void unregister_runtime()
+	{
+		std::lock_guard lock(g_links_mutex);
+		if (registered_) {
+			g_links.erase(std::remove(g_links.begin(), g_links.end(), this), g_links.end());
+			registered_ = false;
+		}
 	}
 
 	// For link_visibility_holds_hidden: called with g_links_mutex held.
 	bool look_if_follows(obs_source_t *scene, FollowLook &look)
 	{
-		if (!scene || parent_ != scene || !obs_source_enabled(source_))
+		if (retired() || !scene || parent_ != scene || !obs_source_enabled(source_) || !runtime_on_ ||
+		    forwarded())
 			return false;
 		std::lock_guard lock(mutex_);
 		if (mode_ != LinkMode::Follow || leads_.empty() || followers_.empty())
@@ -265,24 +282,73 @@ public:
 
 	void attach(obs_source_t *parent)
 	{
+		if (retired())
+			return;
 		detach();
 		{
 			std::lock_guard lock(g_links_mutex);
 			parent_ = parent;
 		}
+		parent_weak_ = obs_source_get_weak_source(parent);
 		signal_handler_connect(obs_source_get_signal_handler(parent_), "item_visible", visible_cb, this);
+		if (internal_)
+			watch_owned_groups(parent);
 	}
 
 	void detach()
 	{
-		if (parent_)
-			signal_handler_disconnect(obs_source_get_signal_handler(parent_), "item_visible", visible_cb,
+		obs_source_t *held = parent_weak_ ? obs_weak_source_get_source(parent_weak_) : nullptr;
+		if (held)
+			signal_handler_disconnect(obs_source_get_signal_handler(held), "item_visible", visible_cb,
 						  this);
+		obs_source_release(held);
+		obs_weak_source_release(parent_weak_);
+		parent_weak_ = nullptr;
 		{
 			std::lock_guard lock(g_links_mutex);
 			parent_ = nullptr;
 		}
 		unwatch();
+		unwatch_owned_groups();
+	}
+
+	void unwatch_owned_groups()
+	{
+		for (auto *weak : owned_groups_) {
+			obs_source_t *group = obs_weak_source_get_source(weak);
+			if (group)
+				signal_handler_disconnect(obs_source_get_signal_handler(group), "item_visible",
+							  visible_cb, this);
+			obs_source_release(group);
+			obs_weak_source_release(weak);
+		}
+		owned_groups_.clear();
+		std::lock_guard lock(mutex_);
+		owned_group_scenes_.clear();
+	}
+
+	void watch_owned_groups(obs_source_t *parent)
+	{
+		std::vector<obs_source_t *> groups;
+		const auto collect = [](obs_scene_t *, obs_sceneitem_t *item, void *opaque) {
+			if (obs_sceneitem_is_group(item))
+				if (auto *held = obs_source_get_ref(obs_sceneitem_get_source(item)))
+					static_cast<std::vector<obs_source_t *> *>(opaque)->push_back(held);
+			return true;
+		};
+		if (obs_scene_t *scene = scene_of(parent))
+			obs_scene_enum_items(scene, collect, &groups);
+		for (size_t i = 0; i < groups.size(); i++)
+			obs_scene_enum_items(scene_of(groups[i]), collect, &groups);
+		for (auto *group : groups) {
+			{
+				std::lock_guard lock(mutex_);
+				owned_group_scenes_.insert(group);
+			}
+			signal_handler_connect(obs_source_get_signal_handler(group), "item_visible", visible_cb, this);
+			owned_groups_.push_back(obs_source_get_weak_source(group));
+			obs_source_release(group);
+		}
 	}
 
 	// Listens to every other scene (and group) while there are sources to
@@ -290,10 +356,38 @@ public:
 	// seconds. Each is held weakly, so one that is gone is simply skipped.
 	void watch_others()
 	{
+		if (internal_) {
+			std::vector<obs_source_t *> scenes;
+			obs_enum_scenes(
+				[](void *opaque, obs_source_t *scene) {
+					if (auto *held = obs_source_get_ref(scene))
+						static_cast<std::vector<obs_source_t *> *>(opaque)->push_back(held);
+					return true;
+				},
+				&scenes);
+			// Signal locks are taken after releasing OBS's source-list lock.
+			for (auto *scene : scenes) {
+				bool seen;
+				{
+					std::lock_guard lock(mutex_);
+					seen = scene == parent_ || owned_group_scenes_.count(scene);
+				}
+				for (auto *weak : watched_)
+					seen = seen || obs_weak_source_references_source(weak, scene);
+				if (!seen) {
+					signal_handler_connect(obs_source_get_signal_handler(scene), "item_visible",
+							       visible_cb, this);
+					watched_.push_back(obs_source_get_weak_source(scene));
+				}
+				obs_source_release(scene);
+			}
+			return;
+		}
 		obs_enum_scenes(
 			[](void *param, obs_source_t *scene) {
 				auto *self = static_cast<VisibilityLink *>(param);
-				if (scene == self->parent_)
+				if (scene == self->parent_ ||
+				    (self->internal_ && self->owned_group_scenes_.count(scene)))
 					return true;
 				for (obs_weak_source_t *weak : self->watched_)
 					if (obs_weak_source_references_source(weak, scene))
@@ -321,8 +415,30 @@ public:
 
 	// The others are switched on the next frame, not inside the signal: OBS
 	// has not finished showing or hiding the item while the signal runs.
-	void tick(float seconds)
+	void tick(float seconds) override
 	{
+		if (!internal_) {
+			tick_work(seconds);
+			return;
+		}
+		if (retired())
+			return;
+		struct Pinned {
+			obs_source_t *owner, *parent;
+			~Pinned()
+			{
+				obs_source_release(parent);
+				obs_source_release(owner);
+			}
+		} pinned{owner_.get(), parent_weak_ ? obs_weak_source_get_source(parent_weak_) : nullptr};
+		if (pinned.owner && pinned.parent && !retired())
+			tick_work(seconds);
+	}
+
+	void tick_work(float seconds)
+	{
+		if (forwarded() || !parent_)
+			return;
 		std::vector<Change> changes;
 		LinkMode mode;
 		std::shared_ptr<const Config> config;
@@ -350,7 +466,7 @@ public:
 			else
 				watch_others();
 		}
-		if (!parent_ || !obs_source_enabled(source_)) {
+		if (!parent_ || !obs_source_enabled(source_) || !runtime_on_) {
 			if (was_on_)
 				scene_revision_bump(); // it holds nothing hidden now
 			was_on_ = false;
@@ -623,11 +739,179 @@ public:
 
 	obs_source_t *parent() const { return parent_; }
 	obs_source_t *source() const { return source_; }
+	void runtime_enabled(bool enabled) override
+	{
+		if (!retired())
+			runtime_on_ = enabled;
+	}
+	void runtime_update(obs_data_t *settings, bool enabled) override
+	{
+		if (!internal_ || !settings)
+			return;
+		if (retired())
+			return;
+		update(settings);
+		runtime_enabled(enabled);
+		if (retired())
+			return;
+		// Refresh nested membership without reattaching the engine or clearing
+		// its queued eyes and established Follow state.
+		unwatch();
+		unwatch_owned_groups();
+		obs_source_t *parent = parent_weak_ ? obs_weak_source_get_source(parent_weak_) : nullptr;
+		if (parent)
+			watch_owned_groups(parent);
+		obs_source_release(parent);
+	}
+	void runtime_retire() override
+	{
+		if (!internal_)
+			return;
+		if (retired_.exchange(true))
+			return;
+		runtime_on_ = false;
+		unregister_runtime();
+		scene_revision_bump();
+		// An in-flight tick pins its owner and parent. Disconnect subscriptions
+		// only when the last retained runtime call ends and destroys this object;
+		// waiting on OBS signal locks here can deadlock a reentrant removal.
+		std::lock_guard lock(mutex_);
+		pending_.clear();
+		acted_valid_ = false;
+	}
+	bool runtime_retired() const override { return retired(); }
+	std::string runtime_controller_id() override
+	{
+		if (!internal_ || retired())
+			return {};
+		obs_source_t *owner = owner_.get();
+		const std::string id = owner ? obs_source_get_uuid(owner) : "";
+		obs_source_release(owner);
+		return id;
+	}
+	std::shared_ptr<VisibilityLinkRuntime> forward() const
+	{
+		if (!has_forward_.load(std::memory_order_relaxed))
+			return {};
+		std::lock_guard lock(forward_mutex_);
+		auto target = forward_.lock();
+		if (!target)
+			has_forward_ = false;
+		return target;
+	}
+	bool forwarded() const
+	{
+		if (!has_forward_.load(std::memory_order_relaxed))
+			return false;
+		std::lock_guard lock(forward_mutex_);
+		const bool alive = !forward_.expired();
+		if (!alive)
+			has_forward_ = false;
+		return alive;
+	}
+	bool forward_to(const std::shared_ptr<VisibilityLinkRuntime> &runtime)
+	{
+		bool changed;
+		{
+			std::lock_guard lock(forward_mutex_);
+			if (runtime && runtime->runtime_retired())
+				return false;
+			const bool was_active = !forward_.expired();
+			changed = was_active != bool(runtime);
+			forward_ = runtime;
+			has_forward_ = bool(runtime);
+		}
+		if (changed)
+			refresh_owner_properties();
+		return true;
+	}
+	bool unforward(const std::shared_ptr<VisibilityLinkRuntime> &expected)
+	{
+		std::shared_ptr<VisibilityLinkRuntime> previous;
+		{
+			std::lock_guard lock(forward_mutex_);
+			previous = forward_.lock();
+			if (!previous || previous != expected)
+				return false;
+			forward_.reset();
+			has_forward_ = false;
+		}
+		refresh_owner_properties();
+		return true;
+	}
+	bool runtime_press(const char *source, bool shown, std::string &why) override
+	{
+		if (retired()) {
+			why = "The source group is no longer available";
+			return false;
+		}
+		struct Pinned {
+			obs_source_t *owner, *parent;
+			~Pinned()
+			{
+				obs_source_release(parent);
+				obs_source_release(owner);
+			}
+		} pinned{owner_.get(), parent_weak_ ? obs_weak_source_get_source(parent_weak_) : nullptr};
+		if (!pinned.owner || !pinned.parent || retired() || !obs_source_enabled(source_) || !runtime_on_ ||
+		    !scenes_loaded()) {
+			why = "The source group is unavailable or disabled";
+			return false;
+		}
+		std::shared_ptr<const Config> config;
+		LinkMode mode;
+		{
+			std::lock_guard lock(mutex_);
+			config = config_;
+			mode = mode_;
+		}
+		if (mode == LinkMode::Follow || config->names.empty()) {
+			why = "A Follow sources rule is controlled by its lead sources";
+			return false;
+		}
+		const std::string name = source && *source ? source : config->names.front();
+		if (std::find(config->names.begin(), config->names.end(), name) == config->names.end() ||
+		    (mode == LinkMode::OnlyOne && !shown)) {
+			why = "The requested source is not a selectable choice of this group";
+			return false;
+		}
+		obs_sceneitem_t *item = find_item(parent_, name);
+		if (!item) {
+			why = "The selected source is missing from the scene";
+			return false;
+		}
+		obs_sceneitem_addref(item);
+		applying_ = std::this_thread::get_id();
+		if (obs_sceneitem_visible(item) != shown) {
+			apply_item_change(item, config->how.of(name), parent_);
+			set_item_visible(item, shown);
+		}
+		applying_ = std::thread::id();
+		obs_sceneitem_release(item);
+		// A press also repairs an inconsistent set when its lead already has
+		// the requested visibility and OBS therefore emits no visibility signal.
+		std::lock_guard lock(mutex_);
+		pending_.push_back({name, shown, true});
+		return true;
+	}
 
 private:
+	bool retired() const { return internal_ && retired_.load(); }
+	void refresh_owner_properties()
+	{
+		// OBS's properties views queue ReloadProperties onto their Qt thread.
+		// No forwarding or engine lock is held while emitting this signal.
+		if (auto *owner = owner_.get()) {
+			obs_source_update_properties(owner);
+			obs_source_release(owner);
+		}
+	}
+
 	static void visible_cb(void *data, calldata_t *cd)
 	{
 		auto *self = static_cast<VisibilityLink *>(data);
+		if (self->retired() || self->forwarded())
+			return;
 		if (self->applying_.load() == std::this_thread::get_id())
 			return; // our own doing
 		auto *item = static_cast<obs_sceneitem_t *>(calldata_ptr(cd, "item"));
@@ -637,15 +921,25 @@ private:
 			return;
 		// In its own scene the listed items count; in any other, the
 		// sources followed there.
-		const bool own = !scene || obs_scene_get_source(scene) == self->parent_;
 		std::lock_guard lock(self->mutex_);
+		const bool own = !scene || obs_scene_get_source(scene) == self->parent_ ||
+				 (self->internal_ && self->owned_group_scenes_.count(obs_scene_get_source(scene)));
 		const std::vector<std::string> &list = own ? self->names_ : self->elsewhere_;
 		if (std::find(list.begin(), list.end(), name) != list.end())
 			self->pending_.push_back({name, calldata_bool(cd, "visible"), own});
 	}
 
 	obs_source_t *source_;
+	OwnerRef owner_;
+	std::atomic<bool> runtime_on_{true};
+	bool internal_ = false;
+	std::atomic<bool> retired_{false};
+	bool registered_ = false; // guarded by g_links_mutex
+	mutable std::mutex forward_mutex_;
+	mutable std::atomic<bool> has_forward_{false};
+	std::weak_ptr<VisibilityLinkRuntime> forward_;
 	obs_source_t *parent_ = nullptr;
+	obs_weak_source_t *parent_weak_ = nullptr;
 	std::mutex mutex_;
 	Changes change_;
 	std::shared_ptr<const Config> config_;
@@ -654,6 +948,8 @@ private:
 	std::vector<std::string> leads_, followers_; // Follow sources: who leads, who follows
 	LeadRule rule_ = LeadRule::Any;
 	std::vector<obs_weak_source_t *> watched_; // the other scenes listened to
+	std::vector<obs_weak_source_t *> owned_groups_;
+	std::set<obs_source_t *> owned_group_scenes_;
 	double watch_timer_ = 0.0;
 	std::vector<Change> pending_;
 	bool acted_valid_ = false;                // Follow sources: the leads have been looked at
@@ -726,6 +1022,25 @@ obs_properties_t *get_properties(void *data)
 {
 	auto *self = static_cast<VisibilityLink *>(data);
 	obs_properties_t *props = obs_properties_create();
+	if (self)
+		if (auto target = self->forward(); target && !target->runtime_controller_id().empty()) {
+			auto *help = obs_properties_add_text(props, "controller_managed",
+							     obs_module_text("Views.ManagedLinkFilter"), OBS_TEXT_INFO);
+			obs_property_text_set_info_word_wrap(help, true);
+			obs_properties_add_button2(
+				props, "controller_configure", obs_module_text("Views.Configure"),
+				[](obs_properties_t *, obs_property_t *, void *opaque) {
+					auto *legacy = static_cast<VisibilityLink *>(opaque);
+					if (auto runtime = legacy ? legacy->forward() : nullptr) {
+						const auto id = runtime->runtime_controller_id();
+						if (!id.empty())
+							show_views_controller(id.c_str());
+					}
+					return false;
+				},
+				self);
+			return props;
+		}
 	obs_property_t *mode = obs_properties_add_list(props, "mode", obs_module_text("Link.Mode"), OBS_COMBO_TYPE_LIST,
 						       OBS_COMBO_FORMAT_INT);
 	obs_property_list_add_int(mode, obs_module_text("Link.Mode.OnlyOne"), (int)LinkMode::OnlyOne);
@@ -815,6 +1130,35 @@ bool is_follower(const FollowLook &look, const char *name)
 }
 
 } // namespace
+
+std::shared_ptr<VisibilityLinkRuntime> visibility_link_runtime(obs_data_t *settings, obs_source_t *owner,
+							       obs_source_t *parent, bool enabled)
+{
+	item_change_defaults(settings);
+	auto runtime = std::make_shared<VisibilityLink>(settings, owner, enabled, true);
+	runtime->attach(parent);
+	return runtime;
+}
+
+bool visibility_link_forward(obs_source_t *legacy, const std::shared_ptr<VisibilityLinkRuntime> &runtime)
+{
+	const char *id = legacy ? obs_source_get_unversioned_id(legacy) : nullptr;
+	if (!id || strcmp(id, kVisibilityLinkId) != 0)
+		return false;
+	auto *self = static_cast<VisibilityLink *>(obs_obj_get_data(legacy));
+	if (!self)
+		return false;
+	return self->forward_to(runtime);
+}
+
+bool visibility_link_unforward(obs_source_t *legacy, const std::shared_ptr<VisibilityLinkRuntime> &expected)
+{
+	const char *id = legacy ? obs_source_get_unversioned_id(legacy) : nullptr;
+	if (!id || strcmp(id, kVisibilityLinkId) != 0)
+		return false;
+	auto *self = static_cast<VisibilityLink *>(obs_obj_get_data(legacy));
+	return self && self->unforward(expected);
+}
 
 bool link_visibility_holds_hidden(obs_source_t *scene, obs_sceneitem_t *item)
 {

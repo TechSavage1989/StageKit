@@ -18,6 +18,7 @@ the Free Software Foundation; either version 2 of the License, or
 namespace stagekit {
 
 inline constexpr const char *kSceneModesId = "stagekit_scene_modes";
+inline constexpr const char *kSceneControllerId = "stagekit_scene_controller";
 inline constexpr const char *kSceneTransitionsId = "stagekit_scene_transitions";
 inline constexpr const char *kSceneFitId = "stagekit_scene_fit";
 inline constexpr const char *kSceneStandbyId = "stagekit_scene_standby";

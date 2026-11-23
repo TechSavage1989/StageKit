@@ -30,6 +30,7 @@
 		{ "key": "sceneblur", "kind": "stagekit_scene_blur", "name": "Scene Blur", "tip": "Blurs a scene's sources with its Scene Blur filter: on one scene, or on every scene that has a Scene Blur of that name. Lit while it is on." }
 	],
 	"timer": {"key": "timer", "name": "Countdown Timer", "tip": "Set and start a StageKit timer at the next clock mark, or start, pause or stop it."},
+	"view": {"key": "view", "kind": "stagekit_scene_controller", "name": "View", "tip": "Selects a saved Scene Controller group choice or combined view, shared with the StageKit Views dock. Shows the state reported by OBS."},
 	"autoFrameCommands": [
 		{"key": "measurebars", "kind": "stagekit_auto_frame", "action": "measure", "name": "Measure Bars", "title": "Measure\nBars", "pendingTitle": "Measuring", "image": "measure-bars", "tip": "Measures the current captured image and shows its detected aspect ratio."},
 		{"key": "rememberratio", "kind": "stagekit_auto_frame", "action": "remember", "name": "Remember Aspect Ratio", "title": "Remember\nRatio", "pendingTitle": "Remembering", "image": "remember-ratio", "tip": "Saves the current detected aspect ratio for the captured application or window name."},

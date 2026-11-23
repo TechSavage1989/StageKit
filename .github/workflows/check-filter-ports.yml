@@ -31,6 +31,9 @@ on:
       - 'tests/make-perf-collection.py'
       - 'tests/make-shadow-perf-collection.py'
       - 'src/countdown/**'
+      - 'src/controller/**'
+      - 'src/placement/scene-modes.*'
+      - 'src/placement/visibility-link.*'
       - 'src/capture/app-capture.cpp'
       - 'src/frame/**'
       - 'src/api/vendor-api.cpp'
@@ -41,6 +44,7 @@ on:
       - 'src/view/cropped-view.*'
       - 'tests/show-in-scenes-camera.hpp'
       - 'tests/countdown*-test.hpp'
+      - 'tests/scene-controller*-test.hpp'
       - 'tests/reset-stats-test.hpp'
       - 'tests/studio-transition-test.hpp'
       - 'tests/auto-frame-detection-test.hpp'
@@ -97,7 +101,7 @@ jobs:
           out="$PWD/build-ports/camera-results"
           mkdir -p "$out"
           python3 tests/make-test-image.py "$out"
-          for test in REVIEW_CONTROLS RESTORE_HIDDEN SWITCH_COMMAND MAKE_ROOM MORPH_HOLDS; do
+          for test in REVIEW_CONTROLS RESTORE_HIDDEN SWITCH_COMMAND MAKE_ROOM MORPH_HOLDS MODES_HIDE MODE_PLACE LINK_FOLLOW LINK_TRANS; do
             env "STAGEKIT_TEST_ONLY_$test=1" xvfb-run -a build-ports/tests/stagekit-ambient-test "$PWD/build-ports/stagekit.so" "$PWD/data" \
               "$out/test-art.png" "$out/test-texture.png" "$out/test-game.png" "$out" > "$out/$test.log" 2>&1 || { grep -F "  FAIL  " "$out/$test.log" || true; tail -90 "$out/$test.log"; exit 1; }
             tail -3 "$out/$test.log"
@@ -152,6 +156,8 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: ./.github/actions/build-plugin
         with:
           target: x64
@@ -168,6 +174,7 @@ jobs:
           if (!$probe) { throw 'Missing test probe.' }
           New-Item -ItemType Directory -Path build_x64/frontend-results -Force | Out-Null
           $env:STAGEKIT_AUTO_FRAME_CAPTURE = Join-Path $PWD 'build_x64/frontend-results/auto-frame-detection.png'
+          $env:STAGEKIT_VIEWS_CAPTURE = Join-Path $PWD 'build_x64/frontend-results/stagekit-views.png'
           ./tests/check-replacement-windows.ps1 -PackageDirectory release/RelWithDebInfo/stagekit -ProbePath $probe.FullName -ResultDirectory build_x64/frontend-results
       - uses: actions/upload-artifact@v4
         if: always()
@@ -191,7 +198,7 @@ jobs:
           "$RUNNER_TEMP/icons/bin/python" tools/make-plugin-files.py
           plugin=com.techsavage1989.stagekit.sdPlugin
           paths=("$plugin/manifest.json")
-          for key in obsfilter obssource obsmute obsstudio studiotransition obscamera movesourceport moveswapport timer resetstats measurebars rememberratio measureandremember; do
+          for key in obsfilter obssource obsmute obsstudio studiotransition obscamera movesourceport moveswapport timer resetstats measurebars rememberratio measureandremember view; do
             paths+=("$plugin/ui/$key.html" "$plugin/imgs/actions/$key")
           done
           git diff --exit-code -- "${paths[@]}"

@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | fix/windows-render-regression, based on f973cac0b9e1e24c3e9e4ce7cb1993f72e27f51e. Windows-first correction after the owner's frame-time regression report. |
+| Working branch | feat/scene-controller, based on beta252 at 659ac30f8fc7d80a7182aa8c68bb77029dba9bdc. Candidate beta253: unified Scene Controller, StageKit Views dock and companion 0.43.0.0; Windows first. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -22,6 +22,49 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
+
+## Scene Controller and StageKit Views
+
+The owner approved one shared control system for independent scene modes, source choices and linked
+visibility, with an OBS dock and matching Stream Deck keys. The implementation adds one real Scene
+Controller filter that owns native rule objects. Groups retain the existing mode and visibility rules;
+combined views select several groups in one validated command and leave unspecified groups alone.
+Normal selection keeps Program on its scene. An explicit mode or view destination can change it.
+
+The StageKit Views dock provides scene/controller selectors, an independent group or combined-view list,
+active/disabled/missing feedback, a draft configuration editor and legacy import. Group, mode, view and
+choice identities remain stable across names and saves. A selected source can be an OBS group. Existing
+native transition overrides, mode leave rules and saved placements remain in the full child settings
+objects when the friendly editor changes other fields.
+
+Active imports copy complete legacy settings and retain their original filter as a passive compatibility
+alias. Old Scene Mode keys and hotkeys forward to the imported group, and an old Link Visibility key's
+filter enable switch still controls its group. Internal engines are omitted from the old filter lists
+and hotkey registration. Removing the controller restores the original runtime. Inactive import is a
+disabled copy and leaves execution with the original. New groups create no hidden OBS sources.
+
+Companion 0.43.0.0 adds StageKit View with Select and group Next choice. It targets the native controller
+UUID and stable group/choice/view IDs and uses the shared image settings. It reflects actual native state
+after accepted commands; missing, disabled or disconnected targets never retain a stale active key.
+The timer cycle deadline display and all older action UUIDs remain compatible.
+
+The local companion suite passes all 148 tests; TypeScript/Rollup, Elgato validation and package creation
+also pass. One refresh shares a single state request among visible keys targeting the same controller,
+without retaining a snapshot across later change events or reconnects.
+
+The public API is ListSceneControllers, GetSceneController, SceneControllerCommand,
+ConfigureSceneController, CreateSceneController and ImportSceneController. SceneControllerChanged carries
+controllerId. Native observers use stagekit_scene_controller_changed and schedule their refresh after
+the callback. Editing source/configuration objects belongs to the frontend thread; ordinary commands
+are validated before queuing and applied by the controller tick. The emitter never enumerates a snapshot
+under engine locks.
+
+Validation is in progress. The shared native fixture exercises independent groups, nested items, shared
+scenes, Together and Follow rules, combined selections, invalid/disabled requests, renames, source reload,
+complete import settings, copied-import ownership, old key forwarding and removal from a visibility callback. The real frontend fixture edits the
+groups and views, clicks the dock, checks same-scene defaults and explicit destinations, captures the UI,
+and saves for the existing OBS restart check. Windows and shared gates must pass on the final head before
+publication. Do not claim this feature restores the owner's earlier hardware frame time.
 
 ## Windows frame-time regression report
 

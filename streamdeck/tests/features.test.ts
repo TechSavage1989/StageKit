@@ -10,7 +10,7 @@ const base = "com.techsavage1989.stagekit";
 
 test("every feature has its own key in the manifest, with a settings page and pictures that exist", () => {
 	const wanted = [...features.switches, ...features.moves, ...features.scenes, ...features.sceneStarts, ...features.autoFrameCommands].map((f) => `${base}.${f.key}`);
-	for (const extra of [features.timer.key, "shape", "hook", "appswitch", "fitoverlap", "scene", "mode", "tool", "blurall", "option", "slide", "stream", "record", "obsfilter", "obssource", "obsmute", "obsstudio", "studiotransition", "obscamera", "resetstats", "switch", "move"]) wanted.push(`${base}.${extra}`);
+	for (const extra of [features.timer.key, features.view.key, "shape", "hook", "appswitch", "fitoverlap", "scene", "mode", "tool", "blurall", "option", "slide", "stream", "record", "obsfilter", "obssource", "obsmute", "obsstudio", "studiotransition", "obscamera", "resetstats", "switch", "move"]) wanted.push(`${base}.${extra}`);
 	const have = manifest.Actions.map((a: { UUID: string }) => a.UUID);
 	assert.deepEqual([...have].sort(), [...wanted].sort());
 	for (const action of manifest.Actions) {

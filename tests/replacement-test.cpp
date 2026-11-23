@@ -8,6 +8,7 @@
 #include "capture-settings-test.hpp"
 #include "visible-bounds-reuse-test.hpp"
 #include "shadow-reuse-test.hpp"
+#include "scene-controller-test.hpp"
 #include <graphics/vec2.h>
 #include <QApplication>
 #include <dlfcn.h>
@@ -170,6 +171,10 @@ int main(int argc, char **argv)
 	QStringList bounds_issues;
 	visible_bounds_reuse_test::check(bounds_issues);
 	check(bounds_issues.isEmpty(), "visible bounds reuse: " + bounds_issues.join(", ").toStdString());
+	QStringList controller_issues;
+	scene_controller_test::check(controller_issues);
+	scene_controller_test::check_migration(controller_issues);
+	check(controller_issues.isEmpty(), "scene controller: " + controller_issues.join(", ").toStdString());
 	const char *original_name = obs_get_module_name(obs_get_module("move-transition"));
 	const char *bundled_name = obs_get_module_name(obs_get_module("stagekit-port-move"));
 	check(original_name && strcmp(original_name, "Move Transition") == 0 && bundled_name &&

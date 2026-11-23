@@ -172,6 +172,11 @@ export function modeTitle(mode: string | undefined): string {
 	return fitted(mode, "Mode");
 }
 
+/** A View key follows the name saved in OBS; Stream Deck custom titles still take priority. */
+export function viewTitle(view: string | undefined): string {
+	return fitted(view, "View");
+}
+
 /** A Scene Mode key on Toggle or Next mode: the name of the mode that is on, or "No mode". */
 export function followedModeTitle(on: { id: string; name?: string } | undefined): string {
 	if (!on || !on.id) return "No mode";

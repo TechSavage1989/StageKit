@@ -590,6 +590,12 @@ export function resetStatsShown(chosen: string | undefined, sourceType?: unknown
 	return { picture: BY_ID.get(chosen ?? "") ?? BY_ID.get("options/reset-stats")! };
 }
 
+/** A shared controller choice: the key's selected image or the native choice's type. */
+export function viewShown(sourceType?: unknown, nativeType?: string): Shown {
+	const typed = BY_ID.get(sourceTypePicture(explicit(sourceType) ?? nativeType, "mode") ?? "");
+	return typed ? { picture: typed, badge: "view" } : { picture: BY_ID.get("options/view")! };
+}
+
 /** An Auto Frame command: the selected source image with its command badge, or the command alone. */
 export function autoFrameCommandShown(chosen: string | undefined, commandImage: string, sourceType?: unknown): Shown {
 	const typed = typedPicture(sourceType);

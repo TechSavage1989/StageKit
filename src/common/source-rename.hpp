@@ -17,4 +17,8 @@ namespace stagekit {
 // Follows public source and scene renames in saved references owned by StageKit.
 void source_references_renamed(void *, calldata_t *cd);
 
+// Apply the same reference and per-source transition rules to an owned child
+// settings object. The caller persists it; this never updates an OBS source.
+bool source_settings_renamed(const char *kind, obs_data_t *settings, const char *was, const char *now, bool scene);
+
 } // namespace stagekit

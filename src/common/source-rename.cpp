@@ -123,11 +123,8 @@ struct Rename {
 			scalar(data, (std::string(key) + "|apick").c_str());
 	}
 
-	void apply(obs_source_t *owner)
+	void settings(const std::string &id, obs_data_t *data)
 	{
-		const std::string id = obs_source_get_unversioned_id(owner);
-		obs_data_t *data = obs_source_get_settings(owner);
-		changed = false;
 		if (id == kCroppedViewId || id == kSceneStandbyId)
 			scalar(data, "source");
 		if (id == kAmbientBackgroundId) {
@@ -200,6 +197,13 @@ struct Rename {
 		}
 		for (const auto &key : scoped_links)
 			list(data, key.c_str(), kLinkMark);
+	}
+
+	void apply(obs_source_t *owner)
+	{
+		obs_data_t *data = obs_source_get_settings(owner);
+		changed = false;
+		settings(obs_source_get_unversioned_id(owner), data);
 		if (changed)
 			obs_source_update(owner, data);
 		obs_data_release(data);
@@ -207,6 +211,15 @@ struct Rename {
 };
 
 } // namespace
+
+bool source_settings_renamed(const char *kind, obs_data_t *settings, const char *was, const char *now, bool scene)
+{
+	if (!kind || !settings || !was || !now || !*was || !*now || strcmp(was, now) == 0)
+		return false;
+	Rename rename{was, now, scene};
+	rename.settings(kind, settings);
+	return rename.changed;
+}
 
 void source_references_renamed(void *, calldata_t *cd)
 {

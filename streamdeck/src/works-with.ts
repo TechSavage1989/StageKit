@@ -17,7 +17,7 @@ import { modeKeyFilter } from "./modes.ts";
  * capture (`source`), a scene (`scene`), a Scene Modes filter (`modeFilter`)
  * or a Scene Blur's name and its scene (`filter`, `scene`).
  */
-export type Chosen = "target" | "capture" | "scene" | "modeFilter" | "sceneBlur";
+export type Chosen = "target" | "capture" | "scene" | "modeFilter" | "sceneBlur" | "sceneController";
 
 export type WorksWith = {
 	/** The kinds of StageKit filter the key works, in the order they are said. */
@@ -39,6 +39,7 @@ export const FOLLOWS: Record<Chosen, string[]> = {
 	scene: ["scene"],
 	modeFilter: ["modeFilter"],
 	sceneBlur: ["filter", "scene"],
+	sceneController: ["controllerId", "viewTarget", "groupId", "choiceId", "viewId", "viewPress"],
 };
 
 /** The second line of a key that can be set to something in OBS and is not yet. */
@@ -66,6 +67,7 @@ function filterTip(kinds: string[], more = ""): string {
 
 /** The keys that are not one feature's (features.json), by their name in the manifest. */
 const OTHERS: Record<string, WorksWith> = {
+	view: { kinds: [features.view.kind], chosen: "sceneController", tip: features.view.tip },
 	timer: { feature: "Countdown Timer (StageKit) or the private StageKit Timer dock", tip: features.timer.tip },
 	resetstats: {
 		feature: "OBS Stats",
@@ -191,6 +193,8 @@ export function chosenLine(works: WorksWith, settings: Record<string, unknown>):
 			const { scene, filter } = modeKeyFilter(settings);
 			return scene && filter ? `${scene} — ${filter}` : undefined;
 		}
+		case "sceneController":
+			return str(settings.controllerId) ? "Selected controller" : undefined;
 		case "sceneBlur": {
 			const filter = str(settings.filter);
 			return filter ? `${str(settings.scene) || "All scenes with this filter"} — ${filter}` : undefined;

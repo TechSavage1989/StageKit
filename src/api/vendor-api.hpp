@@ -31,6 +31,11 @@ void vendor_emit_blur_changed(obs_source_t *filter, bool active);
 void vendor_emit_options_changed();
 void vendor_emit_timer_changed(obs_source_t *timer);
 
+// Shared controller state changed. Emits SceneControllerChanged {controllerId}
+// and the native stagekit_scene_controller_changed signal for the Views dock.
+// Call only after releasing rule locks. The emitter never reads snapshots.
+void vendor_emit_scene_controller_changed(const char *controller_id);
+
 // A window or source switcher (or Auto Capture) says whether it is on a
 // manual window and whether its capture is hidden. Emits "SwitcherChanged"
 // when that differs from what it said last, so a Stream Deck key showing it

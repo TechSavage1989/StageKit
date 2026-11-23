@@ -118,6 +118,13 @@ export type KeySettings = {
 	keep?: "game" | "always";
 	/** Auto Frame saving keys: unset keeps the existing window-name scope. */
 	rememberBy?: "application" | "window";
+	/** A View key references choices saved in the native Scene Controller. */
+	controllerId?: string;
+	viewTarget?: string;
+	groupId?: string;
+	choiceId?: string;
+	viewId?: string;
+	viewPress?: string;
 	/** A Window switch key: on to the next capture, or back to following the apps. */
 	step?: "next" | "back" | "hide" | "toggle" | "clear";
 	/** A Switch Scene key's scene, and whether it goes to the program or the preview. */
@@ -147,6 +154,11 @@ async function foundInObs(works: WorksWith, settings: KeySettings): Promise<Foun
 			const { scene, filter } = modeKeyFilter(settings);
 			if (!scene || !filter) return undefined;
 			return (await obs.sceneMode(scene, filter)) ? { kind: "stagekit_scene_modes" } : { missing: true };
+		}
+		case "sceneController": {
+			if (!settings.controllerId) return undefined;
+			const controller = await obs.sceneController(settings.controllerId);
+			return controller ? { kind: "stagekit_scene_controller", what: `${controller.scene} / ${controller.name}${controller.enabled ? "" : "; disabled"}` } : { missing: true };
 		}
 		case "sceneBlur": {
 			const filter = typeof settings.filter === "string" ? settings.filter : "";

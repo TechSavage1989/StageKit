@@ -94,6 +94,7 @@
 		"style-mosaic-triakis",
 		"style-mosaic-triangle",
 		"style-mosaic-voronoi",
-		"style-trail"
+		"style-trail",
+		"view"
 	]
 }

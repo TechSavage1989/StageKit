@@ -114,6 +114,8 @@ TAKEN = (
     + ["measure-bars", "remember-ratio", "measure-and-remember"]
     # OBS Stats reset.
     + ["reset-stats"]
+    # Shared Scene Controller views.
+    + ["view"]
     # Studio Mode's state and its momentary transition.
     + ["studio-off", "studio-on", "studio-transition"]
     # Arrange tools.

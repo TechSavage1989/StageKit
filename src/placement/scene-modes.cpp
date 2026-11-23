@@ -57,6 +57,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../common/scene-util.hpp"
 #include "../common/timing.hpp"
 #include "../common/tooltip.hpp"
+#include "../controller/views-dock.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -350,6 +351,7 @@ std::vector<SceneModes *> g_modes;
 // "source_rename" is listened to while there is at least one filter.
 int g_rename_users = 0;
 void on_source_rename(void *, calldata_t *cd);
+void get_defaults(obs_data_t *settings);
 
 bool covers(const ModesLook &look, obs_source_t *scene)
 {
@@ -405,14 +407,25 @@ struct Seen {
 	bool visible = false;
 };
 
-class SceneModes {
+class SceneModes : public SceneModesRuntime {
 public:
-	SceneModes(obs_data_t *settings, obs_source_t *source) : source_(source), owner_(source)
+	SceneModes(obs_data_t *settings, obs_source_t *source, bool internal = false, bool enabled = true)
+		: source_(source),
+		  owner_(source),
+		  internal_(internal),
+		  runtime_on_(enabled)
 	{
 		update(settings);
+		if (internal_) {
+			obs_data_t *resolved = obs_data_get_defaults(settings);
+			obs_data_apply(resolved, settings);
+			private_settings_ = obs_data_create_from_json(obs_data_get_json(resolved));
+			obs_data_release(resolved);
+		}
 		{
 			std::lock_guard lock(g_modes_mutex);
 			g_modes.push_back(this);
+			registered_ = true;
 			if (g_rename_users++ == 0)
 				signal_handler_connect(obs_get_signal_handler(), "source_rename", on_source_rename,
 						       nullptr);
@@ -423,11 +436,23 @@ public:
 
 	~SceneModes()
 	{
+		if (internal_)
+			runtime_retire();
 		detach();
-		bool last;
+		if (!internal_)
+			unregister_runtime();
+		obs_data_release(private_settings_);
+	}
+
+	void unregister_runtime()
+	{
+		bool last = false;
 		{
 			std::lock_guard lock(g_modes_mutex);
+			if (!registered_)
+				return;
 			g_modes.erase(std::remove(g_modes.begin(), g_modes.end(), this), g_modes.end());
+			registered_ = false;
 			last = --g_rename_users == 0;
 		}
 		// Not under g_modes_mutex: a rename being handled holds the signal's
@@ -438,11 +463,214 @@ public:
 
 	obs_source_t *source() const { return source_; }
 	obs_source_t *owner_ref() const { return owner_.get(); }
+	bool internal() const { return internal_; }
+	bool active() const
+	{
+		return (!internal_ || !retired_) && runtime_on_.load() && obs_source_enabled(source_) && !forwarded();
+	}
+	void runtime_retire() override
+	{
+		if (!internal_ || retired_.exchange(true))
+			return;
+		runtime_on_ = false;
+		// Wait for any registry look already using the owner before its last
+		// reference can go. Never release an owner reference under this lock.
+		unregister_runtime();
+		// A tick already in progress retains owner and parent. Leave its
+		// subscriptions and glides intact until the last runtime holder ends;
+		// final destruction disconnects them without racing that tick.
+		std::lock_guard lock(mutex_);
+		presses_.clear();
+		pending_.clear();
+		planned_.clear();
+		have_planned_ = false;
+		planned_press_ = false;
+	}
+	bool runtime_retired() const override { return retired_.load(); }
+	void runtime_update(obs_data_t *settings, bool enabled) override
+	{
+		if (!internal_ || retired_ || !settings)
+			return;
+		get_defaults(settings);
+		bool scope_changed;
+		{
+			std::lock_guard lock(mutex_);
+			scope_changed = share_ != pick_list_read(settings, "share_scenes", false);
+			obs_data_set_string(settings, "mode_now", current_.c_str());
+			obs_data_set_string(settings, "mode_before", previous_.c_str());
+		}
+		update(settings);
+		obs_data_t *resolved = obs_data_get_defaults(settings);
+		obs_data_apply(resolved, settings);
+		obs_data_t *next = obs_data_create_from_json(obs_data_get_json(resolved));
+		obs_data_release(resolved);
+		{
+			std::lock_guard lock(mutex_);
+			// Removing the selected mode can clear the live selection in update.
+			obs_data_set_string(next, "mode_now", current_.c_str());
+			obs_data_set_string(next, "mode_before", previous_.c_str());
+			std::swap(private_settings_, next);
+		}
+		obs_data_release(next);
+		runtime_on_ = enabled;
+		if (scope_changed)
+			unwatch();
+	}
+	void runtime_enabled(bool enabled) override
+	{
+		if (!retired_)
+			runtime_on_ = enabled;
+	}
+	std::string runtime_controller_id() override
+	{
+		if (retired_)
+			return {};
+		obs_source_t *held = owner_ref();
+		const char *uuid = held ? obs_source_get_uuid(held) : nullptr;
+		const std::string id = uuid ? uuid : "";
+		obs_source_release(held);
+		return id;
+	}
+	bool runtime_changed() override { return changed_.exchange(false); }
+	std::shared_ptr<SceneModesRuntime> forward() const
+	{
+		if (!has_forward_.load(std::memory_order_relaxed))
+			return {};
+		std::lock_guard lock(forward_mutex_);
+		auto target = forward_.lock();
+		if (!target)
+			has_forward_ = false;
+		return target;
+	}
+	bool forwarded() const
+	{
+		if (!has_forward_.load(std::memory_order_relaxed))
+			return false;
+		std::lock_guard lock(forward_mutex_);
+		const bool alive = !forward_.expired();
+		if (!alive)
+			has_forward_ = false;
+		return alive;
+	}
+	bool forward_to(const std::shared_ptr<SceneModesRuntime> &runtime)
+	{
+		bool changed;
+		{
+			std::lock_guard lock(forward_mutex_);
+			if (runtime && runtime->runtime_retired())
+				return false;
+			changed = !forward_.expired() != bool(runtime);
+			forward_ = runtime;
+			has_forward_ = bool(runtime);
+		}
+		if (changed)
+			obs_source_update_properties(source_);
+		return true;
+	}
+	bool unforward(const std::shared_ptr<SceneModesRuntime> &expected)
+	{
+		std::shared_ptr<SceneModesRuntime> previous;
+		{
+			std::lock_guard lock(forward_mutex_);
+			previous = forward_.lock();
+			if (previous != expected)
+				return false;
+			forward_.reset();
+			has_forward_ = false;
+		}
+		// Keep the previous target alive until after the forwarding lock is
+		// gone; its last release can unregister a runtime from g_modes.
+		if (previous)
+			obs_source_update_properties(source_);
+		return true;
+	}
+	obs_data_t *settings_ref()
+	{
+		if (!internal_)
+			return obs_source_get_settings(source_);
+		std::lock_guard lock(mutex_);
+		return obs_data_create_from_json(obs_data_get_json(private_settings_));
+	}
+	obs_data_t *runtime_settings() override
+	{
+		obs_data_t *settings = settings_ref();
+		if (internal_)
+			return settings;
+		obs_data_t *copy = obs_data_create_from_json(obs_data_get_json(settings));
+		obs_data_release(settings);
+		return copy;
+	}
+	SceneModesLook runtime_look() override
+	{
+		SceneModesLook look;
+		obs_source_t *held = owner_ref();
+		look.enabled = !retired_ && held && obs_source_enabled(held) && runtime_on_;
+		obs_source_release(held);
+		std::lock_guard lock(mutex_);
+		look.current = current_;
+		look.previous = previous_;
+		look.allow_none = allow_none_;
+		look.scenes = share_;
+		for (const Mode &mode : modes_)
+			look.modes.push_back({mode.id, mode.name, mode.type});
+		return look;
+	}
+	bool runtime_press(const char *mode, const char *how, std::string &why) override
+	{
+		if (retired_) {
+			why = "Scene Controller is no longer available";
+			return false;
+		}
+		obs_source_t *held = owner_ref();
+		if (!held) {
+			why = "Scene Controller is no longer available";
+			return false;
+		}
+		const std::string action = how ? how : "on";
+		How h = action == "next"     ? How::Next
+			: action == "none"   ? How::None
+			: action == "toggle" ? How::Toggle
+			: action == "window" ? How::Window
+					     : How::On;
+		const bool accepted = queue(mode ? mode : "", h, why);
+		obs_source_release(held);
+		return accepted;
+	}
+	bool runtime_stage(const char *mode, bool scene_switch, std::string &why) override
+	{
+		if (retired_) {
+			why = "Scene Controller is no longer available";
+			return false;
+		}
+		const std::string id = mode ? mode : "";
+		std::lock_guard lock(mutex_);
+		if ((id.empty() && !allow_none_) || (!id.empty() && !find_mode(modes_, id))) {
+			why = "The combined view refers to an unavailable mode";
+			return false;
+		}
+		planned_ = id;
+		have_planned_ = true;
+		planned_how_ = scene_switch && !id.empty() ? How::On : How::Window;
+		planned_press_ = true;
+		return true;
+	}
+	void runtime_unstage() override
+	{
+		std::lock_guard lock(mutex_);
+		have_planned_ = false;
+		planned_press_ = false;
+		planned_.clear();
+	}
 
 	obs_source_t *parent()
 	{
 		std::lock_guard lock(g_modes_mutex);
 		return parent_;
+	}
+	obs_source_t *parent_ref()
+	{
+		std::lock_guard lock(g_modes_mutex);
+		return parent_weak_ ? obs_weak_source_get_source(parent_weak_) : nullptr;
 	}
 
 	// For other filters' questions: called with g_modes_mutex held.
@@ -456,16 +684,26 @@ public:
 		std::lock_guard lock(mutex_);
 		look.share = share_;
 		look.modes = modes_;
-		look.current = current_;
+		look.current = have_planned_ ? planned_ : current_;
 		return look;
 	}
 
-	// For the vendor requests: called with g_modes_mutex held.
+	// For the vendor requests, with the owning source held by the caller.
 	SceneModesLook vendor_look()
 	{
 		SceneModesLook look;
-		look.scene = parent_ && obs_source_get_name(parent_) ? obs_source_get_name(parent_) : "";
+		auto target = forward();
+		if (target)
+			look = target->runtime_look();
+		{
+			std::lock_guard lock(g_modes_mutex);
+			look.scene = parent_ && obs_source_get_name(parent_) ? obs_source_get_name(parent_) : "";
+		}
 		look.filter = obs_source_get_name(source_) ? obs_source_get_name(source_) : "";
+		if (target) {
+			look.enabled = look.enabled && obs_source_enabled(source_);
+			return look;
+		}
 		look.enabled = obs_source_enabled(source_);
 		std::lock_guard lock(mutex_);
 		look.current = current_;
@@ -541,6 +779,8 @@ public:
 		{
 			std::lock_guard lock(g_modes_mutex);
 			parent_ = parent;
+			if (internal_)
+				parent_weak_ = obs_source_get_weak_source(parent);
 		}
 		signal_handler_connect(obs_source_get_signal_handler(parent), "item_visible", visible_cb, this);
 		sync_hotkeys();
@@ -549,13 +789,23 @@ public:
 	void detach()
 	{
 		obs_source_t *was = nullptr;
+		obs_weak_source_t *weak = nullptr;
 		{
 			std::lock_guard lock(g_modes_mutex);
 			was = parent_;
+			weak = parent_weak_;
+			parent_weak_ = nullptr;
 			parent_ = nullptr;
 		}
+		// Native filter_remove already guarantees its parent is valid. An
+		// internal engine can outlive that callback through a legacy request.
+		obs_source_t *held = weak ? obs_weak_source_get_source(weak) : nullptr;
+		if (internal_)
+			was = held;
 		if (was)
 			signal_handler_disconnect(obs_source_get_signal_handler(was), "item_visible", visible_cb, this);
+		obs_source_release(held);
+		obs_weak_source_release(weak);
 		unwatch();
 		unregister_hotkeys();
 	}
@@ -564,13 +814,25 @@ public:
 	// the next tick.
 	bool queue(const std::string &mode, How how, std::string &why)
 	{
-		if (!obs_source_enabled(source_)) {
+		if (internal_ && retired_) {
+			why = "Scene Controller is no longer available";
+			return false;
+		}
+		if (!obs_source_enabled(source_) || !runtime_on_) {
 			why = "Scene Modes is off";
 			return false;
 		}
+		if (auto target = forward()) {
+			const char *action = how == How::Next     ? "next"
+					     : how == How::None   ? "none"
+					     : how == How::Toggle ? "toggle"
+					     : how == How::Window ? "window"
+								  : "on";
+			return target->runtime_press(mode.c_str(), action, why);
+		}
 		std::lock_guard lock(mutex_);
 		std::string id;
-		if (how == How::On || how == How::Toggle) {
+		if (how == How::On || how == How::Toggle || (how == How::Window && !mode.empty())) {
 			for (const Mode &m : modes_)
 				if (m.id == mode) {
 					id = m.id;
@@ -586,7 +848,7 @@ public:
 				return false;
 			}
 		}
-		if (how == How::None && !allow_none_) {
+		if ((how == How::None || (how == How::Window && mode.empty())) && !allow_none_) {
 			why = "That Scene Modes does not allow no mode";
 			return false;
 		}
@@ -598,25 +860,57 @@ public:
 		return true;
 	}
 
-	void tick(float seconds)
+	void tick(float seconds) override
 	{
+		if (!internal_) {
+			tick_work(seconds);
+			return;
+		}
+		if (retired_)
+			return;
+		struct Sources {
+			obs_source_t *owner, *parent;
+			~Sources()
+			{
+				obs_source_release(parent);
+				obs_source_release(owner);
+			}
+		} held{owner_ref(), parent_ref()};
+		if (!held.owner || !held.parent)
+			return;
+		// Retirement may run from an OBS signal emitted by this tick. Retain
+		// both sources, without holding an engine lock across those callbacks.
+		if (!retired_)
+			tick_work(seconds);
+	}
+
+	void tick_work(float seconds)
+	{
+		if (forwarded())
+			return;
 		settling_ = false;
 		obs_source_t *parent = this->parent();
 		if (!parent)
 			return;
 		if (emit_.exchange(false))
 			emit_changed();
-		const bool enabled = obs_source_enabled(source_);
+		const bool enabled = obs_source_enabled(source_) && runtime_on_;
 		std::vector<Press> presses;
 		std::vector<Seen> seen;
 		bool sweep;
 		{
 			std::lock_guard lock(mutex_);
 			seen.swap(pending_);
-			if (enabled && scenes_loaded())
+			if (enabled && scenes_loaded()) {
 				presses.swap(presses_);
-			else if (!enabled)
+				if (planned_press_) {
+					presses.push_back({planned_, planned_how_});
+					planned_press_ = false;
+				}
+			} else if (!enabled) {
 				presses_.clear(); // keys are refused while off; the window's choice too
+				planned_press_ = false;
+			}
 			sweep = sweep_ || !was_on_;
 			sweep_ = false;
 		}
@@ -914,7 +1208,10 @@ private:
 				obs_source_get_name(source_), now ? now->name.c_str() : "(none)", count);
 			if (!to.empty())
 				start_places(to, s.share, true);
-			vendor_emit_scene_mode_changed(source_, to, s.current);
+			if (internal_)
+				changed_ = true;
+			else
+				vendor_emit_scene_mode_changed(source_, to, s.current);
 		}
 		// "Switch to scene": a key's press turning a mode on, even the one on
 		// already, changes scene unless the scene on screen is one of this
@@ -937,12 +1234,15 @@ private:
 	// collection, never copied to another filter).
 	void write_state(const std::string &now, const std::string &before)
 	{
-		obs_data_t *settings = obs_source_get_settings(source_);
-		std::lock_guard lock(mutex_);
-		current_ = now;
-		previous_ = before;
-		obs_data_set_string(settings, "mode_now", now.c_str());
-		obs_data_set_string(settings, "mode_before", before.c_str());
+		obs_data_t *settings = internal_ ? nullptr : obs_source_get_settings(source_);
+		{
+			std::lock_guard lock(mutex_);
+			current_ = now;
+			previous_ = before;
+			obs_data_t *target = internal_ ? private_settings_ : settings;
+			obs_data_set_string(target, "mode_now", now.c_str());
+			obs_data_set_string(target, "mode_before", before.c_str());
+		}
 		obs_data_release(settings);
 	}
 
@@ -1042,7 +1342,7 @@ private:
 	// to Space or a Scene Fit is handed to it once in place.
 	void start_places(const std::string &mode, const std::vector<std::string> &share, bool glide)
 	{
-		obs_data_t *settings = obs_source_get_settings(source_);
+		obs_data_t *settings = settings_ref();
 		const std::vector<std::string> listed = pick_list_read(settings, key(mode, "place").c_str(), false);
 		const Places places = listed.empty() ? Places() : read_places(settings, mode);
 		const double seconds = (double)obs_data_get_int(settings, key(mode, "place_ms").c_str()) / 1000.0;
@@ -1181,6 +1481,8 @@ private:
 	static void visible_cb(void *data, calldata_t *cd)
 	{
 		auto *self = static_cast<SceneModes *>(data);
+		if ((self->internal_ && self->retired_) || self->forwarded())
+			return;
 		if (self->applying_.load() == std::this_thread::get_id())
 			return; // its own doing
 		auto *item = static_cast<obs_sceneitem_t *>(calldata_ptr(cd, "item"));
@@ -1240,6 +1542,8 @@ private:
 
 	void sync_hotkeys()
 	{
+		if (internal_)
+			return;
 		obs_source_t *parent = this->parent();
 		std::vector<Mode> modes;
 		bool allow_none;
@@ -1303,6 +1607,10 @@ private:
 
 	void emit_changed()
 	{
+		if (internal_) {
+			changed_ = true;
+			return;
+		}
 		std::string now;
 		{
 			std::lock_guard lock(mutex_);
@@ -1313,13 +1621,26 @@ private:
 
 	obs_source_t *source_;
 	OwnerRef owner_;
-	obs_source_t *parent_ = nullptr; // under g_modes_mutex
+	bool internal_ = false;
+	bool registered_ = false; // under g_modes_mutex
+	std::atomic<bool> retired_{false};
+	obs_data_t *private_settings_ = nullptr;
+	std::atomic<bool> runtime_on_{true}, changed_{false};
+	mutable std::mutex forward_mutex_;
+	mutable std::atomic<bool> has_forward_{false};
+	std::weak_ptr<SceneModesRuntime> forward_;
+	obs_source_t *parent_ = nullptr;           // under g_modes_mutex
+	obs_weak_source_t *parent_weak_ = nullptr; // under g_modes_mutex; no parent ownership cycle
 	std::mutex mutex_;
 	std::vector<Mode> modes_;
 	std::vector<std::string> share_;
 	bool allow_none_ = false, lock_hidden_ = false;
 	ItemChange change_;
 	std::string current_, previous_; // mode ids
+	std::string planned_;
+	bool have_planned_ = false;
+	How planned_how_ = How::Window;
+	bool planned_press_ = false;
 	bool first_update_ = true;
 	std::vector<Press> presses_;
 	std::vector<Seen> pending_;
@@ -1355,7 +1676,7 @@ std::vector<ModesLook> looks_of_enabled(const void *except)
 	std::vector<ModesLook> looks;
 	std::lock_guard lock(g_modes_mutex);
 	for (SceneModes *each : g_modes)
-		if (each != except && obs_source_enabled(each->source()))
+		if (each != except && each->active())
 			looks.push_back(each->look());
 	return looks;
 }
@@ -1370,55 +1691,13 @@ void on_source_rename(void *, calldata_t *cd)
 	{
 		std::lock_guard lock(g_modes_mutex);
 		for (SceneModes *each : g_modes)
-			if (obs_source_t *held = each->owner_ref())
-				filters.push_back(held);
+			if (!each->internal())
+				if (obs_source_t *held = each->owner_ref())
+					filters.push_back(held);
 	}
 	for (obs_source_t *filter : filters) {
 		obs_data_t *settings = obs_source_get_settings(filter);
-		bool changed = false;
-		std::vector<std::string> lists;
-		for (const std::string &id : pick_list_read(settings, "modes", false))
-			for (const char *part : {"sources", "hide", "leave_on", "place"})
-				lists.push_back(key(id, part));
-		lists.push_back("share_scenes");
-		for (const std::string &list : lists) {
-			std::vector<std::string> names = pick_list_read(settings, list.c_str(), false);
-			bool here = false;
-			for (std::string &name : names)
-				if (name == was) {
-					name = now;
-					here = true;
-				}
-			if (here) {
-				pick_list_write(settings, list.c_str(), false, names);
-				changed = true;
-			}
-		}
-		for (const std::string &id : pick_list_read(settings, "modes", false)) {
-			// Saved places, by scene and by source.
-			Places places = read_places(settings, id);
-			bool moved = false;
-			if (places.count(was)) {
-				places[now] = std::move(places[was]);
-				places.erase(was);
-				moved = true;
-			}
-			for (auto &[scene, sources] : places)
-				if (sources.count(was)) {
-					sources[now] = sources[was];
-					sources.erase(was);
-					moved = true;
-				}
-			if (moved) {
-				write_places(settings, id, places);
-				changed = true;
-			}
-			const std::string go = key(id, "go_to");
-			if (strcmp(obs_data_get_string(settings, go.c_str()), was) == 0) {
-				obs_data_set_string(settings, go.c_str(), now);
-				changed = true;
-			}
-		}
+		const bool changed = scene_modes_rename_settings(settings, was, now);
 		if (changed)
 			obs_source_update(filter, settings);
 		obs_data_release(settings);
@@ -1853,11 +2132,30 @@ void add_modes_and_rest(obs_properties_t *props, obs_source_t *owner, obs_data_t
 	obs_property_set_modified_callback2(mode_for, mode_for_cb, owner);
 }
 
+bool configure_controller_cb(obs_properties_t *, obs_property_t *, void *data)
+{
+	auto *owner = static_cast<obs_source_t *>(data);
+	auto *self = owner ? static_cast<SceneModes *>(obs_obj_get_data(owner)) : nullptr;
+	auto target = self ? self->forward() : nullptr;
+	const std::string id = target ? target->runtime_controller_id() : "";
+	if (!id.empty())
+		show_views_controller(id.c_str());
+	return false;
+}
+
 obs_properties_t *get_properties(void *data)
 {
 	auto *self = static_cast<SceneModes *>(data);
 	obs_source_t *owner = self ? self->source() : nullptr;
 	obs_properties_t *props = obs_properties_create();
+	if (auto target = self ? self->forward() : nullptr) {
+		if (!target->runtime_controller_id().empty()) {
+			add_help_line(props, obs_module_text("Views.ManagedFilter"));
+			obs_properties_add_button2(props, "controller_configure", obs_module_text("Views.Configure"),
+						   configure_controller_cb, owner);
+			return props;
+		}
+	}
 	obs_data_t *settings = owner ? obs_source_get_settings(owner) : nullptr;
 	obs_source_t *parent = owner ? obs_filter_get_parent(owner) : nullptr;
 
@@ -1907,6 +2205,8 @@ std::vector<obs_source_t *> filters_on(const char *scene, const char *filter)
 	std::vector<obs_source_t *> out;
 	std::lock_guard lock(g_modes_mutex);
 	for (SceneModes *each : g_modes) {
+		if (each->internal())
+			continue;
 		obs_source_t *parent = each->look().parent;
 		const char *scene_name = parent ? obs_source_get_name(parent) : nullptr;
 		if (!scene_name || (scene && *scene && strcmp(scene, scene_name) != 0))
@@ -1921,17 +2221,98 @@ std::vector<obs_source_t *> filters_on(const char *scene, const char *filter)
 
 } // namespace
 
+bool scene_modes_rename_settings(obs_data_t *settings, const char *was, const char *now)
+{
+	if (!settings || !was || !now || !*was || !*now)
+		return false;
+	bool changed = false;
+	std::vector<std::string> lists;
+	for (const std::string &id : pick_list_read(settings, "modes", false))
+		for (const char *part : {"sources", "hide", "leave_on", "place"})
+			lists.push_back(key(id, part));
+	lists.push_back("share_scenes");
+	for (const std::string &list : lists) {
+		std::vector<std::string> names = pick_list_read(settings, list.c_str(), false);
+		bool here = false;
+		for (std::string &name : names)
+			if (name == was) {
+				name = now;
+				here = true;
+			}
+		if (here) {
+			pick_list_write(settings, list.c_str(), false, names);
+			changed = true;
+		}
+	}
+	for (const std::string &id : pick_list_read(settings, "modes", false)) {
+		// Saved places, by scene and by source.
+		Places places = read_places(settings, id);
+		bool moved = false;
+		if (places.count(was)) {
+			places[now] = std::move(places[was]);
+			places.erase(was);
+			moved = true;
+		}
+		for (auto &[scene, sources] : places)
+			if (sources.count(was)) {
+				sources[now] = sources[was];
+				sources.erase(was);
+				moved = true;
+			}
+		if (moved) {
+			write_places(settings, id, places);
+			changed = true;
+		}
+		const std::string go = key(id, "go_to");
+		if (strcmp(obs_data_get_string(settings, go.c_str()), was) == 0) {
+			obs_data_set_string(settings, go.c_str(), now);
+			changed = true;
+		}
+	}
+	return changed;
+}
+
 std::vector<SceneModesLook> scene_modes_list(const char *scene)
 {
 	std::vector<SceneModesLook> out;
-	std::lock_guard lock(g_modes_mutex);
-	for (SceneModes *each : g_modes) {
-		SceneModesLook look = each->vendor_look();
-		if (look.scene.empty() || (scene && *scene && look.scene != scene))
-			continue;
-		out.push_back(std::move(look));
+	for (obs_source_t *source : filters_on(scene, nullptr)) {
+		if (auto *each = static_cast<SceneModes *>(obs_obj_get_data(source))) {
+			SceneModesLook look = each->vendor_look();
+			if (!look.scene.empty())
+				out.push_back(std::move(look));
+		}
+		obs_source_release(source);
 	}
 	return out;
+}
+
+std::shared_ptr<SceneModesRuntime> scene_modes_runtime(obs_data_t *settings, obs_source_t *owner, obs_source_t *parent,
+						       bool enabled)
+{
+	get_defaults(settings);
+	auto runtime = std::make_shared<SceneModes>(settings, owner, true, enabled);
+	runtime->attach(parent);
+	return runtime;
+}
+
+bool scene_modes_forward(obs_source_t *legacy, const std::shared_ptr<SceneModesRuntime> &runtime)
+{
+	const char *id = legacy ? obs_source_get_unversioned_id(legacy) : nullptr;
+	if (!id || strcmp(id, kSceneModesId) != 0)
+		return false;
+	auto *self = static_cast<SceneModes *>(obs_obj_get_data(legacy));
+	if (!self)
+		return false;
+	return self->forward_to(runtime);
+}
+
+bool scene_modes_unforward(obs_source_t *legacy, const std::shared_ptr<SceneModesRuntime> &expected)
+{
+	const char *id = legacy ? obs_source_get_unversioned_id(legacy) : nullptr;
+	if (!id || strcmp(id, kSceneModesId) != 0)
+		return false;
+	auto *self = static_cast<SceneModes *>(obs_obj_get_data(legacy));
+	return self && self->unforward(expected);
 }
 
 bool scene_modes_press(const char *scene, const char *filter, const char *mode, const char *how, std::string &why)
