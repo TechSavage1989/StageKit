@@ -22,6 +22,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../blur/ramp-blur.hpp"
 #include "../capture/auto-capture.hpp"
 #include "../capture/standby.hpp"
+#include "../controller/scene-controller.hpp"
 #include "../dock/arrange-tools.hpp"
 #include "../frame/auto-frame.hpp"
 #include "../look/scene-blur.hpp"
@@ -30,8 +31,11 @@ the Free Software Foundation; either version 2 of the License, or
 #include "../third-party/obs-websocket-api.h"
 
 #include <obs-module.h>
+#include <obs-frontend-api.h>
 #include <plugin-support.h>
 #include <callback/proc.h>
+#include <QApplication>
+#include <QThread>
 
 #include <algorithm>
 #include <atomic>
@@ -46,18 +50,137 @@ namespace {
 
 std::atomic<obs_websocket_vendor> g_vendor{nullptr};
 
-const char *const kRequests[] = {"GetVersion",        "ListBlurFilters", "BlurOn",       "BlurOff",
-				 "BlurToggle",        "SetBlur",         "BlurAll",      "HookFront",
-				 "SetPictureShape",   "GetOptions",      "SetOption",    "Slide",
-				 "GetSwitcherState",  "ListSceneModes",  "GetSceneMode", "SetSceneMode",
-				 "ListSceneBlurs",    "SceneBlur",       "StandbyCover", "GetStandbyCover",
-				 "ShowInScenesPress", "ListTimers",      "TimerControl", "AutoFrameCommand",
-				 "GetAutoFrameState"};
+const char *const kRequests[] = {"GetVersion",
+				 "ListBlurFilters",
+				 "BlurOn",
+				 "BlurOff",
+				 "BlurToggle",
+				 "SetBlur",
+				 "BlurAll",
+				 "HookFront",
+				 "SetPictureShape",
+				 "GetOptions",
+				 "SetOption",
+				 "Slide",
+				 "GetSwitcherState",
+				 "ListSceneModes",
+				 "GetSceneMode",
+				 "SetSceneMode",
+				 "ListSceneBlurs",
+				 "SceneBlur",
+				 "StandbyCover",
+				 "GetStandbyCover",
+				 "ShowInScenesPress",
+				 "ListTimers",
+				 "TimerControl",
+				 "AutoFrameCommand",
+				 "GetAutoFrameState",
+				 "ListSceneControllers",
+				 "GetSceneController",
+				 "SceneControllerCommand",
+				 "ConfigureSceneController",
+				 "CreateSceneController",
+				 "ImportSceneController"};
 
 void fail(obs_data_t *response, const char *message)
 {
 	obs_data_set_bool(response, "success", false);
 	obs_data_set_string(response, "error", message);
+}
+
+void add_controller_signal()
+{
+	static std::once_flag added;
+	std::call_once(added, [] {
+		signal_handler_add(obs_get_signal_handler(),
+				   "void stagekit_scene_controller_changed(string controllerId)");
+	});
+}
+
+// Editing changes OBS sources and belongs to the frontend thread, as if the
+// operator used the dock. These callbacks run on a vendor request thread or the
+// frontend fixture, never under a rendering/engine lock.
+template<typename Action> void controller_edit(Action action)
+{
+	if (qApp && QThread::currentThread() != qApp->thread())
+		QMetaObject::invokeMethod(qApp, action, Qt::BlockingQueuedConnection);
+	else
+		action();
+}
+
+void req_list_scene_controllers(obs_data_t *, obs_data_t *response, void *)
+{
+	scene_controller_list(response);
+	obs_data_set_bool(response, "success", true);
+}
+
+void req_get_scene_controller(obs_data_t *request, obs_data_t *response, void *)
+{
+	std::string why;
+	if (scene_controller_get(obs_data_get_string(request, "controllerId"), response, why))
+		obs_data_set_bool(response, "success", true);
+	else
+		fail(response, why.c_str());
+}
+
+void req_scene_controller_command(obs_data_t *request, obs_data_t *response, void *)
+{
+	std::string why;
+	if (scene_controller_command(obs_data_get_string(request, "controllerId"),
+				     obs_data_get_string(request, "groupId"), obs_data_get_string(request, "choiceId"),
+				     obs_data_get_string(request, "viewId"), obs_data_get_string(request, "command"),
+				     why))
+		obs_data_set_bool(response, "success", true);
+	else
+		fail(response, why.c_str());
+}
+
+void req_configure_scene_controller(obs_data_t *request, obs_data_t *response, void *)
+{
+	obs_data_t *config = obs_data_get_obj(request, "config");
+	if (!config) {
+		fail(response, "config is required");
+		return;
+	}
+	controller_edit([&] {
+		std::string why;
+		if (scene_controller_configure(obs_data_get_string(request, "controllerId"), config, why)) {
+			obs_data_set_bool(response, "success", true);
+			if (obs_frontend_get_main_window())
+				obs_frontend_save();
+		} else
+			fail(response, why.c_str());
+	});
+	obs_data_release(config);
+}
+
+void req_create_scene_controller(obs_data_t *request, obs_data_t *response, void *)
+{
+	controller_edit([&] {
+		std::string why;
+		if (scene_controller_create(obs_data_get_string(request, "sceneUuid"),
+					    obs_data_get_string(request, "name"), response, why)) {
+			obs_data_set_bool(response, "success", true);
+			if (obs_frontend_get_main_window())
+				obs_frontend_save();
+		} else
+			fail(response, why.c_str());
+	});
+}
+
+void req_import_scene_controller(obs_data_t *request, obs_data_t *response, void *)
+{
+	controller_edit([&] {
+		std::string why;
+		if (scene_controller_import(obs_data_get_string(request, "controllerId"),
+					    obs_data_get_string(request, "legacyFilterUuid"),
+					    obs_data_get_bool(request, "activate"), response, why)) {
+			obs_data_set_bool(response, "success", true);
+			if (obs_frontend_get_main_window())
+				obs_frontend_save();
+		} else
+			fail(response, why.c_str());
+	});
 }
 
 // Finds the Ramp Blur named by "sourceName" and optional "filterName" (the
@@ -719,6 +842,7 @@ void emit_event(const char *name, obs_data_t *data)
 
 void vendor_api_register()
 {
+	add_controller_signal();
 	if (obs_websocket_get_api_version() == 0) {
 		obs_log(LOG_INFO, "obs-websocket not found; Stream Deck / remote control requests are disabled");
 		return;
@@ -751,6 +875,12 @@ void vendor_api_register()
 		{"ListSceneModes", req_list_scene_modes},
 		{"GetSceneMode", req_get_scene_mode},
 		{"SetSceneMode", req_set_scene_mode},
+		{"ListSceneControllers", req_list_scene_controllers},
+		{"GetSceneController", req_get_scene_controller},
+		{"SceneControllerCommand", req_scene_controller_command},
+		{"ConfigureSceneController", req_configure_scene_controller},
+		{"CreateSceneController", req_create_scene_controller},
+		{"ImportSceneController", req_import_scene_controller},
 		{"ListSceneBlurs", req_list_scene_blurs},
 		{"SceneBlur", req_scene_blur},
 		{"StandbyCover", req_standby_cover},
@@ -843,6 +973,21 @@ void vendor_emit_options_changed()
 	obs_data_release(data);
 }
 
+void vendor_emit_scene_controller_changed(const char *controller_id)
+{
+	add_controller_signal();
+	// The sender has released its engine locks. Keep this payload small and let
+	// subscribers queue their own refresh; never enumerate controllers here.
+	obs_data_t *data = obs_data_create();
+	obs_data_set_string(data, "controllerId", controller_id ? controller_id : "");
+	emit_event("SceneControllerChanged", data);
+	obs_data_release(data);
+	calldata_t call{};
+	calldata_set_string(&call, "controllerId", controller_id ? controller_id : "");
+	signal_handler_signal(obs_get_signal_handler(), "stagekit_scene_controller_changed", &call);
+	calldata_free(&call);
+}
+
 } // namespace stagekit
 
 namespace stagekit {
@@ -899,6 +1044,7 @@ void vendor_emit_standby_cover_changed(obs_source_t *filter, bool covered)
 
 void vendor_api_add_test_calls()
 {
+	add_controller_signal();
 	static std::atomic<bool> added{false};
 	if (added.exchange(true))
 		return;
@@ -915,6 +1061,12 @@ void vendor_api_add_test_calls()
 				{"ListSceneModes", req_list_scene_modes},
 				{"GetSceneMode", req_get_scene_mode},
 				{"SetSceneMode", req_set_scene_mode},
+				{"ListSceneControllers", req_list_scene_controllers},
+				{"GetSceneController", req_get_scene_controller},
+				{"SceneControllerCommand", req_scene_controller_command},
+				{"ConfigureSceneController", req_configure_scene_controller},
+				{"CreateSceneController", req_create_scene_controller},
+				{"ImportSceneController", req_import_scene_controller},
 				{"ListSceneBlurs", req_list_scene_blurs},
 				{"SceneBlur", req_scene_blur},
 				{"GetSwitcherState", req_get_switcher_state},

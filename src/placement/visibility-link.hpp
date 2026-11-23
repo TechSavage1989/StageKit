@@ -11,6 +11,8 @@ the Free Software Foundation; either version 2 of the License, or
 #pragma once
 
 #include <obs.h>
+#include <memory>
+#include <string>
 
 namespace stagekit {
 
@@ -33,5 +35,28 @@ bool link_visibility_holds_hidden(obs_source_t *scene, obs_sceneitem_t *item);
 // Show in Scenes' "Follow what is shown" does not read the switch meanwhile.
 // Safe from any thread.
 bool link_visibility_settling(obs_source_t *scene, obs_sceneitem_t *item);
+
+// Reuses the visibility rule engine as a native object, not a hidden filter.
+class VisibilityLinkRuntime {
+public:
+	virtual ~VisibilityLinkRuntime() = default;
+	virtual void tick(float seconds) = 0;
+	virtual void runtime_enabled(bool enabled) = 0;
+	// Reuse keeps pending visibility events and the last followed lead state.
+	virtual void runtime_update(obs_data_t *settings, bool enabled) = 0;
+	// Retire once before releasing an internal engine, including when readers
+	// still retain it. New calls never act or hold sources hidden; the last
+	// retained call releases its weak subscriptions during destruction.
+	virtual void runtime_retire() = 0;
+	virtual bool runtime_retired() const = 0;
+	virtual std::string runtime_controller_id() = 0;
+	// An explicit source choice (only-one), or the whole set (together).
+	virtual bool runtime_press(const char *source, bool shown, std::string &why) = 0;
+};
+
+std::shared_ptr<VisibilityLinkRuntime> visibility_link_runtime(obs_data_t *settings, obs_source_t *owner,
+							       obs_source_t *parent, bool enabled);
+bool visibility_link_forward(obs_source_t *legacy, const std::shared_ptr<VisibilityLinkRuntime> &runtime);
+bool visibility_link_unforward(obs_source_t *legacy, const std::shared_ptr<VisibilityLinkRuntime> &expected);
 
 } // namespace stagekit

@@ -20,6 +20,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <obs.h>
 
 #include <string>
+#include <memory>
 #include <vector>
 
 namespace stagekit {
@@ -62,5 +63,41 @@ bool scene_modes_holds_hidden(obs_source_t *scene, obs_sceneitem_t *item);
 
 // True for the tick after a mode change, before the filter has looked again.
 bool scene_modes_settling(obs_source_t *scene, obs_sceneitem_t *item);
+
+// The same mode engine, owned by one Scene Controller without creating an
+// OBS source. Its private settings never read or write the controller's root.
+// Calls that change the runtime are serialized by the controller's tick.
+class SceneModesRuntime {
+public:
+	virtual ~SceneModesRuntime() = default;
+	virtual void tick(float seconds) = 0;
+	// Retire before the owner drops this engine. A legacy request may still
+	// hold it, so it must leave the shared registry before the owner can die.
+	virtual void runtime_retire() = 0;
+	virtual bool runtime_retired() const = 0;
+	// Keep the live selection, first-load state and glides while editing its
+	// definitions or refreshing the controller's source inventory.
+	virtual void runtime_update(obs_data_t *settings, bool enabled) = 0;
+	virtual void runtime_enabled(bool enabled) = 0;
+	virtual std::string runtime_controller_id() = 0;
+	virtual SceneModesLook runtime_look() = 0;
+	virtual obs_data_t *runtime_settings() = 0; // a reference to release
+	virtual bool runtime_press(const char *mode, const char *how, std::string &why) = 0;
+	// Stage every member of a combined view before ticking any: hidden-state
+	// queries then see all target modes, independent of engine execution order.
+	virtual bool runtime_stage(const char *mode, bool scene_switch, std::string &why) = 0;
+	virtual void runtime_unstage() = 0;
+	virtual bool runtime_changed() = 0;
+};
+
+std::shared_ptr<SceneModesRuntime> scene_modes_runtime(obs_data_t *settings, obs_source_t *owner, obs_source_t *parent,
+						       bool enabled);
+// The original filter remains visible and saved. Its existing keys and state
+// follow this runtime while it lives; removing the controller restores it.
+bool scene_modes_forward(obs_source_t *legacy, const std::shared_ptr<SceneModesRuntime> &runtime);
+// A delayed retirement must never clear a newer controller's forwarding.
+bool scene_modes_unforward(obs_source_t *legacy, const std::shared_ptr<SceneModesRuntime> &expected);
+// The complete existing source/scene rename rules, also used for child settings.
+bool scene_modes_rename_settings(obs_data_t *settings, const char *was, const char *now);
 
 } // namespace stagekit

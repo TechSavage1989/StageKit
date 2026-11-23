@@ -10,6 +10,7 @@ import { adoptOld, keptPicture, keysWithLists, layoutList, modePictureLists, OWN
 import {
 	ordinaryControlPicture,
 	resetStatsShown,
+	viewShown,
 	studioTransitionShown,
 	timerPicture,
 	blurAllPicture,
@@ -46,6 +47,7 @@ function shown(key: string, setting: string, value: string): string | undefined 
 		return ordinaryControlPicture(key, "", types.sourceType, types.sceneType).id;
 	if (key === "timer") return timerPicture(types.sourceType).id;
 	if (key === "resetstats") return resetStatsShown(undefined, types.sourceType).picture.id;
+	if (key === "view") return viewShown(types.sourceType).picture.id;
 	if (key === "studiotransition") return studioTransitionShown(undefined, types.sourceType).picture.id;
 	if (key === "scene") return scenePicture(undefined, "", value).id;
 	if (key === "mode") return modePicture(undefined, value).id;

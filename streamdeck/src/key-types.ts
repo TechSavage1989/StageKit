@@ -169,6 +169,7 @@ const SOURCES: Record<string, { family?: Family; only?: string[]; label?: string
 	obssource: { automatic: "Automatic (source visibility)", tip: "Choose the image for the source controlled by this key." },
 	timer: { automatic: "Automatic (timer)", tip: "Choose the image for this timer key.", only: ["countdown", "title", "alerts", "logo"] },
 	resetstats: { automatic: "Automatic (reset stats)", tip: "Choose this key's image. The reset stats symbol stays in its corner; the image does not change which OBS statistics are reset." },
+	view: { family: "mode", label: "View type", automatic: "Automatic (the saved choice's type)", tip: "Choose this key's image. Automatic uses the type saved in the Scene Controller. The View symbol stays in the corner of a chosen image." },
 	studiotransition: { automatic: "Automatic (Preview to Program)", tip: "Choose this key's image. The transition symbol stays in its corner. The key always sends the current Preview to Program." },
 	obsmute: { automatic: "Automatic (audio mixer)", tip: "Choose the image for the input that this key mutes." },
 	obscamera: { automatic: "Automatic (virtual camera)", tip: "Choose the image for the virtual camera control." },

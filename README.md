@@ -71,6 +71,9 @@ from hotkeys, or from the Stream Deck OBS Studio plugin's *Filter* and *Source* 
 - **Apply Layout** (scene filter): saves an arrangement of a scene's items and glides back to it.
 - **Scene Modes** (scene filter): named modes (Game, Window, Be right back...), one on at a time, a key
   each. Turning one on shows its sources and hides the other modes'.
+- **Scene Controller and StageKit Views**: keep independent content, camera and overlay choices in one
+  scene filter. Select a group or a combined saved view from an OBS dock or a matching Stream Deck key.
+  [Configure views](#scene-controller-and-stagekit-views)
 - **Scene Transitions** (scene filter): one place for how every source in a scene shows and hides.
 - **Scene Fit** (scene filter): several sources fitted into the free space together, all moving at once.
 - **Scene Standby** (scene filter): every empty capture in a scene shows the standby image, set once.
@@ -112,8 +115,9 @@ does not point anywhere. Release notes are kept in [docs/releases](docs/releases
 
 - OBS Studio 31 or newer. Builds are compiled against OBS 31.1.1.
 - Windows x64, macOS (Apple silicon and Intel) or Ubuntu 24.04 x86_64.
-- Automated tests run on Linux with OpenGL only. Nothing has been verified in OBS on Windows or macOS
-  yet, including whether the shaders compile under Direct3D.
+- Automated tests exercise Linux OpenGL and the Windows OBS 32.2.2 frontend with software Direct3D 11.
+  Those results do not establish frame times on a physical Windows GPU. macOS runtime testing remains
+  unverified.
 - Optional: obs-websocket (bundled with OBS) for remote control.
 
 ## Getting started
@@ -155,6 +159,7 @@ thing in its window or group. Controls that do nothing in the current choice are
 
 | What you want to do | Tool to use |
 | --- | --- |
+| Select independent content and camera choices, or a combined view, from an OBS dock and Stream Deck | [Scene Controller and StageKit Views](#scene-controller-and-stagekit-views) |
 | Choose among named modes with their own sources, such as Starting, BRB and Ending | [Scene Modes](#scene-modes) |
 | Link eye icons, keep one source visible, or have several follow a lead source | [Link Visibility](#link-visibility) |
 | Put one source on a key across selected scenes | [Show in Scenes](#show-in-scenes) |
@@ -210,10 +215,10 @@ thing in its window or group. Controls that do nothing in the current choice are
 
 A scene filter sits on a scene, not on a source, and looks after the scene's sources together: one filter in
 place of one per source. Add one from the scene's own Filters window (right-click the scene, *Filters*).
-There are seven: **Scene Modes** (which sources show), **Scene Transitions** (how they show and hide), **Scene
+They include **Scene Controller** and **Scene Modes** (which sources show), **Scene Transitions** (how they show and hide), **Scene
 Fit** (where they go), **Scene Standby** (the standby image in a capture's place), **Scene Corners**,
 **Scene Shadow** and **Scene Blur** (how they look). They work together, and a Standby Image, Corners & Edges or Shadow, Glow &
-Outline you put on a source yourself is left as it is. Five of them draw nothing, and Scene Shadow is
+Outline you put on a source yourself is left as it is. Controllers add no image effect, and Scene Shadow is
 built to keep Morph working, so a scene carrying any of them still morphs. In a scene that is not on screen
 they do as little as they can, and nothing at all while a scene collection loads.
 
@@ -1189,6 +1194,87 @@ items wherever they are, in groups too. It works both ways: hiding one of the li
 scene hides the linked items here and the listed sources everywhere. So one Stream Deck *Source* key
 on one camera hides every camera. For a plain on and off switch on a key, with no item to press,
 there is also [Show in Scenes](#show-in-scenes).
+
+### Scene Controller and StageKit Views
+
+Use **Scene Filter: Scene Controller (StageKit)** when a few layout scenes contain several content or
+camera views. One controller holds independent selection groups and visibility rules. A combined view
+can select several groups together. Changing only the camera group keeps the content group's current
+selection.
+
+Open **Docks > StageKit Views**, choose the scene to configure, and select **Add**.
+The scene selector is for browsing controllers and keeps Program on its current scene. **Configure...**
+opens the controller's groups and combined views. The same configuration is used by the dock and the
+Stream Deck **StageKit View** action.
+
+**Select a saved view from the Windows OBS dock.**
+
+<p align="center"><img src="docs/images/stagekit-views.png" width="350" alt="StageKit Views in Windows OBS, showing the Stream views controller and Browser and close camera as the active combined view"></p>
+
+| Group type | Behavior |
+| --- | --- |
+| Named modes | Each named choice lists the sources or groups it shows. Selecting it hides the other modes' members. Sources outside the group retain their visibility. |
+| Choose one source | Select one source or group from the list. Showing a member through its Sources eye or an existing source key also hides its peers. |
+| Show and hide together | Select Shown or Hidden for the complete set. A Sources eye change also applies to the other members. |
+| Follow source visibility | Listed followers react to any or all of the selected lead sources. This rule runs automatically; it has no manual choice row. |
+
+For example, create **Main content** with Game and Browser modes, **Camera** with Wide and Close source
+choices, and an **Overlays** group. In **Combined views**, save Game and camera or Browser and close
+camera by selecting the desired choice in each group. Leave any group on **Keep current selection**
+when that view should leave it alone. Checking **Also change scene** adds an explicit scene
+destination. In Studio Mode, it opens in Preview; otherwise it changes Program. Ordinary views keep
+the existing scene.
+
+**Configure independent groups and named modes in OBS.**
+
+<p align="center"><img src="docs/images/stagekit-views-editor.png" width="760" alt="StageKit Views configuration in Windows OBS, showing independent Camera and Main content groups with Game and Browser modes"></p>
+
+Both screenshots are unedited captures from the Windows frontend test with fictional sample sources.
+
+Back in the dock, **Show** selects a group or **Combined views**. Click a row to select it. Active rows
+reflect OBS's actual controller state. Disabled or unavailable targets cannot be selected. Renaming a
+controller, group, mode or source retains its identity, so saved views and keys continue to find it.
+Group configuration also includes other scenes, hidden-source rules and show/hide transitions. A dock
+or key selection applies to the group's covered scenes. A manual Sources eye change follows the
+existing visibility rule within that scene; it does not add cross-scene mirroring beyond the imported
+rule's settings.
+
+In Stream Deck, add **StageKit View**, choose the controller, and select a group choice or saved view.
+**Select** applies that choice. **Next choice** cycles a Named modes or Choose one source group.
+The key uses the same stored definitions and actual state as the dock; it does not need a duplicate
+multi-action. The usual title, image layout, view type and palette controls remain available. Update
+both the OBS plugin and companion for this action; companion 0.43.0.0 adds it.
+
+**Existing setups.** The original Scene Modes and Link Visibility filters remain supported. **Import...**
+copies a selected filter's complete settings, including per-source transitions and saved placements,
+into a controller group. With **Use the controller for the imported group** checked, the old filter
+stays visible as a compatibility alias so existing keys and hotkeys still work. Its properties link
+back to StageKit Views for editing. Only the controller's internal rule runs. Clear that option to make a disabled copy for review while the original keeps
+running. To activate a reviewed copy, edit its group and check **Use the controller for the imported
+group**. Removing the group or controller restores the original filter's runtime. New groups require no
+additional or hidden OBS filters.
+
+The controller reuses the existing mode and visibility behavior and adds no pixel-processing pass.
+It does not imply a fixed frame-time improvement: active transitions, source activity and the rules in
+a collection still determine the cost. Compare the same scene and settings on your own hardware when
+checking frame render time.
+
+#### Scene Controller remote requests
+
+Call these through the StageKit obs-websocket vendor. Every response includes success and, on rejection,
+error. Controller identity is its filter UUID; group, choice and view IDs are scoped to that controller.
+
+| Request | Input and result |
+| --- | --- |
+| ListSceneControllers | Returns controllers with their identity, scene, enabled/available state, groups, choices and combined views. |
+| GetSceneController | Supply controllerId. Returns the current snapshot and complete config. |
+| SceneControllerCommand | Supply controllerId and command. Target either viewId or groupId plus choiceId for Select; Next uses groupId. Success means accepted for the controller tick. |
+| ConfigureSceneController | Supply controllerId and schema-1 config. The complete configuration is validated before it replaces the running definition. |
+| CreateSceneController | Supply sceneUuid and name. Adds one real Scene Controller filter and returns its snapshot. |
+| ImportSceneController | Supply controllerId, legacyFilterUuid and activate. Copies a compatible legacy filter and optionally transfers its execution. |
+
+SceneControllerChanged carries controllerId after the controller changes. Query its snapshot for the
+applied state. A queued command's success is not an assertion that the requested view is already active.
 
 ### Scene Modes
 

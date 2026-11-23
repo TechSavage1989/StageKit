@@ -8,6 +8,7 @@
 #include "capture-settings-test.hpp"
 #include "visible-bounds-reuse-test.hpp"
 #include "shadow-reuse-test.hpp"
+#include "scene-controller-dock-test.hpp"
 #ifdef _WIN32
 #include "windows-render-timing-test.hpp"
 #endif
@@ -243,6 +244,7 @@ static void exercise()
 	if (qEnvironmentVariable("STAGEKIT_TEST_NDI") == "restart") {
 		quick_test::check_restart(issues);
 		countdown_dock_test::check(issues, true);
+		scene_controller_dock_test::check(issues, true);
 		finish_probe(issues);
 		return;
 	}
@@ -340,6 +342,9 @@ static void exercise()
 	capture_settings_test::check(issues);
 	visible_bounds_reuse_test::check(issues);
 	shadow_reuse_test::check(issues);
+	scene_controller_test::check(issues);
+	scene_controller_test::check_migration(issues);
+	scene_controller_dock_test::check(issues, false);
 	check_plugin_manager(issues);
 	check_blur_output(issues);
 #ifdef _WIN32
@@ -353,6 +358,7 @@ bool obs_module_load()
 {
 	if (!qEnvironmentVariableIsSet("STAGEKIT_TEST_REPORT"))
 		return false;
+	scene_controller_test::register_item();
 	obs_frontend_add_event_callback(
 		[](obs_frontend_event event, void *) {
 			if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING)

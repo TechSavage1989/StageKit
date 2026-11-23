@@ -112,7 +112,7 @@ bool draws_nothing(obs_source_t *filter)
 	if (id && std::strcmp(id, kSceneCornersId) == 0)
 		return !scene_corners_draws(filter);
 	// The scene filters that draw nothing (scene-filter-ids.hpp).
-	for (const char *known : {kSceneModesId, kSceneTransitionsId, kSceneFitId, kSceneStandbyId})
+	for (const char *known : {kSceneModesId, kSceneControllerId, kSceneTransitionsId, kSceneFitId, kSceneStandbyId})
 		if (id && std::strcmp(id, known) == 0)
 			return true;
 	for (const char *known :

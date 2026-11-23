@@ -1,6 +1,6 @@
 {
 	"Name": "StageKit",
-	"Version": "0.42.0.0",
+	"Version": "0.43.0.0",
 	"Author": "StageKit contributors",
 	"Actions": [
 		{
@@ -43,6 +43,29 @@
 				},
 				{
 					"Image": "imgs/actions/mode/on",
+					"Name": "On",
+					"TitleAlignment": "bottom"
+				}
+			],
+			"DisableAutomaticStates": true
+		},
+		{
+			"Name": "View",
+			"UUID": "com.techsavage1989.stagekit.view",
+			"Icon": "imgs/actions/view/icon",
+			"Tooltip": "Selects a saved Scene Controller group choice or combined view, shared with the StageKit Views dock. Shows the state reported by OBS.",
+			"PropertyInspectorPath": "ui/view.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/view/off",
+					"Name": "Off",
+					"TitleAlignment": "bottom"
+				},
+				{
+					"Image": "imgs/actions/view/on",
 					"Name": "On",
 					"TitleAlignment": "bottom"
 				}

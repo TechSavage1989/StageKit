@@ -46,6 +46,40 @@ For a performance release, compare a frozen baseline and candidate using the sam
 
 ## Saved scene settings and source renames
 
+Scene Controller owns real native rule objects under one registered filter, never hidden OBS filters.
+The full schema-1 definition is stored under controller. Preserve group/choice/view IDs across edits,
+renames and reload; only allocate IDs for new records. The Views dock and StageKit View companion action
+share that definition and actual state. A combined view must validate every selection before any work
+is queued, stage all target modes before ticking any group, and keep unspecified groups unchanged.
+Scene changes are explicit. Follow groups expose rules rather than selectable choices.
+
+Embedded Scene Modes settings belong to their child group, not the controller's root source settings.
+Import preserves complete native settings and original filters. Active imports leave the original as
+a weak compatibility alias, including legacy key/hotkey state and the filter enabled switch. Removing
+the controller restores the original runtime. Inactive imports keep their new group disabled. Never
+run an original rule alongside its imported copy. External filters that have never been imported must
+avoid new forwarding locks on their ordinary tick/visibility paths.
+
+Reuse native group engines across ordinary inventory refreshes and edits so loading reconciliation does
+not re-show manually hidden sources or restart saved placements. Explicitly retire removed engines before
+releasing the controller: a legacy request can retain its weak forwarding target past removal. Release
+strong source pins outside the shared mode registry lock. Reserve active imported filter ownership for
+loaded/copied definitions as well as public edits. Queue replacement configuration atomically and order
+source-setting publication so a tick cannot overwrite a newly accepted edit before OBS saves it.
+Vendor snapshots and command preflight can run outside the video thread. Read item presence and eye
+state inside retained scene-enumeration callbacks; recursive lookup returns a borrowed item after
+unlocking, which can be removed before a later visibility read. Saved-view dock requests carry only
+viewId, not the same ID again as choiceId; the backend rejects mixed targets before making changes.
+
+Emit SceneControllerChanged and stagekit_scene_controller_changed only after releasing engine locks.
+The event carries only controllerId; subscribers coalesce a later snapshot refresh. Native editing is
+on the frontend thread. The dock's scene selector must never change Program as a browsing side effect.
+Keep collection-specific dock selection and close drafts when the collection changes. Run the shared
+scene-controller-test.hpp and real scene-controller-dock-test.hpp fixtures, including original key
+compatibility, removal rollback and an actual OBS restart. Capture the Windows dock and editor for the
+guide. Source renames use source_settings_renamed for nested generic/per-source transition settings and
+scene_modes_rename_settings for mode membership and saved placements.
+
 Run the REVIEW_CONTROLS test when changing saved defaults, Apply Layout framing, Morph scene rules
 or shared transition controls. OBS calls load after creating sources from a saved collection, including
 a filter with empty settings. Keep the original choice for those filters. Keep the Move Scene Item

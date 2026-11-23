@@ -3425,6 +3425,13 @@
 			"off": "options/mode-off"
 		},
 		{
+			"id": "options/view",
+			"group": "options",
+			"label": "view",
+			"on": "options/view-on",
+			"off": "options/view-off"
+		},
+		{
 			"id": "options/scene-fit",
 			"group": "options",
 			"label": "scene fit",
