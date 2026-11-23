@@ -258,8 +258,9 @@ struct Group {
 	Data definition, settings;
 	std::vector<std::string> scenes;
 	bool enabled = true;
-	std::string origin;
+	std::string origin, owner_uuid;
 	bool imported = false;
+	std::shared_ptr<std::atomic<bool>> imported_enabled;
 	std::string error;
 	std::shared_ptr<SceneModesRuntime> modes;
 	std::vector<LinkBinding> links;
@@ -331,7 +332,10 @@ bool group_enabled(const Group &group)
 	if (!group.imported)
 		return group.enabled;
 	SourceRef legacy(obs_get_source_by_uuid(group.origin.c_str()));
-	return legacy.source ? obs_source_enabled(legacy.source) : group.enabled;
+	SourceRef parent(obs_get_source_by_uuid(group.owner_uuid.c_str()));
+	if (legacy.source && parent.source && obs_filter_get_parent(legacy.source) == parent.source)
+		group.imported_enabled->store(obs_source_enabled(legacy.source), std::memory_order_relaxed);
+	return group.imported_enabled->load(std::memory_order_relaxed);
 }
 
 bool group_available(const Group &group, std::string &why)
@@ -1047,6 +1051,20 @@ private:
 	{
 		auto *self = static_cast<Controller *>(opaque);
 		auto *source = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
+		auto *filter = static_cast<obs_source_t *>(calldata_ptr(cd, "filter"));
+		if (source && filter) {
+			// OBS emits filter removal before clearing its parent. Capture
+			// the last switch state even for enable-then-remove in one turn;
+			// the removed object can then survive solely in the Undo history.
+			auto running = self->runtime();
+			const char *uuid = obs_source_get_uuid(filter);
+			const char *owner_uuid = obs_source_get_uuid(source);
+			if (running)
+				for (const auto &group : running->groups)
+					if (group.imported && group.origin == uuid && group.owner_uuid == owner_uuid)
+						group.imported_enabled->store(obs_source_enabled(filter),
+									      std::memory_order_relaxed);
+		}
 		if (source && (obs_source_get_type(source) == OBS_SOURCE_TYPE_SCENE || is_kind(source, kSceneModesId) ||
 			       is_kind(source, kVisibilityLinkId)))
 			self->rebuild_ = true;
@@ -1208,8 +1226,10 @@ std::shared_ptr<Runtime> Controller::build(Data config, const std::shared_ptr<Ru
 		auto origin = object(group.definition.get(), "origin");
 		group.origin = text(origin.get(), "filterUuid");
 		group.imported = !group.origin.empty() && obs_data_get_bool(origin.get(), "activate");
-		if (on_scene)
+		if (on_scene) {
+			group.owner_uuid = obs_source_get_uuid(parent);
 			group.scenes.push_back(obs_source_get_name(parent));
+		}
 		for (const auto &name : pick_list_read(group.definition.get(), "scope", false))
 			if (!contains(group.scenes, name))
 				group.scenes.push_back(name);
@@ -1217,12 +1237,21 @@ std::shared_ptr<Runtime> Controller::build(Data config, const std::shared_ptr<Ru
 			for (const auto &name : pick_list_read(group.settings.get(), "share_scenes", false))
 				if (!contains(group.scenes, name))
 					group.scenes.push_back(name);
-		const bool enabled = apply_switches ? group.enabled : group_enabled(group);
-		group.enabled = enabled;
-		obs_data_set_bool(group.definition.get(), "enabled", enabled);
 		Group *old = previous ? find_group(*previous, group.id) : nullptr;
 		if (old && old->kind != group.kind)
 			old = nullptr;
+		if (group.imported) {
+			// Preserve the last original switch through structural rebuilds.
+			// An explicit pending edit owns its new enabled value instead.
+			group.imported_enabled = !apply_switches && old && old->imported &&
+								 old->origin == group.origin &&
+								 old->owner_uuid == group.owner_uuid
+							 ? old->imported_enabled
+							 : std::make_shared<std::atomic<bool>>(group.enabled);
+		}
+		const bool enabled = apply_switches ? group.enabled : group_enabled(group);
+		group.enabled = enabled;
+		obs_data_set_bool(group.definition.get(), "enabled", enabled);
 		auto settings = copy(group.settings.get());
 		if (next->error.empty() && group.kind == "modes") {
 			std::vector<std::string> shared(group.scenes.begin() + 1, group.scenes.end());
@@ -1549,8 +1578,12 @@ bool origin_targets(Controller &controller, obs_data_t *config, std::map<std::st
 		}
 		SourceRef legacy(obs_get_source_by_uuid(uuid.c_str()));
 		if (legacy.source) {
-			if (!is_kind(legacy.source, expected) ||
-			    obs_filter_get_parent(legacy.source) != parent.source) {
+			// OBS undo can retain a removed filter after its parent is cleared.
+			// The imported definition remains independently usable, just as
+			// when that original has been destroyed. A filter attached to a
+			// different scene must still never be claimed by this controller.
+			obs_source_t *legacy_parent = obs_filter_get_parent(legacy.source);
+			if (!is_kind(legacy.source, expected) || (legacy_parent && legacy_parent != parent.source)) {
 				why = "The imported filter's type and owning scene must match this group";
 				return false;
 			}
@@ -1597,13 +1630,54 @@ bool validate_origins(Controller &controller, obs_data_t *config, std::string &w
 		}
 		if (active) {
 			SourceRef legacy(obs_get_source_by_uuid(uuid.c_str()));
-			if (!legacy.source && !(was_active && old_uuid == uuid)) {
+			const bool attached = legacy.source && !obs_source_removed(legacy.source) &&
+					      obs_filter_get_parent(legacy.source);
+			if (!attached && !(was_active && old_uuid == uuid)) {
 				why = "The filter selected for import is unavailable";
 				return false;
 			}
 		}
 	}
 	return true;
+}
+
+Data import_definition(obs_source_t *legacy, bool activate, std::string &why)
+{
+	const bool modes = is_kind(legacy, kSceneModesId);
+	if (!modes && !is_kind(legacy, kVisibilityLinkId)) {
+		why = "Import supports existing Scene Modes and Link Visibility filters";
+		return {};
+	}
+	auto saved = data(obs_source_get_settings(legacy));
+	auto resolved = data(obs_data_get_defaults(saved.get()));
+	obs_data_apply(resolved.get(), saved.get());
+	// Preserve the complete original, including defaults, independently of
+	// validation's normalized child settings and later edits to the group.
+	auto settings = data(obs_data_create_from_json(obs_data_get_json(resolved.get())));
+	const long long mode = obs_data_get_int(settings.get(), "mode");
+	if (!modes && (mode < 0 || mode > 2)) {
+		why = "This Link Visibility mode is unsupported; its original settings were left intact";
+		return {};
+	}
+	auto group = data();
+	obs_data_set_string(group.get(), "id", fresh_id().c_str());
+	obs_data_set_string(group.get(), "name", obs_source_get_name(legacy));
+	obs_data_set_string(group.get(), "kind",
+			    modes       ? "modes"
+			    : mode == 0 ? "one"
+			    : mode == 1 ? "together"
+					: "follow");
+	obs_data_set_bool(group.get(), "enabled", activate && obs_source_enabled(legacy));
+	obs_data_set_obj(group.get(), "settings", settings.get());
+	auto origin = data();
+	obs_data_set_string(origin.get(), "filterUuid", obs_source_get_uuid(legacy));
+	obs_data_set_string(origin.get(), "type", obs_source_get_unversioned_id(legacy));
+	obs_data_set_string(origin.get(), "name", obs_source_get_name(legacy));
+	obs_data_set_bool(origin.get(), "activate", activate);
+	obs_data_set_bool(origin.get(), "enabled", obs_source_enabled(legacy));
+	obs_data_set_obj(origin.get(), "settings", resolved.get());
+	obs_data_set_obj(group.get(), "origin", origin.get());
+	return group;
 }
 
 } // namespace
@@ -1718,40 +1792,97 @@ bool scene_controller_import(const char *controller_id, const char *legacy_filte
 			return false;
 		}
 	}
-	auto saved = data(obs_source_get_settings(legacy.source));
-	auto resolved = data(obs_data_get_defaults(saved.get()));
-	obs_data_apply(resolved.get(), saved.get());
-	auto settings = copy(resolved.get());
-	const long long mode = obs_data_get_int(settings.get(), "mode");
-	if (!modes && (mode < 0 || mode > 2)) {
-		why = "This Link Visibility mode is unsupported; its original settings were left intact";
+	auto group = import_definition(legacy.source, activate, why);
+	if (!group)
 		return false;
-	}
-	auto group = data();
-	const std::string id = fresh_id();
-	obs_data_set_string(group.get(), "id", id.c_str());
-	obs_data_set_string(group.get(), "name", obs_source_get_name(legacy.source));
-	obs_data_set_string(group.get(), "kind",
-			    modes       ? "modes"
-			    : mode == 0 ? "one"
-			    : mode == 1 ? "together"
-					: "follow");
-	obs_data_set_bool(group.get(), "enabled", activate && obs_source_enabled(legacy.source));
-	obs_data_set_obj(group.get(), "settings", settings.get());
-	auto origin = data();
-	obs_data_set_string(origin.get(), "filterUuid", legacy_filter_uuid);
-	obs_data_set_string(origin.get(), "type", obs_source_get_unversioned_id(legacy.source));
-	obs_data_set_string(origin.get(), "name", obs_source_get_name(legacy.source));
-	obs_data_set_bool(origin.get(), "activate", activate);
-	obs_data_set_bool(origin.get(), "enabled", obs_source_enabled(legacy.source));
-	obs_data_set_obj(origin.get(), "settings", resolved.get());
-	obs_data_set_obj(group.get(), "origin", origin.get());
+	const std::string id = text(group.get(), "id");
 	obs_data_array_push_back(groups.get(), group.get());
 	obs_data_set_array(config.get(), "groups", groups.get());
 	if (!scene_controller_configure(controller_id, config.get(), why))
 		return false;
 	obs_data_set_string(response, "groupId", id.c_str());
 	obs_data_set_bool(response, "activated", activate);
+	return true;
+}
+
+bool scene_controller_import_all(const char *controller_id, bool activate, obs_data_t *response, std::string &why)
+{
+	if (!response) {
+		why = "response is required";
+		return false;
+	}
+	obs_data_set_int(response, "importedCount", 0);
+	obs_data_set_int(response, "skippedCount", 0);
+	SourceRef held(nullptr);
+	Controller *self = find_controller(controller_id, held, why);
+	if (!self)
+		return false;
+	SourceRef parent(self->parent_ref());
+	if (!parent.source || obs_source_removed(parent.source) || !obs_scene_from_source(parent.source) ||
+	    obs_source_is_group(parent.source)) {
+		why = "Attach Scene Controller to a scene";
+		return false;
+	}
+	// Do not mutate any array/object shared with the published or pending
+	// definition while constructing a batch that can still fail validation.
+	auto current = self->configuration(true);
+	auto config = data(obs_data_create_from_json(obs_data_get_json(current.get())));
+	auto groups = entries(config.get(), "groups");
+	std::set<std::string> imported;
+	for (size_t i = 0; i < obs_data_array_count(groups.get()); i++) {
+		auto group = data(obs_data_array_item(groups.get(), i));
+		imported.insert(text(object(group.get(), "origin").get(), "filterUuid"));
+	}
+	{
+		std::lock_guard lock(origins_mutex);
+		for (const auto &[uuid, owner] : origin_claims) {
+			(void)owner;
+			imported.insert(uuid);
+		}
+	}
+	struct Filters {
+		std::vector<obs_source_t *> values;
+		~Filters()
+		{
+			for (auto *filter : values)
+				obs_source_release(filter);
+		}
+	} filters;
+	obs_source_enum_filters(
+		parent.source,
+		[](obs_source_t *, obs_source_t *filter, void *opaque) {
+			if (is_kind(filter, kSceneModesId) || is_kind(filter, kVisibilityLinkId))
+				static_cast<Filters *>(opaque)->values.push_back(obs_source_get_ref(filter));
+		},
+		&filters);
+	long long skipped = 0;
+	std::vector<std::string> ids;
+	for (auto *filter : filters.values) {
+		if (obs_source_removed(filter) || obs_filter_get_parent(filter) != parent.source) {
+			why = "A filter selected for import was removed or moved; no filters were imported";
+			return false;
+		}
+		const std::string uuid = obs_source_get_uuid(filter);
+		if (imported.count(uuid)) {
+			++skipped;
+			continue;
+		}
+		auto group = import_definition(filter, activate, why);
+		if (!group)
+			return false;
+		ids.push_back(text(group.get(), "id"));
+		obs_data_array_push_back(groups.get(), group.get());
+	}
+	if (!ids.empty()) {
+		obs_data_set_array(config.get(), "groups", groups.get());
+		// configure validates and reserves every original before publishing
+		// the single replacement. It must never be called once per filter.
+		if (!scene_controller_configure(controller_id, config.get(), why))
+			return false;
+	}
+	obs_data_set_int(response, "importedCount", static_cast<long long>(ids.size()));
+	obs_data_set_int(response, "skippedCount", skipped);
+	pick_list_write(response, "groupIds", false, ids);
 	return true;
 }
 

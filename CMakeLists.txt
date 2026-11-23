@@ -110,6 +110,8 @@ target_sources(
     src/controller/scene-controller.hpp
     src/controller/views-dock.cpp
     src/controller/views-dock.hpp
+    src/controller/control-catalog.cpp
+    src/controller/control-catalog.hpp
     src/dock/arrange.cpp
     src/dock/arrange.hpp
     src/dock/arrange-tools.cpp

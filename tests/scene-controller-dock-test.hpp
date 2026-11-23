@@ -119,6 +119,9 @@ inline void check(QStringList &issues, bool restart)
 		floating->show();
 	}
 	constexpr const char *controller_name = "Stream views";
+	auto *board = panel->findChild<QWidget *>("viewsOperatorBoard");
+	expect(board && board->isVisible(), "the operator control panel was not the default page");
+	expect(click(panel, "viewsManageControllers"), "controller management did not open from the control panel");
 	if (restart) {
 		OBSDataAutoRelease state = find_controller(controller_name);
 		const QString id = QString::fromUtf8(obs_data_get_string(state, "controllerId"));

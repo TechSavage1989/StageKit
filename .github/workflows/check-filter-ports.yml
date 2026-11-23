@@ -45,6 +45,7 @@ on:
       - 'tests/show-in-scenes-camera.hpp'
       - 'tests/countdown*-test.hpp'
       - 'tests/scene-controller*-test.hpp'
+      - 'tests/control-panel-test.hpp'
       - 'tests/reset-stats-test.hpp'
       - 'tests/studio-transition-test.hpp'
       - 'tests/auto-frame-detection-test.hpp'

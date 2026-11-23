@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | fix/controller-platform-builds, based on published beta253 at ead2352cccb79015859220de30a5c2c4c88c453f. Windows Scene Controller and StageKit Views are public; deferred platform follow-up is next. |
+| Working branch | feat/always-visible-controls. The next StageKit Views update adds one persistent panel across scenes and controllers, plus Import all. Platform follow-up PR276 is tracked separately below. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -23,7 +23,77 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## One persistent StageKit Views control panel
+
+The owner clarified that normal operation must resemble always-available Stream Deck keys: selections
+from different scenes and controllers must be visible together without changing scene/controller
+selectors. StageKit Views now opens on a button panel. Existing Scene Modes, Link Visibility and Show
+in Scenes filters are discovered alongside Scene Controller groups and combined views. Ordinary scene
+items and OBS Sources groups can also be pinned. The old scene/controller selectors and configuration
+remain on Manage controllers, with Back to controls returning to the panel.
+
+Edit panel supports selecting several available controls at once, custom labels and sections, removal,
+and ordering. Panel configuration is stored under stagekit.views.panel in the scene collection. The
+customized flag preserves an intentionally empty panel; Use automatic controls resets discovery when
+saved. Pins use stable IDs, UUIDs and exact owning scene-item identities. Every press resolves a fresh
+native catalog entry. Missing targets remain disabled, and renamed sources retain their controls.
+State-only refreshes update existing buttons. Native signals are coalesced on the frontend, with the
+existing visible-only two-second fallback and no new render or per-frame inventory work.
+
+Import all imports supported Scene Modes and Link Visibility filters on the selected controller's own
+scene. It deep-clones one prospective configuration and publishes once after complete validation.
+Already imported filters and active ownership elsewhere are skipped. Full settings and original
+enabled states are preserved. Existing single import shares the same definition builder. Original
+filters remain compatibility aliases for existing keys; newly created groups use native objects under
+Scene Controller rather than hidden filters. Show in Scenes remains a direct filter control and is
+not included in bulk import.
+
+The combined-view editor now labels its columns Control and Set to. Its help explains that each row
+is an existing control and Keep current selection leaves it alone. Combined views remain optional
+presets; individual choices are directly available on the panel. Adding a controller returns to
+management so Import is immediately accessible instead of opening an empty configuration window.
+
+The real OBS frontend fixture is being extended for simultaneous controls across scenes, real state
+after external changes, native mode/link/show actions, multi-pin customization, identity after rename
+and removal, atomic bulk import, collection isolation and restart persistence. Windows captures of
+the panel and its editor belong in the same PR. Local source checks and exact-head Windows/OBS frontend
+and shared release gates must complete before this update is published. Companion remains 0.43.0.0;
+this update does not change Stream Deck action IDs or the native controller request contract.
+
+The owner also asked about removing original filters. Active imported groups already store their own
+definitions, but review found that a deleted original retained by OBS for Undo could be mistaken for
+a filter moved to another scene. The correction treats a detached original as absent, keeps ownership
+and type checks for actual reparenting, and requires a live attached filter for new imports. A focused
+migration fixture covers retained removal, full release and controller source-record reload. Legacy
+keys or panel pins still targeting the original need to be retargeted before that original is removed.
+Show in Scenes is controlled by this panel but remains a real filter; full migration requires a
+separate controller-owned runtime that preserves its command state, original source and restore data.
+
+The new direct Link Visibility panel action is queued on OBS's video task queue, with retained identity
+checks and an explicit graphics context. This avoids racing its existing tick and transition state.
+No recurring work was added to ordinary legacy filter ticks.
+
 ## Deferred platform follow-up after Windows beta253
+
+PR276 merged as 826c98857f304cd2260cf6b3c7c8d8e1d52b22cb for beta254. Final head
+0e253de008f7f7ff065672749d389b3e083ab04f passed the Windows build and actual OBS 32.2.2 frontend,
+shared checks, macOS build and actual Ubuntu DEB/dependency validation. The merge tree matches the
+reviewed head. Beta254 is public and its Windows installer, ZIP and companion have been downloaded
+and checked against the release digests. The installer SHA-256 is
+9c5e2f341701e77320f123bae1ba3c816ea375ec485fd5ce1d093ac99d4e326d; ZIP SHA-256 is
+a6cbfdf644bed16fa57b7c8cbb08550422d0892e8f3b86925d3cb65c008d2660. The ZIP's StageKit DLL matches
+the exact-head tested DLL 99648a86aadc79138c43b43b5c9194fcfc8d0308ca12bd9049854f5cd90a8041 and
+embeds beta254. Companion 0.43.0.0 is verified with SHA-256
+950d8dc8b9714e3082f4c521eac4a35b7dd7db872e02b8cc6484980fe58c9a2c. Later platform assets are still
+being added by the publisher while the new panel work proceeds.
+
+Linux's corrected LINK_FOLLOW standalone fixture passed. Its next LINK_TRANS standalone fixture still
+fails two intermediate-transition checks and a retained-scene assertion before shutdown. That fixture
+omits the audio initialization used by adjacent transition fixtures and releases two scenes without
+removing modern OBS canvas ownership. Those omissions are evidence for a separate harness follow-up,
+not yet a proven complete cause of the intermediate-frame failures. Later native and performance steps
+were skipped. The real Windows frontend passed unchanged production behavior; the previous Linux real
+frontend also passed. Do not describe the incomplete standalone sequence as fully passing.
 
 Windows beta253 was published and downloaded on 2026-11-23 after all eight Windows/shared gates passed
 on final head f4c525a6e4fd9e4af657fc735d28ea598623aa30. PR275 merged as

@@ -64,5 +64,10 @@ bool scene_controller_command(const char *controller_id, const char *group_id, c
 bool scene_controller_create(const char *scene_uuid, const char *name, obs_data_t *response, std::string &why);
 bool scene_controller_import(const char *controller_id, const char *legacy_filter_uuid, bool activate,
 			     obs_data_t *response, std::string &why);
+// Import all compatible filters on the controller's own scene in one edit.
+// Already imported filters, including active owners in another controller, are
+// skipped. Any invalid prospective group rejects the entire batch. The response
+// contains importedCount, skippedCount and groupIds [{value:stable_group_id}].
+bool scene_controller_import_all(const char *controller_id, bool activate, obs_data_t *response, std::string &why);
 
 } // namespace stagekit

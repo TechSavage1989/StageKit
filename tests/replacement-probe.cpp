@@ -9,6 +9,7 @@
 #include "visible-bounds-reuse-test.hpp"
 #include "shadow-reuse-test.hpp"
 #include "scene-controller-dock-test.hpp"
+#include "control-panel-test.hpp"
 #ifdef _WIN32
 #include "windows-render-timing-test.hpp"
 #endif
@@ -245,6 +246,7 @@ static void exercise()
 		quick_test::check_restart(issues);
 		countdown_dock_test::check(issues, true);
 		scene_controller_dock_test::check(issues, true);
+		control_panel_test::check(issues, true);
 		finish_probe(issues);
 		return;
 	}
@@ -345,6 +347,7 @@ static void exercise()
 	scene_controller_test::check(issues);
 	scene_controller_test::check_migration(issues);
 	scene_controller_dock_test::check(issues, false);
+	control_panel_test::check(issues, false);
 	check_plugin_manager(issues);
 	check_blur_output(issues);
 #ifdef _WIN32

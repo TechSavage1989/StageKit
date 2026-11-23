@@ -288,26 +288,28 @@ public:
 		{
 			std::lock_guard lock(g_links_mutex);
 			parent_ = parent;
+			parent_weak_ = obs_source_get_weak_source(parent);
 		}
-		parent_weak_ = obs_source_get_weak_source(parent);
-		signal_handler_connect(obs_source_get_signal_handler(parent_), "item_visible", visible_cb, this);
+		signal_handler_connect(obs_source_get_signal_handler(parent), "item_visible", visible_cb, this);
 		if (internal_)
 			watch_owned_groups(parent);
 	}
 
 	void detach()
 	{
-		obs_source_t *held = parent_weak_ ? obs_weak_source_get_source(parent_weak_) : nullptr;
+		obs_weak_source_t *previous = nullptr;
+		{
+			std::lock_guard lock(g_links_mutex);
+			previous = parent_weak_;
+			parent_weak_ = nullptr;
+			parent_ = nullptr;
+		}
+		obs_source_t *held = previous ? obs_weak_source_get_source(previous) : nullptr;
 		if (held)
 			signal_handler_disconnect(obs_source_get_signal_handler(held), "item_visible", visible_cb,
 						  this);
 		obs_source_release(held);
-		obs_weak_source_release(parent_weak_);
-		parent_weak_ = nullptr;
-		{
-			std::lock_guard lock(g_links_mutex);
-			parent_ = nullptr;
-		}
+		obs_weak_source_release(previous);
 		unwatch();
 		unwatch_owned_groups();
 	}
@@ -852,7 +854,14 @@ public:
 				obs_source_release(parent);
 				obs_source_release(owner);
 			}
-		} pinned{owner_.get(), parent_weak_ ? obs_weak_source_get_source(parent_weak_) : nullptr};
+		} pinned{owner_.get(), nullptr};
+		{
+			// A queued press can overlap frontend filter removal. Obtain its
+			// parent pin while detach still owns the corresponding weak handle.
+			std::lock_guard lock(g_links_mutex);
+			if (parent_weak_)
+				pinned.parent = obs_weak_source_get_source(parent_weak_);
+		}
 		if (!pinned.owner || !pinned.parent || retired() || !obs_source_enabled(source_) || !runtime_on_ ||
 		    !scenes_loaded()) {
 			why = "The source group is unavailable or disabled";
@@ -871,23 +880,48 @@ public:
 		}
 		const std::string name = source && *source ? source : config->names.front();
 		if (std::find(config->names.begin(), config->names.end(), name) == config->names.end() ||
-		    (mode == LinkMode::OnlyOne && !shown)) {
+		    (mode == LinkMode::OnlyOne && (!source || !*source || !shown))) {
 			why = "The requested source is not a selectable choice of this group";
 			return false;
 		}
-		obs_sceneitem_t *item = find_item(parent_, name);
-		if (!item) {
+		struct Selection {
+			const std::string &name;
+			obs_sceneitem_t *item = nullptr;
+			bool visible = false;
+			~Selection() { obs_sceneitem_release(item); }
+			static bool visit(obs_scene_t *, obs_sceneitem_t *item, void *opaque)
+			{
+				auto &self = *static_cast<Selection *>(opaque);
+				if (self.name == obs_source_get_name(obs_sceneitem_get_source(item))) {
+					obs_sceneitem_addref(item);
+					self.item = item;
+					self.visible = obs_sceneitem_visible(item);
+					return false;
+				}
+				if (obs_sceneitem_is_group(item))
+					obs_scene_enum_items(obs_sceneitem_group_get_scene(item), visit, opaque);
+				return !self.item;
+			}
+		} selection{name};
+		// Pin the item and read its eye while enumeration owns the scene lock.
+		// A synchronous visibility listener can remove it during the press.
+		obs_scene_enum_items(scene_of(pinned.parent), Selection::visit, &selection);
+		obs_sceneitem_t *item = selection.item;
+		if (!item || !obs_sceneitem_get_scene(item)) {
 			why = "The selected source is missing from the scene";
 			return false;
 		}
-		obs_sceneitem_addref(item);
 		applying_ = std::this_thread::get_id();
-		if (obs_sceneitem_visible(item) != shown) {
-			apply_item_change(item, config->how.of(name), parent_);
-			set_item_visible(item, shown);
+		if (selection.visible != shown) {
+			apply_item_change(item, config->how.of(name), pinned.parent);
+			if (obs_sceneitem_get_scene(item))
+				set_item_visible(item, shown);
 		}
 		applying_ = std::thread::id();
-		obs_sceneitem_release(item);
+		if (!obs_sceneitem_get_scene(item)) {
+			why = "The selected source was removed before the control could be applied";
+			return false;
+		}
 		// A press also repairs an inconsistent set when its lead already has
 		// the requested visibility and OBS therefore emits no visibility signal.
 		std::lock_guard lock(mutex_);
@@ -1130,6 +1164,76 @@ bool is_follower(const FollowLook &look, const char *name)
 }
 
 } // namespace
+
+bool visibility_link_press(obs_source_t *filter, const char *source, bool shown, std::string &why)
+{
+	const char *id = filter ? obs_source_get_unversioned_id(filter) : nullptr;
+	if (!id || strcmp(id, kVisibilityLinkId) != 0 || obs_source_removed(filter) || !obs_filter_get_parent(filter)) {
+		why = "The Link Visibility filter is no longer available";
+		return false;
+	}
+	if (!obs_source_enabled(filter)) {
+		why = "Link Visibility is disabled";
+		return false;
+	}
+	auto *self = static_cast<VisibilityLink *>(obs_obj_get_data(filter));
+	if (!self) {
+		why = "Link Visibility is not ready";
+		return false;
+	}
+	struct Press {
+		obs_source_t *filter = nullptr, *parent = nullptr, *member = nullptr;
+		bool shown = false;
+		~Press()
+		{
+			obs_source_release(member);
+			obs_source_release(parent);
+			obs_source_release(filter);
+		}
+	};
+	auto press = std::make_unique<Press>();
+	press->filter = obs_source_get_ref(filter);
+	press->parent = obs_source_get_ref(obs_filter_get_parent(filter));
+	press->shown = shown;
+	if (source && *source) {
+		press->member = obs_get_source_by_name(source);
+		if (!press->member || obs_source_removed(press->member)) {
+			why = "The selected source is missing from the scene";
+			return false;
+		}
+	}
+	if (!press->parent) {
+		why = "The Link Visibility filter is no longer attached";
+		return false;
+	}
+	// runtime_press and tick share the applying_ marker and transition state.
+	// Run both on OBS's video thread, never concurrently from the frontend.
+	obs_queue_task(
+		OBS_TASK_GRAPHICS,
+		[](void *opaque) {
+			std::unique_ptr<Press> press(static_cast<Press *>(opaque));
+			if (!scenes_loaded() || obs_source_removed(press->filter) ||
+			    obs_source_removed(press->parent) || !obs_source_enabled(press->filter) ||
+			    obs_filter_get_parent(press->filter) != press->parent ||
+			    (press->member && obs_source_removed(press->member)))
+				return;
+			auto *self = static_cast<VisibilityLink *>(obs_obj_get_data(press->filter));
+			if (!self)
+				return;
+			const std::string name = press->member ? obs_source_get_name(press->member) : "";
+			std::string ignored;
+			// OBS_TASK_GRAPHICS does not itself enter a graphics context.
+			// Native item transitions can create graphics resources here.
+			obs_enter_graphics();
+			if (auto forwarded = self->forward())
+				forwarded->runtime_press(name.c_str(), press->shown, ignored);
+			else
+				self->runtime_press(name.c_str(), press->shown, ignored);
+			obs_leave_graphics();
+		},
+		press.release(), false);
+	return true;
+}
 
 std::shared_ptr<VisibilityLinkRuntime> visibility_link_runtime(obs_data_t *settings, obs_source_t *owner,
 							       obs_source_t *parent, bool enabled)
