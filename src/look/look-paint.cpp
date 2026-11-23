@@ -745,8 +745,35 @@ bool LookPaint::compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *m
 			uint32_t cx, uint32_t cy, gs_texrender_t *into, bool scene_straight, gs_texture_t *ring,
 			gs_texture_t *presence)
 {
+	return compose_impl(scene, cast, mask, look, cx, cy, into, scene_straight, ring, presence, nullptr);
+}
+
+bool LookPaint::compose_again(gs_texture_t *scene, uint32_t cx, uint32_t cy, gs_texrender_t *into)
+{
+	if (!prepared_.valid || prepared_.frame != obs_get_video_frame_time() || prepared_.cx != cx ||
+	    prepared_.cy != cy || prepared_.linear != gs_get_linear_srgb()) {
+		prepared_.valid = false;
+		return false;
+	}
+	const Prepared kept = prepared_;
+	return compose_impl(scene, kept.stage.cast, kept.stage.mask, kept.look, cx, cy, into, false, kept.stage.ring,
+			    kept.stage.presence, &kept);
+}
+
+bool LookPaint::compose_impl(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *mask, const ShadowLook &look,
+			     uint32_t cx, uint32_t cy, gs_texrender_t *into, bool scene_straight, gs_texture_t *ring,
+			     gs_texture_t *presence, const Prepared *reuse)
+{
+	// Any fresh composition can overwrite outlined_ and the blur outputs.
+	// Reuse takes a value copy first, so a failed draw cannot leave a valid
+	// record of pictures whose lifetime is no longer known.
+	prepared_.valid = false;
 	gs_texrender_t *out = into ? into : out_;
 	if (!effect_ || !scene || !cast || !cx || !cy)
+		return false;
+	const uint64_t frame = obs_get_video_frame_time();
+	const bool linear = gs_get_linear_srgb();
+	if (reuse && (reuse->frame != frame || reuse->linear != linear))
 		return false;
 	// The passes work on raw colour values, as Shadow, Glow & Outline's do.
 	const bool previous_srgb = gs_framebuffer_srgb_enabled();
@@ -779,42 +806,45 @@ bool LookPaint::compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *m
 		gs_effect_set_vec4(p_outline_color_, &line);
 		design_.set(look.design, pattern, cast);
 	};
-	// The shadow is thrown by the sources with their line round them, as the
-	// per-source filter's is (its shadow comes from the outlined picture):
-	// from the bare sources, the shadow of an outlined source started under
-	// its line and showed square corners behind a rounded one.
-	gs_texture_t *thrower = cast;
-	// (Neon's halo is that shape softened, so it is made for it too.)
-	const bool neon = has_ring && look.design.kind == OutlineDesign::Neon;
-	gs_texture_t *lined = nullptr;
-	if (has_ring && ((look.shadow && look.opacity > 0.001) || neon)) {
-		gs_texrender_reset(outlined_);
-		if (gs_texrender_begin(outlined_, cx, cy)) {
-			gs_ortho(0.0f, (float)cx, 0.0f, (float)cy, -100.0f, 100.0f);
-			gs_blend_state_push();
-			gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
-			line_values();
-			gs_effect_set_texture(p_image_, cast);
-			while (gs_effect_loop(effect_, "Outlined"))
-				gs_draw_sprite(cast, 0, cx, cy);
-			gs_blend_state_pop();
-			gs_texrender_end(outlined_);
-			if (gs_texture_t *grown = gs_texrender_get_texture(outlined_))
-				thrower = lined = grown;
+	gs_texture_t *softened = reuse ? reuse->softened : cast;
+	gs_texture_t *halo = reuse ? reuse->halo : nullptr;
+	if (!reuse) {
+		preparations_++;
+		// The shadow is thrown by the sources with their whole line round
+		// them. PSOutlined uses only the cast, ring, width and line colour:
+		// pattern fills and moving design colours are used below, afresh.
+		gs_texture_t *thrower = cast;
+		const bool neon = has_ring && look.design.kind == OutlineDesign::Neon;
+		gs_texture_t *lined = nullptr;
+		if (has_ring && ((look.shadow && look.opacity > 0.001) || neon)) {
+			gs_texrender_reset(outlined_);
+			if (gs_texrender_begin(outlined_, cx, cy)) {
+				gs_ortho(0.0f, (float)cx, 0.0f, (float)cy, -100.0f, 100.0f);
+				gs_blend_state_push();
+				gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
+				line_values();
+				gs_effect_set_texture(p_image_, cast);
+				while (gs_effect_loop(effect_, "Outlined")) {
+					gs_draw_sprite(cast, 0, cx, cy);
+					outline_passes_++;
+				}
+				gs_blend_state_pop();
+				gs_texrender_end(outlined_);
+				if (gs_texture_t *grown = gs_texrender_get_texture(outlined_))
+					thrower = lined = grown;
+			}
 		}
-	}
-	gs_texture_t *softened = thrower;
-	if (look.shadow && look.softness > 0.0)
-		softened = blur_->blur(thrower, cx, cy, look.softness);
-	// Neon's halo: one more blur, of the sources with their line, only for
-	// a Neon line.
-	gs_texture_t *halo = nullptr;
-	if (neon && lined) {
-		if (!halo_blur_)
-			halo_blur_ = std::make_unique<KawaseBlur>(true);
-		halo = halo_blur_->blur(lined, cx, cy, look.design.halo_reach(look.outline_width) * kHaloBlur);
-		if (halo == lined)
-			halo = nullptr;
+		softened = thrower;
+		if (look.shadow && look.softness > 0.0)
+			softened = blur_->blur(thrower, cx, cy, look.softness);
+		// Neon's halo is a second, private blur of the outlined shape.
+		if (neon && lined) {
+			if (!halo_blur_)
+				halo_blur_ = std::make_unique<KawaseBlur>(true);
+			halo = halo_blur_->blur(lined, cx, cy, look.design.halo_reach(look.outline_width) * kHaloBlur);
+			if (halo == lined)
+				halo = nullptr;
+		}
 	}
 	gs_texrender_reset(out);
 	bool drawn = false;
@@ -845,6 +875,21 @@ bool LookPaint::compose(gs_texture_t *scene, gs_texture_t *cast, gs_texture_t *m
 		drawn = true;
 	}
 	gs_enable_framebuffer_srgb(previous_srgb);
+	if (reuse && frame != obs_get_video_frame_time())
+		return false;
+	if (drawn) {
+		prepared_.look = look;
+		prepared_.stage = {cast, mask, ring, presence};
+		prepared_.softened = softened;
+		prepared_.halo = halo;
+		prepared_.cx = cx;
+		prepared_.cy = cy;
+		prepared_.frame = frame;
+		prepared_.linear = linear;
+		prepared_.valid = softened && !presence && frame == obs_get_video_frame_time();
+		if (reuse)
+			reuses_++;
+	}
 	return drawn;
 }
 
@@ -1157,6 +1202,7 @@ bool LookPaint::compose_layers(gs_texture_t *scene, const std::vector<gs_texture
 bool LookPaint::compose_stages(gs_texture_t *scene, const std::vector<Stage> &stages, const ShadowLook &look,
 			       uint32_t cx, uint32_t cy, gs_texrender_t *into)
 {
+	prepared_.valid = false;
 	if (!scene || stages.empty())
 		return false;
 	gs_texture_t *under = scene;
@@ -1176,6 +1222,9 @@ bool LookPaint::compose_stages(gs_texture_t *scene, const std::vector<Stage> &st
 		under = gs_texrender_get_texture(to);
 		straight = true;
 	}
+	// Earlier stages' shared scratch was overwritten by later stages.
+	if (stages.size() != 1)
+		prepared_.valid = false;
 	return true;
 }
 

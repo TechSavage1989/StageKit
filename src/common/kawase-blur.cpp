@@ -62,8 +62,10 @@ void KawaseBlur::pass(gs_texrender_t *dst, gs_texture_t *src, uint32_t w, uint32
 	gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
 	gs_ortho(0.0f, (float)w, 0.0f, (float)h, -100.0f, 100.0f);
 	gs_effect_set_texture(p_image_, src);
-	while (gs_effect_loop(effect_, technique))
+	while (gs_effect_loop(effect_, technique)) {
 		gs_draw_sprite(src, 0, w, h);
+		passes_++;
+	}
 	gs_blend_state_pop();
 	gs_texrender_end(dst);
 }

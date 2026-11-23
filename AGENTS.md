@@ -26,6 +26,16 @@ For Quick Access, exercise Manual, Dynamic and Source Search through the Tools m
 
 The countdown source owns its rectangle and font. Arrange, slides and Fit to Space honor their own Use visible pixels and Ignore shadows & outlines options for timers, both as the fitted source and as a neighboring obstacle. A fixed source canvas is not an occupied-pixel claim: with visible-pixel measurement on, use the normal alpha measurement and FitEngine own-cut path, and let glances notice text, alignment and end-message changes. With visible-pixel measurement off, use the complete box. Exercise the existing Place grid and the timer settings grid on an actual scene timer, and check the same running value after changing presets. Only the end message uses text fitting.
 
+## Rendering work and performance comparisons
+
+Reuse a visible-bounds draw only when it is the same drawing: a synchronous source with no filters before or after the draw, exact base/full dimensions, and dimensions unchanged by drawing. Keep the existing async exclusion and all filtered-source shadow/mask fallbacks. Never replace a countdown's visible bounds with its fixed canvas. The shared visible-bounds-reuse-test.hpp fixture calls stagekit_test_measure_item inside one graphics task so normal scene rendering cannot enter its draw counter.
+
+Scene Fit owns an immutable shared vector of entries. Take its snapshot under the existing mutex and retain it for the entire tick. Rebuild the list only when the settings or sources require it; keep entry updates, attach/detach handling, eight solving passes and the existing rest/glance schedule. Do not cache mutable engine state in that snapshot.
+
+Scene Shadow's same-frame preparation reuse is limited to a provably identical single stage. Borrow only its existing private textures, invalidate on another preparation, frame, settings, dimensions or color mode, and preserve the normal multi-stage and transition path. Final composition still evaluates live outline fills and animated designs. Do not turn this into a source-input frame cache: Standby can draw a source and its stand-in in the same frame. The shared shadow-reuse-test.hpp fixture compares the optimized and bypassed pixels in one graphics task and records actual blur passes.
+
+For a performance release, compare a frozen baseline and candidate using the same harness, compiler, dependencies, renderer, canvas scale and scene settings. Run baseline/candidate/candidate/baseline after other OBS processes and builds finish. Preserve every measured trial, its requested/completed frames, commit identities and renderer metadata. Report whole OBS graphics/render/tick distributions independently; nested inclusive filter times cannot be added into a frame cost. Missing or incomplete data fails the benchmark, but noisy shared-runner timing has no arbitrary speed threshold. Operation counts prove removed work; software rendering alone cannot prove the owner's hardware frame-time gain.
+
 ## Saved scene settings and source renames
 
 Run the REVIEW_CONTROLS test when changing saved defaults, Apply Layout framing, Morph scene rules

@@ -13,6 +13,7 @@ the Free Software Foundation; either version 2 of the License, or
 #include <obs.h>
 
 #include <array>
+#include <cstdint>
 
 namespace stagekit {
 
@@ -34,6 +35,8 @@ public:
 	// input unchanged when strength is negligible. The result is owned by
 	// this object and valid until the next call.
 	gs_texture_t *blur(gs_texture_t *input, uint32_t w, uint32_t h, double strength);
+	// Actual passes, for render regression checks; read in a graphics context.
+	uint64_t passes() const { return passes_; }
 
 private:
 	static constexpr int kLevels = 7;
@@ -48,6 +51,7 @@ private:
 	gs_texrender_t *finish_ = nullptr; // smooth: the last tent at full size
 	std::array<gs_texrender_t *, kLevels> down_{};
 	std::array<gs_texrender_t *, kLevels> up_{};
+	uint64_t passes_ = 0;
 };
 
 } // namespace stagekit

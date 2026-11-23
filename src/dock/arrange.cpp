@@ -223,11 +223,9 @@ void measure_drawn(obs_source_t *source, bool bare, uint32_t sw, uint32_t sh, ui
 }
 
 // `bare`: the source drawn without any of its filters.
-Drawn drawn_part(obs_source_t *source, bool bare = false)
+Drawn drawn_part(obs_source_t *source, bool bare, uint32_t sw, uint32_t sh)
 {
 	Drawn out;
-	const uint32_t sw = bare ? obs_source_get_base_width(source) : obs_source_get_width(source);
-	const uint32_t sh = bare ? obs_source_get_base_height(source) : obs_source_get_height(source);
 	if (!sw || !sh)
 		return out;
 	// Edges are found to within a source pixel up to 1024 wide; beyond that
@@ -249,6 +247,13 @@ Drawn drawn_part(obs_source_t *source, bool bare = false)
 	out.w = (max_x + 1 - min_x) / shrink;
 	out.h = (max_y + 1 - min_y) / shrink;
 	return out;
+}
+
+Drawn drawn_part(obs_source_t *source, bool bare)
+{
+	const uint32_t sw = bare ? obs_source_get_base_width(source) : obs_source_get_width(source);
+	const uint32_t sh = bare ? obs_source_get_base_height(source) : obs_source_get_height(source);
+	return drawn_part(source, bare, sw, sh);
 }
 
 double edge_of(const Box &b, Edge edge)
@@ -350,8 +355,10 @@ Box measure_item_now(obs_source_t *scene, obs_sceneitem_t *item, const Measure &
 	bool measured = false;
 	ShadowFree free;
 	const bool shadowed = how.leave_out_shadows && shadow_free(source, free);
+	const bool unfiltered = how.leave_out_shadows && !shadowed && obs_source_filter_count(source) == 0;
 	// Everything the source draws, filters and all.
-	const Drawn drawn = drawn_part(source);
+	const uint32_t drawn_w = obs_source_get_width(source), drawn_h = obs_source_get_height(source);
+	const Drawn drawn = drawn_part(source, false, drawn_w, drawn_h);
 	if (how.leave_out_shadows) {
 		// The source's own pixels: drawn with none of its filters, so no
 		// shadow, glow, outline or border any filter adds counts. That
@@ -369,7 +376,13 @@ Box measure_item_now(obs_source_t *scene, obs_sceneitem_t *item, const Measure &
 		// versions. Not proven to be the cause, so they are left out again.
 		const bool async = (obs_source_get_output_flags(source) & OBS_SOURCE_ASYNC) != 0;
 		if (bw > 0.0 && bh > 0.0 && only_room && !async) {
-			part = drawn_part(source, true);
+			// With no filters both drawings call the same renderer. Reuse
+			// its pixels only while the source is still unfiltered and its
+			// dimensions match exactly. Check the first drawing's size too:
+			// drawing a source can itself change its dimensions.
+			const bool same_drawing = unfiltered && bw == fw && bh == fh && bw == drawn_w &&
+						  bh == drawn_h && obs_source_filter_count(source) == 0;
+			part = same_drawing ? drawn : drawn_part(source, true);
 			measured = part.any;
 		}
 		// Otherwise: the picture as it is before its first shadow, glow or

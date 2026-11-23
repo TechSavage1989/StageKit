@@ -3111,6 +3111,27 @@ void register_dock()
 	proc_handler_add(
 		obs_get_proc_handler(), "void stagekit_test_correct_glide(in int ms)",
 		[](void *, calldata_t *cd) { g_test_correct_ms = (int)calldata_int(cd, "ms"); }, nullptr);
+	// For rendering tests: measure a held item while the fixture owns the
+	// graphics callback, so another frame cannot enter its render counter.
+	proc_handler_add(
+		obs_get_proc_handler(),
+		"void stagekit_test_measure_item(in ptr scene, in ptr item, in bool visible_pixels, "
+		"in bool leave_out_shadows, out bool any, out float x, out float y, out float w, out float h)",
+		[](void *, calldata_t *cd) {
+			auto *scene = static_cast<obs_source_t *>(calldata_ptr(cd, "scene"));
+			auto *item = static_cast<obs_sceneitem_t *>(calldata_ptr(cd, "item"));
+			Box bounds;
+			const bool any = measure_seen(scene, item,
+						      Measure{calldata_bool(cd, "visible_pixels"),
+							      calldata_bool(cd, "leave_out_shadows")},
+						      bounds);
+			calldata_set_bool(cd, "any", any);
+			calldata_set_float(cd, "x", bounds.x);
+			calldata_set_float(cd, "y", bounds.y);
+			calldata_set_float(cd, "w", bounds.w);
+			calldata_set_float(cd, "h", bounds.h);
+		},
+		nullptr);
 	// For the tests: the guide overlay for a stand-in preview widget, and
 	// where OBS would draw the canvas in a preview of a given size.
 	proc_handler_add(
