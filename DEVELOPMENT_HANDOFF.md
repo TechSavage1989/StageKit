@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | feat/views-icon-library, PR279 for beta257. Beta256 is published. Head 6557fe21 passed all Windows and shared gates. The owner explicitly requested an implementation fix after additional scenes failed; manager discovery and existing imported panel buttons now have confirmed defects, with fixes and focused regressions in progress. |
+| Working branch | feat/views-icon-library, PR279 for beta257. Beta256 is published. Shared manager access and original panel command scope are fixed at 937d433d. All seven shared/Windows package gates passed; the actual frontend run found only a new fixture metadata expectation mismatch. That expectation is corrected, and genuine shared-manager captures are added for the final exact-head run. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -62,6 +62,24 @@ a scene rename can refresh its new frontend name before the native scope-name re
 recovers afterward, but a selected non-first shared group might briefly fall back to the default.
 The current fixture checks recovered access and stable identities; no additional preference-cache
 mechanism was added to this focused fix.
+
+Head 937d433dda463cea86e1a2779016356ff35df9d9 passed all seven required shared/Windows package
+gates. Actual Windows frontend job 138069639431 in run 45282308407 completed the expanded scope
+fixture with one failure: a new assertion expected saved pin metadata to change from link to
+controller. The panel deliberately retains the original metadata and resolves the stable ID against
+the current catalog when pressed. The assertion now checks that original identity; all actual
+cross-scene commands, mixed-state repair, disabled/missing-source checks, queued-original detachment,
+inherited scope, remote import owner, rename and scope-removal assertions remain unchanged. Native
+fallback also now requires actual presses of both original pins after the imported group is removed.
+No production code was changed to satisfy the metadata assertion. Restart and timing trials did not
+run after the failed assertion, so a complete new final-head run remains required.
+
+Artifact 14869253156 has SHA-256 81a4bbe04123f3c8372a0b8bd1ac88f33cc589a296c4596654499f43ddf998b7.
+Its plugin DLL SHA-256 is cba45c5cee15bb4d74eb440459d079469daec2c7a51f9426adfe614ff8805381. The new
+stagekit-shared-controls.png shows the same controller under the additional scene, the owner label
+and the complete Applies to summary. This and the updated stagekit-views.png were visually reviewed
+as actual Windows captures and copied unchanged into docs/images. RGB pixel comparison confirms the
+other five existing panel/editor/icon captures are unchanged. Compare the final run's captures again.
 
 Head 6557fe21aa3c64779cc8f07969f30fac4c474238 passed all seven shared/Windows package gates and
 actual Windows frontend job 138046845530 in run 45275714525, including first run and a real restart.

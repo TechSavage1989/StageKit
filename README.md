@@ -1332,6 +1332,10 @@ that should share a selection:
    buttons for an actively imported filter automatically use that group's complete scope, retaining
    their labels, icons, sections and order.
 
+**Access the same shared group from an additional scene.**
+
+<p align="center"><img src="docs/images/stagekit-shared-controls.png" width="520" alt="StageKit Views in Windows OBS browsing an additional scene, showing the original controller owner and both covered scenes under Applies to"></p>
+
 Select a scene, select a camera or content choice, then switch scenes using the scene buttons or
 dropdown. The shared group's selection remains in place; selecting a different member applies it
 to the covered scenes. Separate groups in separate controllers remain separate, even with identical

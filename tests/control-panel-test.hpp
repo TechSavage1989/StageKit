@@ -1273,19 +1273,15 @@ inline void check_other_scene_scope(QWidget *panel, const std::string &controlle
 	expect(until([&] {
 		       for (int i = 0; i < originals.size(); ++i) {
 			       auto *original = button_id(panel, originals[i]);
-			       const QVariantMap wanted{
-				       {"kind", "controller"},
-				       {"controllerId", controller_id},
-				       {"groupId", group_id},
-				       {"choiceId", QString::fromStdString(i == 0 ? first_choice : second_choice)},
-				       {"filterUuid", uuid(link)},
-				       {"sourceUuid", uuid(i == 0 ? first.Get() : second.Get())}};
+			       const QVariantMap wanted{{"kind", "link"},
+							{"filterUuid", uuid(link)},
+							{"sourceUuid", uuid(i == 0 ? first.Get() : second.Get())}};
 			       if (!original || !matches(target(original), wanted))
 				       return false;
 		       }
 		       return true;
 	       }),
-	       "original Link Visibility pins did not retain their stable IDs while resolving to the shared group");
+	       "original Link Visibility pins did not retain their saved identities and metadata after import");
 	expect(until([&] { return button_id(panel, pinned[0]) && button_id(panel, pinned[1]); }) &&
 		       press_control(panel, pinned[1]) && until([&] { return panel_selected(false); }) &&
 		       press_control(panel, pinned[0]) && until([&] { return panel_selected(true); }),
@@ -1455,6 +1451,19 @@ inline void check_other_scene_scope(QWidget *panel, const std::string &controlle
 										       {"sourceUuid", uuid(second)}});
 		       }),
 	       "removing the imported group did not restore the same original pins to their native controls");
+	expect(until([&] { return controls_enabled(originals, true); }) && press_control(panel, originals[1]) &&
+		       until([&] {
+			       return !obs_sceneitem_visible(home_first) && obs_sceneitem_visible(home_second) &&
+				      !obs_sceneitem_visible(other_first) && obs_sceneitem_visible(other_second) &&
+				      scene_is(secondary_source);
+		       }) &&
+		       press_control(panel, originals[0]) && until([&] {
+			       return obs_sceneitem_visible(home_first) && !obs_sceneitem_visible(home_second) &&
+				      !obs_sceneitem_visible(other_first) && obs_sceneitem_visible(other_second) &&
+				      checked(panel, originals[0]) && !checked(panel, originals[1]) &&
+				      scene_is(secondary_source);
+		       }),
+	       "original pins did not resume native owner-only selection after the imported group was removed");
 	expect(restore.remove_pins(), "removing the temporary scoped controls did not restore the saved panel");
 	if (issues.size() == before)
 		blog(LOG_INFO,
