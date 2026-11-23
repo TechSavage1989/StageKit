@@ -1225,8 +1225,8 @@ discovery when saved. Another collection has its own panel.
 <p align="center"><img src="docs/images/stagekit-controls-editor.png" width="900" alt="Edit panel in Windows OBS, showing available controls beside the selected buttons and their label, section and order controls"></p>
 
 Highlighted buttons reflect OBS's actual state, including changes made with the Sources eye, a hotkey
-or Stream Deck. Unavailable controls are disabled. A renamed source keeps its button; a removed source
-leaves a saved button unavailable instead of attaching it to a replacement with the same name.
+or Stream Deck. Unavailable controls are disabled. Renaming a control keeps its saved button. Removing
+that button's target leaves it unavailable; a new target with the same name does not replace it.
 Ordinary source buttons toggle the specific item in its owning scene or OBS Sources group. Show in
 Scenes buttons use that filter's existing toggle behavior, including its configured scene destination.
 An OBS Sources group is one selectable item; its children retain their own eye states.
@@ -1284,9 +1284,11 @@ both the OBS plugin and companion for this action; companion 0.43.0.0 adds it.
 **Import existing scene controls.** Import is optional for using existing filters from the panel. To
 manage their rules within a controller, open **Manage controllers...**, select its scene and controller,
 then choose **Import...**. Import one selected filter, or choose **Import all** to copy every supported
-Scene Modes and Link Visibility filter on that scene in one action. Filters already imported are
-skipped, and the result shows imported and skipped counts. The complete batch is validated before it
-is applied, so a rejected batch leaves the controller unchanged.
+Scene Modes and Link Visibility filter on that scene in one action. Filters already imported into this
+controller, or assigned to an active import in another controller, are skipped. An inactive review copy
+in another controller does not block importing the filter. The result shows imported and skipped
+counts. The complete batch is validated before it is applied, so a rejected batch leaves the controller
+unchanged.
 
 Imports preserve the full settings, including per-source transitions, saved placements and the
 original enabled state. With **Use the controller for the imported group** checked, the old filter
@@ -1294,8 +1296,8 @@ stays visible as a compatibility alias so existing keys and hotkeys still work. 
 back to StageKit Views for editing. Only the controller's internal rule runs, and an originally
 disabled filter stays disabled. Clear that option to make a disabled copy for review while the
 original keeps running. To activate a reviewed copy, edit its group and check **Use the controller for
-the imported group**. Removing the group or controller restores the original filter's runtime. New
-groups require no additional or hidden OBS filters.
+the imported group**. Removing the group or controller restores the original filter's runtime if that
+filter is still present. New groups require no additional or hidden OBS filters.
 
 **Removing imported originals.** An active imported Scene Modes or Link Visibility group keeps its
 settings inside Scene Controller. Removing the original filter leaves that group in the controller.

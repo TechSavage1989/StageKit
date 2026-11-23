@@ -105,7 +105,19 @@ minimum. The section and grid sizing were correct; changing the vertical policy 
 the cause. ViewControlButton now clears the themed maximum after normal Polish and StyleChange
 processing. The probe fits at both dock widths and after a second constrained stylesheet, with a
 larger bold font and wrapped label. The fixture checks the maximum and includes full layout geometry
-on failure. Actual Windows validation, restart and a clean panel capture remain required.
+on failure.
+
+Head 51b91f2ac496669b1f0239aeb184439ca7c9137b passed the full Windows OBS 32.2.2 frontend job
+137934116242 in run 45243509181. Both result.txt and ndi-restart.txt report PASS. The panel, original
+removal/reload, legacy migration, camera transitions and existing controller editor passed, including
+the saved customized panel after an actual OBS restart. All four quiet timing trials completed their
+450 requested frames; these are software-renderer diagnostics, not a claim about the owner's hardware.
+The tested DLL SHA-256 is 368c6e8a7ede0822fa4dd144e35fec1aa20434f498eb116845e041247a55e6e3.
+Artifact 14852683342 has SHA-256 244e1504d25686018168dd2ddadaf9b8a96727bb40cb04d3eb137a81882d5ae7.
+Its actual panel capture now fits every section and is included in docs/images/stagekit-controls.png.
+The editor and manager captures are unchanged. Windows packaging, repository, formatting, companion
+and deck-assets checks passed on that head. The final screenshot and documentation revision must pass
+the same Windows/shared release gates; no further runtime changes are planned for this release.
 
 ## Deferred platform follow-up after Windows beta253
 
