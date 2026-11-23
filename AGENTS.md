@@ -118,6 +118,8 @@ the panel must continue displaying actual native state.
 Use explicit const QJsonValue values when range-iterating QJsonArray in the dock. Its iterator can yield
 a temporary value or proxy, and Clang rejects a deduced const-reference binding under the macOS warning
 policy. Keep references for containers whose iterators return actual elements.
+Avoid local identifiers named signals or slots in Qt translation units; Qt expands those words as
+macros. Use handler for an OBS signal handler pointer.
 
 The Ubuntu CI package build and Linux native/frontend job use the checksum-pinned official OBS 32.2.2
 Ubuntu 24.04 package rather than an unversioned PPA install. An unavailable PPA can leave apt using

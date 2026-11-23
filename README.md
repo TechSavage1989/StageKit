@@ -1204,6 +1204,11 @@ Existing Scene Modes, Link Visibility and Show in Scenes controls appear automat
 Scene Controller choices and combined views. Select a button directly without first choosing its
 scene or controller. Keep the dock open while switching scenes; its buttons stay available.
 
+**Where the rules live.** StageKit Views is the button panel. A Scene Controller filter stores its
+groups and combined views. A button for an existing standalone filter still uses that filter's rules.
+Import can move Scene Modes and Link Visibility rules into Scene Controller. Show in Scenes buttons
+continue to use their original filters.
+
 **Keep controls from several scenes together in one Windows OBS dock.**
 
 <p align="center"><img src="docs/images/stagekit-controls.png" width="560" alt="StageKit Views control panel in Windows OBS with source, mode and visibility buttons from several scenes"></p>

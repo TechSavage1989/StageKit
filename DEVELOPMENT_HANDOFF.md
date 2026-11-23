@@ -73,6 +73,10 @@ The new direct Link Visibility panel action is queued on OBS's video task queue,
 checks and an explicit graphics context. This avoids racing its existing tick and transition state.
 No recurring work was added to ordinary legacy filter ticks.
 
+The first Windows build stopped before frontend execution because two new dock locals were named
+signals, which Qt expands to public. Both locals now use handler. No native runtime assertion was
+reached in that attempt; the corrected head must complete the Windows build and frontend gates.
+
 ## Deferred platform follow-up after Windows beta253
 
 PR276 merged as 826c98857f304cd2260cf6b3c7c8d8e1d52b22cb for beta254. Final head
@@ -84,8 +88,10 @@ and checked against the release digests. The installer SHA-256 is
 a6cbfdf644bed16fa57b7c8cbb08550422d0892e8f3b86925d3cb65c008d2660. The ZIP's StageKit DLL matches
 the exact-head tested DLL 99648a86aadc79138c43b43b5c9194fcfc8d0308ca12bd9049854f5cd90a8041 and
 embeds beta254. Companion 0.43.0.0 is verified with SHA-256
-950d8dc8b9714e3082f4c521eac4a35b7dd7db872e02b8cc6484980fe58c9a2c. Later platform assets are still
-being added by the publisher while the new panel work proceeds.
+950d8dc8b9714e3082f4c521eac4a35b7dd7db872e02b8cc6484980fe58c9a2c. Publisher run45233222455
+completed successfully and all seven public assets were downloaded and verified. The macOS package
+contains x86_64 and arm64 binaries. The amd64 Linux package embeds beta254 and retains its OBS 32.2.2
+floor and normal system dependencies. The source archive includes the release notes.
 
 Linux's corrected LINK_FOLLOW standalone fixture passed. Its next LINK_TRANS standalone fixture still
 fails two intermediate-transition checks and a retained-scene assertion before shutdown. That fixture

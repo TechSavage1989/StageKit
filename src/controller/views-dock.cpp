@@ -1884,13 +1884,13 @@ private:
 		for (auto *weak : watched) {
 			OBSSourceAutoRelease source = obs_weak_source_get_source(weak);
 			if (source) {
-				auto *signals = obs_source_get_signal_handler(source);
+				auto *handler = obs_source_get_signal_handler(source);
 				if (obs_source_get_type(source) == OBS_SOURCE_TYPE_SCENE) {
 					for (const char *signal : {"item_add", "item_remove", "reorder", "refresh"})
-						signal_handler_disconnect(signals, signal, structure_changed, this);
-					signal_handler_disconnect(signals, "item_visible", changed, this);
+						signal_handler_disconnect(handler, signal, structure_changed, this);
+					signal_handler_disconnect(handler, "item_visible", changed, this);
 				} else {
-					signal_handler_disconnect(signals, "enable", changed, this);
+					signal_handler_disconnect(handler, "enable", changed, this);
 				}
 			}
 			obs_weak_source_release(weak);
@@ -1929,13 +1929,13 @@ private:
 			const QString uuid = QString::fromUtf8(obs_source_get_uuid(source));
 			if (!seen.contains(uuid) && !obs_source_removed(source)) {
 				seen.insert(uuid);
-				auto *signals = obs_source_get_signal_handler(source);
+				auto *handler = obs_source_get_signal_handler(source);
 				if (obs_source_get_type(source) == OBS_SOURCE_TYPE_SCENE) {
 					for (const char *signal : {"item_add", "item_remove", "reorder", "refresh"})
-						signal_handler_connect(signals, signal, structure_changed, this);
-					signal_handler_connect(signals, "item_visible", changed, this);
+						signal_handler_connect(handler, signal, structure_changed, this);
+					signal_handler_connect(handler, "item_visible", changed, this);
 				} else {
-					signal_handler_connect(signals, "enable", changed, this);
+					signal_handler_connect(handler, "enable", changed, this);
 				}
 				watched_.push_back(obs_source_get_weak_source(source));
 			}
