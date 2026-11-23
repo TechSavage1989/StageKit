@@ -399,6 +399,7 @@ struct Press {
 	// source, which the change never hides again.
 	std::string from, spare;
 	bool show_scene = false;
+	bool await_update = false; // accepted standalone settings have not reached update() yet
 	std::string parent_uuid, scene_uuid;
 };
 
@@ -753,6 +754,8 @@ public:
 				keys_changed = modes[i].id != modes_[i].id || modes[i].name != modes_[i].name;
 			keys_changed = keys_changed || allow_none != allow_none_;
 			modes_ = std::move(modes);
+			for (Press &press : presses_)
+				press.await_update = false;
 			share_ = share;
 			allow_none_ = allow_none;
 			change_ = change;
@@ -846,6 +849,8 @@ public:
 		show_scene = show_scene && how == How::On;
 		SourceRef parent_hold(show_scene ? parent_ref() : nullptr);
 		SourceRef destination(nullptr);
+		std::unique_ptr<obs_data_t, decltype(&obs_data_release)> settings(
+			show_scene && !internal_ ? obs_source_get_settings(source_) : nullptr, obs_data_release);
 		std::lock_guard lock(mutex_);
 		std::string id;
 		if (how == How::On || how == How::Toggle || (how == How::Window && !mode.empty())) {
@@ -881,13 +886,20 @@ public:
 			}
 			press.parent_uuid = obs_source_get_uuid(parent_hold.source);
 			const Mode *selected = find_mode(modes_, id);
-			if (!selected->go_to.empty())
-				destination.source = obs_get_source_by_name(selected->go_to.c_str());
+			// OBS accepts standalone settings before deferring update() to the
+			// video thread. An immediate press must bind the accepted edit,
+			// not the previous runtime destination; act() still revalidates it.
+			const std::string go_to =
+				settings ? obs_data_get_string(settings.get(), key(id, "go_to").c_str())
+					 : selected->go_to;
+			press.await_update = settings && go_to != selected->go_to;
+			if (!go_to.empty())
+				destination.source = obs_get_source_by_name(go_to.c_str());
 			else if (obs_scene_from_source(parent_hold.source) && !obs_source_is_group(parent_hold.source))
 				destination.source = obs_source_get_ref(parent_hold.source);
 			// An OBS group can be reused in several scenes. Keep its native
 			// selection without guessing which outer scene the user wants.
-			if (!selected->go_to.empty() || destination.source) {
+			if (!go_to.empty() || destination.source) {
 				if (!destination.source || obs_source_removed(destination.source) ||
 				    !obs_scene_from_source(destination.source) ||
 				    obs_source_is_group(destination.source)) {
@@ -943,7 +955,18 @@ public:
 			std::lock_guard lock(mutex_);
 			seen.swap(pending_);
 			if (enabled && scenes_loaded()) {
-				presses.swap(presses_);
+				// An accepted edit may arrive after OBS's deferred-update
+				// check for this frame. Keep its press and later keys in order
+				// until update() has applied that edit, then revalidate as usual.
+				const auto waiting =
+					std::find_if(presses_.begin(), presses_.end(),
+						     [](const Press &press) { return press.await_update; });
+				if (waiting == presses_.end()) {
+					presses.swap(presses_);
+				} else {
+					presses.assign(presses_.begin(), waiting);
+					presses_.erase(presses_.begin(), waiting);
+				}
 				if (planned_press_) {
 					presses.push_back({planned_, planned_how_});
 					planned_press_ = false;

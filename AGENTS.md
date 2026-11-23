@@ -83,7 +83,7 @@ compatibility, removal rollback and an actual OBS restart. Capture the Windows d
 guide. Source renames use source_settings_renamed for nested generic/per-source transition settings and
 scene_modes_rename_settings for mode membership and saved placements.
 
-StageKit Views opens on one collection-wide control panel. Keep scene/controller selectors on its
+StageKit Views opens on one collection-wide control panel. Keep controller-management selectors on its
 management page; ordinary operation must not require browsing them. Discover existing native controls
 without requiring import, and preserve saved panel pins, labels, sections and order per collection.
 Use stable controller/group/choice IDs, filter and source UUIDs, and owning scene-item identities.
@@ -123,6 +123,14 @@ The panel's operational Scene selector is separate from the manager's browsing-o
 it in OBS Scenes dock order, synchronize from actual Program/Preview state with signals blocked, and
 dispatch only a user activation. Direct scene pins use UUID identity and stay opt-in for the automatic
 panel. Coalesce Preview and Studio Mode events along with the existing scene refresh events.
+
+OBS accepts standalone video-filter settings before deferring its update callback. A panel mode press
+binds the destination from accepted source settings and keeps FIFO order while waiting for that update;
+execution still compares the applied definition's UUID before changing items. Controller-owned engines
+use their own settings. In the actual Qt file
+chooser fixture, selectFile after opening can leave the filename field and selectedFiles empty. Enter
+the path in the dialog's real filename field, verify the selected file, then accept; do not bypass the
+production accepted callback or weaken embedded-icon and restart assertions.
 
 Import all applies only to supported Scene Modes and Link Visibility filters on the controller's own
 scene. Retain discovered filters, deep-clone the prospective definition, preserve complete settings

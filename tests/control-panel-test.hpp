@@ -427,9 +427,35 @@ inline bool choose_icon(QWidget *editor, const QString &path)
 	QPointer<QFileDialog> chooser = qobject_cast<QFileDialog *>(dialog("viewsPanelIconDialog"));
 	if (!chooser)
 		return false;
-	chooser->selectFile(path);
+	auto fail = [&](const char *message) {
+		const auto *status = editor->findChild<QLabel *>("viewsPanelEditorStatus");
+		blog(LOG_WARNING,
+		     "[StageKit controls test] icon chooser: %s; file=%s; selected=%s; result=%d; visible=%d; status=%s",
+		     message, path.toUtf8().constData(),
+		     chooser ? chooser->selectedFiles().join(" | ").toUtf8().constData() : "closed",
+		     chooser ? chooser->result() : -1, chooser && chooser->isVisible(),
+		     status ? status->text().toUtf8().constData() : "missing");
+		if (chooser && chooser->isVisible())
+			chooser->reject();
+		return false;
+	};
+	// selectFile() does not populate the visible nonnative dialog reliably.
+	// Enter the filename through its real input, then verify the resolved file
+	// before invoking the same acceptance path as the Open button.
+	auto *filename = chooser->findChild<QLineEdit *>("fileNameEdit");
+	if (!filename)
+		return fail("filename input missing");
+	filename->setText(QDir::toNativeSeparators(path));
+	if (!until([&] {
+		    const auto files = chooser ? chooser->selectedFiles() : QStringList();
+		    return files.size() == 1 && !QFileInfo(path).canonicalFilePath().isEmpty() &&
+			   QFileInfo(files.front()).canonicalFilePath() == QFileInfo(path).canonicalFilePath();
+	    }))
+		return fail("filename did not resolve to the selected input file");
 	const bool accepted = QMetaObject::invokeMethod(chooser, "accept", Qt::DirectConnection);
-	return accepted && until([&] { return !chooser || !chooser->isVisible(); });
+	if (!accepted || !until([&] { return !chooser || !chooser->isVisible(); }))
+		return fail("selected file was not accepted");
+	return true;
 }
 
 inline bool sample_icon(const QString &path, bool camera)
@@ -1291,11 +1317,15 @@ inline void check(QStringList &issues, bool restart)
 			       "the compact list did not fit the selected controls at the guide capture size");
 			expect(panel->grab().save(directory.filePath("stagekit-controls-list.png")),
 			       "could not capture the real compact control list");
-			expect(select_layout(panel, "buttons"), "could not show Buttons for its guide capture");
+			expect(select_layout(panel, "buttons") && slider_key(size, Qt::Key_Home) && size->value() == 40,
+			       "could not show compact icon buttons for the guide capture");
 			check_geometry(panel, issues,
 				       "a control button was clipped by its section after resizing the dock");
-			if (auto *scroll = panel->findChild<QScrollArea *>("viewsPanelScroll"))
+			if (auto *scroll = panel->findChild<QScrollArea *>("viewsPanelScroll")) {
 				scroll->verticalScrollBar()->setValue(0);
+				expect(until([&] { return scroll->verticalScrollBar()->maximum() == 0; }),
+				       "compact icon buttons did not fit all selected controls in the guide capture");
+			}
 			QCoreApplication::processEvents();
 			expect(panel->grab().save(directory.filePath("stagekit-controls.png")),
 			       "could not capture the real icon button panel");
@@ -1313,6 +1343,10 @@ inline void check(QStringList &issues, bool restart)
 				editor->reject();
 				until([&] { return !editor || !editor->isVisible(); });
 			}
+			for (int i = 0; i < 6; ++i)
+				expect(slider_key(size, Qt::Key_Right),
+				       "could not restore the saved size after capture");
+			expect(size->value() == 64, "the capture changed the saved intermediate button size");
 			expect(select_layout(panel, "list"), "could not restore List after the guide captures");
 		}
 		// Persist nondefault values so the collection and restart assertions

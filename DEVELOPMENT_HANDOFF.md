@@ -52,6 +52,16 @@ behavior. Actual Windows captures of the list, icon buttons and revised editor b
 The exact final head must pass Windows build/package, OBS frontend/restart and shared checks before
 the next beta is merged. No user OBS configuration has been edited.
 
+PR278's first head, 70f8ef8b54f821327ea17b5f22b2a802aee86981, passed Windows compilation/package and
+shared checks. Windows frontend job 137983689574 reached the actual panel and passed the list, size,
+direct-scene, repeated-selection and Studio assertions, but failed standalone explicit navigation and
+icon embedding. Restart and timing trials did not run after those failures. A standalone press now
+reads its accepted OBS destination settings and waits in FIFO order for the deferred video-thread
+update, while execution still rejects a changed destination UUID. The icon failure was reproduced as the test chooser's
+selectFile call leaving its visible filename field empty; entering that real field reaches the working
+production image loader. The fixture keeps its strict icon and persistence assertions, captures compact
+buttons with every selected control visible, and restores the saved nondefault size before restart.
+
 ## One persistent StageKit Views control panel
 
 Beta255 is published. PR277 merged as 685baf5d8f16d27acac552cf416008be88767fb6; final reviewed head
