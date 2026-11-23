@@ -80,6 +80,16 @@ compatibility, removal rollback and an actual OBS restart. Capture the Windows d
 guide. Source renames use source_settings_renamed for nested generic/per-source transition settings and
 scene_modes_rename_settings for mode membership and saved placements.
 
+Use explicit const QJsonValue values when range-iterating QJsonArray in the dock. Its iterator can yield
+a temporary value or proxy, and Clang rejects a deduced const-reference binding under the macOS warning
+policy. Keep references for containers whose iterators return actual elements.
+
+The Linux native/frontend job uses the checksum-pinned official OBS 32.2.2 Ubuntu 24.04 package rather
+than an unversioned PPA install. An unavailable PPA can leave apt using Ubuntu OBS 30 without the required
+SDK. Verify the package before installing and check its actual SDK version. The official package uses
+/usr/local; the CI-only aliases for the two existing headless module/data paths must target those real
+directories and must never overwrite a different existing installation.
+
 Run the REVIEW_CONTROLS test when changing saved defaults, Apply Layout framing, Morph scene rules
 or shared transition controls. OBS calls load after creating sources from a saved collection, including
 a filter with empty settings. Keep the original choice for those filters. Keep the Move Scene Item

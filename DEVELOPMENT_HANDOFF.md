@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | feat/scene-controller, based on beta252 at 659ac30f8fc7d80a7182aa8c68bb77029dba9bdc. Candidate beta253: unified Scene Controller, StageKit Views dock and companion 0.43.0.0; Windows first. |
+| Working branch | fix/controller-platform-builds, based on published beta253 at ead2352cccb79015859220de30a5c2c4c88c453f. Windows Scene Controller and StageKit Views are public; deferred platform follow-up is next. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -22,6 +22,35 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
+
+## Deferred platform follow-up after Windows beta253
+
+Windows beta253 was published and downloaded on 2026-11-23 after all eight Windows/shared gates passed
+on final head f4c525a6e4fd9e4af657fc735d28ea598623aa30. PR275 merged as
+ead2352cccb79015859220de30a5c2c4c88c453f. The installer SHA-256 is
+de9b04e81b0928f5137c63d6d7e1c6841b76e7838469916680c2f31132977715; the Windows ZIP SHA-256 is
+6951da9621bea4cc85d362cfa24f597e3dd00d425a874589e1ccd3bda4bd4837. Its StageKit DLL exactly matches
+the final Windows OBS 32.2.2 tested DLL listed below and embeds beta253. Companion 0.43.0.0 was also
+downloaded; its checksum, View action, inspector and runtime were verified. The original Windows release
+remains available while secondary platform checks are handled.
+
+The macOS follow-up replaces ten QJsonArray const-reference loop bindings with explicit const QJsonValue
+values. Clang treats the former temporary bindings as errors. References over real container elements
+and indexed mutations remain unchanged. This is a compile correction with no control, configuration or
+selection behavior change; the Windows dock screenshots remain representative. Run the exact-head
+Windows/shared gates and macOS build before publishing this follow-up.
+
+The separate Linux native job encountered HTTP 503 responses from the OBS PPA. In the final attempt,
+apt fell back to Ubuntu OBS 30.0.2, then CMake rejected its missing LibObs development configuration.
+Plugin source compilation and runtime tests did not run. This infrastructure failure does not establish
+a shared code defect or Linux runtime success. Linux packaging passed on the same production code.
+
+The follow-up pins the native/frontend prerequisite to the official OBS 32.2.2 Ubuntu 24.04 package,
+verified with SHA-256 b6557ca2059287210332accc94c267094050489cffffc5c832e746e3a418dab0 before install.
+Its archive contains the SDK exports, headers, pkg-config metadata, runtime and the required modules.
+The package installs under /usr/local. Two guarded CI-only aliases retain the module/data paths expected
+by the existing headless harnesses. No fixtures or production Linux dependency policy are weakened or
+changed. The native check must confirm the installed package/SDK version before building the plugin.
 
 ## Scene Controller and StageKit Views
 
@@ -74,11 +103,10 @@ restart restoring saved configuration and dock selection. The guide uses that ru
 dock and editor captures. Its tested DLL SHA-256 is
 fa038de340de7728cd45086f7826fe79b8880f0e1d9c496fab806061c81d28a3.
 
-The screenshot/documentation follow-up still requires all Windows/shared gates on the final head before
-publication. macOS currently rejects QJsonArray reference iteration under Clang's range-loop warning;
-resolve that platform-specific compile issue after Windows is public, following the owner's standing
-priority. The Linux package build passes. Its separate native check stops before compilation because
-the OBS dependency server returns HTTP 503; it provides no Linux runtime result or shared code failure.
+The screenshot/documentation follow-up passed all eight Windows/shared gates on final head f4c525a6.
+Windows frontend job 137856807543 passed the native/controller, real dock and actual restart checks;
+the published Windows binary has the same tested DLL hash. Deferred macOS compilation and Linux runtime
+dependency work are tracked above, following the owner's Windows-first release priority.
 The quiet Windows timing trials use Microsoft Basic Render Driver and compare bypass/reuse in one
 candidate binary. They cannot establish the owner's hardware frame time or a release-to-release gain.
 

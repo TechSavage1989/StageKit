@@ -80,7 +80,7 @@ QJsonObject snapshot(const QString &id, QString *error = nullptr)
 
 QJsonObject find_id(const QJsonArray &array, const QString &id)
 {
-	for (const auto &value : array)
+	for (const QJsonValue value : array)
 		if (value.toObject()["id"].toString() == id)
 			return value.toObject();
 	return {};
@@ -89,7 +89,7 @@ QJsonObject find_id(const QJsonArray &array, const QString &id)
 QStringList values(const QJsonValue &value)
 {
 	QStringList result;
-	for (const auto &entry : value.toArray()) {
+	for (const QJsonValue entry : value.toArray()) {
 		const QString name = entry.isObject() ? entry.toObject()["value"].toString() : entry.toString();
 		if (!name.isEmpty() && !result.contains(name))
 			result.append(name);
@@ -575,7 +575,7 @@ void edit_view(QWidget *parent, const QJsonArray &groups, QJsonObject view, std:
 	table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
 	table->verticalHeader()->hide();
 	layout->addWidget(table, 1);
-	for (const auto &entry : groups) {
+	for (const QJsonValue entry : groups) {
 		const auto group = entry.toObject();
 		if (group["kind"].toString() == "follow")
 			continue;
@@ -590,7 +590,7 @@ void edit_view(QWidget *parent, const QJsonArray &groups, QJsonObject view, std:
 		choice->addItem(text("Views.KeepCurrent"), QVariant());
 		for (const auto &[id, title] : group_choices(group))
 			choice->addItem(title, id);
-		for (const auto &saved : view["selections"].toArray()) {
+		for (const QJsonValue saved : view["selections"].toArray()) {
 			const auto selection = saved.toObject();
 			if (selection["groupId"].toString() != group["id"].toString())
 				continue;
@@ -785,7 +785,7 @@ private:
 		const QSignalBlocker block(list);
 		list->clear();
 		int index = 0;
-		for (const auto &entry : array) {
+		for (const QJsonValue entry : array) {
 			const auto item = entry.toObject();
 			auto *row = new QListWidgetItem(item["name"].toString(), list);
 			row->setData(Qt::UserRole, item["id"].toString());
@@ -839,9 +839,9 @@ private:
 
 	bool referenced(const QString &group, const QString &choice, bool whole_group)
 	{
-		for (const auto &entry : config_["views"].toArray()) {
+		for (const QJsonValue entry : config_["views"].toArray()) {
 			const auto view = entry.toObject();
-			for (const auto &value : view["selections"].toArray()) {
+			for (const QJsonValue value : view["selections"].toArray()) {
 				const auto selection = value.toObject();
 				if (selection["groupId"].toString() == group &&
 				    (whole_group || selection["choiceId"].toString() == choice)) {
@@ -1305,7 +1305,7 @@ private:
 			scene_controller_list(response);
 		QJsonObject next;
 		QList<QPair<QString, QString>> controller_items;
-		for (const auto &entry : object(response)["controllers"].toArray()) {
+		for (const QJsonValue entry : object(response)["controllers"].toArray()) {
 			const auto controller = entry.toObject();
 			if (controller["sceneUuid"].toString() != selected_scene_)
 				continue;
@@ -1328,7 +1328,7 @@ private:
 		rename_->setEnabled(!state_.isEmpty() && !editor_);
 		remove_->setEnabled(!state_.isEmpty() && !editor_);
 		QList<QPair<QString, QString>> scope_items{{text("Views.CombinedViews"), "views"}};
-		for (const auto &entry : state_["groups"].toArray()) {
+		for (const QJsonValue entry : state_["groups"].toArray()) {
 			const auto group = entry.toObject();
 			scope_items.append({group["name"].toString(), group["id"].toString()});
 		}
@@ -1376,7 +1376,7 @@ private:
 						   {"name", text("Views.None")},
 						   {"active", group["current"].toString().isEmpty()},
 						   {"available", true}});
-		for (const auto &entry : entries) {
+		for (const QJsonValue entry : entries) {
 			const auto choice = entry.toObject();
 			const bool available = enabled && controller_available && group_enabled && group_available &&
 					       choice["available"].toBool();

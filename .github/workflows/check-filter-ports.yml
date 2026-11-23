@@ -72,9 +72,21 @@ jobs:
           "$RUNNER_TEMP/alpha-bounds"
       - name: Install OBS development files
         run: |
-          sudo add-apt-repository -y ppa:obsproject/obs-studio
-          sudo apt-get update -qq
-          sudo apt-get install -y libsimde-dev obs-studio qt6-base-dev qt6-base-private-dev qt6-svg-dev gdb libcurl4-openssl-dev ninja-build xvfb xauth libgl1-mesa-dri python3-pil
+          set -euo pipefail
+          obs_deb="$RUNNER_TEMP/OBS-Studio-32.2.2-Ubuntu-24.04-x86_64.deb"
+          curl --fail --location --retry 3 --retry-delay 2 --retry-max-time 180 --connect-timeout 15 --max-time 180 \
+            --output "$obs_deb" \
+            https://github.com/obsproject/obs-studio/releases/download/32.2.2/OBS-Studio-32.2.2-Ubuntu-24.04-x86_64.deb
+          printf '%s  %s\n' b6557ca2059287210332accc94c267094050489cffffc5c832e746e3a418dab0 "$obs_deb" | sha256sum --check --strict
+          sudo apt-get -o Acquire::Retries=3 -o APT::Update::Error-Mode=any update -qq
+          sudo apt-get -o Acquire::Retries=3 install -y "$obs_deb" libsimde-dev qt6-base-dev qt6-base-private-dev qt6-svg-dev gdb libcurl4-openssl-dev ninja-build xvfb xauth libgl1-mesa-dri python3-pil
+          sudo ldconfig
+          test "$(dpkg-query -W -f='${Version}' obs-studio)" = 32.2.2
+          test "$(pkg-config --modversion libobs)" = 32.2.2
+          # The official package uses /usr/local; the headless fixtures use the PPA module paths.
+          sudo mkdir -p /usr/share/obs
+          sudo ln -sT /usr/local/lib/x86_64-linux-gnu/obs-plugins /usr/lib/x86_64-linux-gnu/obs-plugins
+          sudo ln -sT /usr/local/share/obs/obs-plugins /usr/share/obs/obs-plugins
       - name: Build plugin and source ports
         run: |
           cmake -S . -B build-ports -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSTAGEKIT_BUILD_TESTS=ON
