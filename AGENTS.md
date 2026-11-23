@@ -131,6 +131,11 @@ The Views icon library reuses the companion's generic scene/source types and ori
 Run scripts/make-view-icon-library.py after changing the canonical type lists or selected picture paths;
 its --check mode validates the committed catalog, Qt resource list and generated ViewIcons locale block.
 The resource list references existing tracked PNGs rather than copying them. Include it only with Qt.
+Compile this static icon QRC with source-specific AUTORCC_OPTIONS --format-version 1. Later resource
+formats embed each input's checkout modification time, making independent Windows builds differ even
+with /Brepro. The library only reads bytes and does not need resource timestamps. A controlled probe
+of the complete QRC at two input mtimes produced identical format-1 output and decoded every PNG.
+Keep the final Windows package DLL identical to the DLL exercised by the actual frontend test.
 Keep normal bright key art, not status/on or status/off variants, so native active highlighting remains
 the state indicator. The native plugin must not depend on an installed Stream Deck companion or an
 external icon directory. Both library and Custom image choices save the same bounded iconPng thumbnail.

@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | feat/views-icon-library, PR279 for beta257. Beta256 is published. Shared manager access and original panel command scope are fixed at 937d433d. All seven shared/Windows package gates passed; the actual frontend run found only a new fixture metadata expectation mismatch. That expectation is corrected, and genuine shared-manager captures are added for the final exact-head run. |
+| Working branch | feat/views-icon-library, PR279 for beta257. Beta256 is published. Shared scene controls and all other requested panel changes passed the eight Windows/shared gates at 5a09f8b8. Binary comparison then found icon resource timestamps made independent builds differ. The icon QRC now omits those timestamps; new exact-head gates and matching package/frontend DLLs are required before merge. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -24,6 +24,26 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
 ## Shared scene controls, reusable sections and built-in icons
+
+Head 5a09f8b897fcb60471508d86098aa7fa797faf4d passed all seven shared/Windows package gates plus
+actual Windows frontend job 138074428418 in run 45283704146. Its first-run report and real restart
+report are PASS, and all four timing trials completed 450 frames. Artifact 14872015251 has SHA-256
+002bd3a540a5e17e7d7ea99ef7277c9d0dd01d2a0c12a0f3ce117f92323eb806. All seven guide captures match
+the committed screenshots pixel-for-pixel in RGB, including the new shared-manager capture.
+
+Final package comparison exposed a separate build reproducibility issue before merge. The frontend
+DLL was 6cb4615247408a9b4690219fbafda50fbe2fbc3e29c5c32e462c1b8437d19b1f, while the independent
+Windows package artifact 14870883597 contained DLL 640e818bf597c745678b3ffc7f83d9452feed17f8255fc5d1bdb13530ec9df1f
+at the same source head. Qt resource formats 2 and later embed input file modification times; the new
+icon library therefore incorporated checkout-specific metadata despite /Brepro. CMake now applies
+--format-version 1 only to the icon QRC. A local Qt 6.11.1 probe with the actual 781 inputs at 2021 and
+2025 mtimes reproduced the default difference, generated identical format-1 C++ output with SHA-256
+b325fcda26478165796bd8a8a91630ac8b66e290788831cf3f508575213e82af, and loaded all 781 resource byte
+streams unchanged. All 780 PNGs decoded across the six palettes. SOURCE_DATE_EPOCH=0 did not remove
+timestamps, so the explicit resource format avoids an environment-dependent workaround. No icon,
+configuration or runtime behavior changed. Re-run the exact-head Windows/shared gates and require
+matching independent package and frontend DLLs before merging. Public Windows downloads must match
+that tested DLL as well; do not relax the binary comparison.
 
 The owner's latest instruction is to fix the implementation because selecting additional scenes did
 not make their controls accessible. Two production defects are confirmed by source inspection:
