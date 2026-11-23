@@ -5,6 +5,7 @@
 #include <QFileDialog>
 #include <QGridLayout>
 #include <QImage>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QKeyEvent>
@@ -487,6 +488,155 @@ inline bool embedded_icon(const QVariantMap &pin)
 	       image.width() > 0 && image.height() > 0 && image.width() <= 128 && image.height() <= 128;
 }
 
+inline QImage library_image(const QString &id, const QString &palette)
+{
+	QFile catalog(":/stagekit/view-icons/catalog.json");
+	if (!catalog.open(QIODevice::ReadOnly))
+		return {};
+	const auto icons = QJsonDocument::fromJson(catalog.readAll()).object()["icons"].toArray();
+	for (const QJsonValue value : icons) {
+		const auto entry = value.toObject();
+		if (entry["id"].toString() != id)
+			continue;
+		const QImage original(entry["paths"].toObject()[palette].toString());
+		return original.scaled(128, 128, Qt::KeepAspectRatio, Qt::SmoothTransformation)
+			.convertToFormat(QImage::Format_ARGB32);
+	}
+	return {};
+}
+
+inline bool saved_library_icon(const QVariantMap &pin)
+{
+	QImage image;
+	const QImage expected = library_image("source:camera", "ocean");
+	return !expected.isNull() &&
+	       image.loadFromData(QByteArray::fromBase64(pin.value("iconPng").toString().toLatin1()), "PNG") &&
+	       image.convertToFormat(QImage::Format_ARGB32) == expected;
+}
+
+inline QListWidgetItem *library_item(QListWidget *items, const QString &id)
+{
+	for (int i = 0; items && i < items->count(); ++i)
+		if (items->item(i)->data(Qt::UserRole).toString() == id)
+			return items->item(i);
+	return nullptr;
+}
+
+inline bool select_library_icon(QListWidget *items, const QString &id)
+{
+	auto *item = library_item(items, id);
+	if (!item || item->isHidden() || !items->isVisible())
+		return false;
+	items->scrollToItem(item);
+	QCoreApplication::processEvents();
+	if (!items->viewport()->rect().intersects(items->visualItemRect(item)) || !click_row(items, id))
+		return false;
+	QCoreApplication::processEvents();
+	return items->currentItem() == item && item->isSelected();
+}
+
+inline bool select_library_option(QComboBox *choice, const QString &value)
+{
+	const int index = choice ? choice->findData(value) : -1;
+	if (index < 0 || !choice->isVisible() || !choice->isEnabled())
+		return false;
+	choice->showPopup();
+	QCoreApplication::processEvents();
+	auto *view = choice->view();
+	const auto model_index = choice->model()->index(index, choice->modelColumn());
+	view->setCurrentIndex(model_index);
+	view->scrollTo(model_index);
+	QKeyEvent press(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+	QKeyEvent release(QEvent::KeyRelease, Qt::Key_Return, Qt::NoModifier);
+	QApplication::sendEvent(view, &press);
+	QApplication::sendEvent(view, &release);
+	QCoreApplication::processEvents();
+	return choice->currentIndex() == index && !view->isVisible();
+}
+
+inline void check_icon_library(QWidget *editor, QListWidget *pins, QStringList &issues)
+{
+	auto expect = [&](bool value, const char *message) {
+		if (!value)
+			issues.append(QStringLiteral("StageKit controls: ") + QString::fromUtf8(message));
+	};
+	if (!pins || pins->count() < 2 || !select_pins(pins, {1})) {
+		expect(false, "could not select a separate control for the built-in icon library");
+		return;
+	}
+	const auto first = pins->item(0)->data(Qt::UserRole + 1).toMap();
+	const auto previous = pins->item(1)->data(Qt::UserRole + 1).toMap();
+	OBSSourceAutoRelease scene = obs_frontend_get_current_scene();
+	expect(click(editor, "viewsPanelIconLibrary") && until([&] { return dialog("viewsPanelIconLibraryDialog"); }),
+	       "the integrated icon library did not open from the panel editor");
+	QPointer<QDialog> library = dialog("viewsPanelIconLibraryDialog");
+	if (!library)
+		return;
+	auto *search = library->findChild<QLineEdit *>("viewsPanelIconLibrarySearch");
+	auto *category = library->findChild<QComboBox *>("viewsPanelIconLibraryCategory");
+	auto *palette = library->findChild<QComboBox *>("viewsPanelIconLibraryPalette");
+	auto *items = library->findChild<QListWidget *>("viewsPanelIconLibraryItems");
+	auto *use = library->findChild<QAbstractButton *>("viewsPanelIconLibraryUse");
+	auto *camera = library_item(items, "source:camera");
+	if (!search || !category || !palette || !items || !use || !camera) {
+		expect(false, "the icon library was missing its search, categories, palettes or camera artwork");
+		library->reject();
+		return;
+	}
+	expect(palette->count() == 6 && palette->currentData().toString() == "mono" && !use->isEnabled() &&
+		       items->viewMode() == QListView::IconMode && !camera->icon().isNull(),
+	       "the library did not show its built-in thumbnails and six palettes with an explicit selection");
+	expect(select_library_icon(items, "source:camera") && use->isEnabled(),
+	       "selecting a visible library thumbnail did not enable Use icon");
+	const QImage mono = camera->icon().pixmap(64, 64).toImage();
+	expect(select_library_option(palette, "ocean") && items->currentItem() == camera && use->isEnabled() &&
+		       !camera->icon().isNull() && camera->icon().pixmap(64, 64).toImage() != mono,
+	       "changing palette did not update the selected thumbnail while preserving its selection");
+	search->setText("no-such-stagekit-icon");
+	expect(camera->isHidden() && items->selectedItems().isEmpty() && !use->isEnabled() &&
+		       pins->item(1)->data(Qt::UserRole + 1).toMap() == previous,
+	       "a search with no matches retained an applicable hidden icon or changed the saved image");
+	search->clear();
+	expect(select_library_option(category, "scenes") && camera->isHidden(),
+	       "the Scenes category did not exclude source icons");
+	int visible_scenes = 0;
+	for (int i = 0; i < items->count(); ++i)
+		if (!items->item(i)->isHidden()) {
+			++visible_scenes;
+			expect(items->item(i)->data(Qt::UserRole).toString().startsWith("scene:"),
+			       "the Scenes category included a source or control icon");
+		}
+	expect(visible_scenes > 0 && select_library_option(category, "sources") && !camera->isHidden(),
+	       "the library categories did not expose their own available artwork");
+	search->setText("CaMeRa");
+	expect(!camera->isHidden() && select_library_icon(items, "source:camera") && use->isEnabled() &&
+		       click(library, "viewsPanelIconLibraryCancel") &&
+		       until([&] { return !library || !library->isVisible(); }) &&
+		       pins->item(1)->data(Qt::UserRole + 1).toMap() == previous &&
+		       pins->item(0)->data(Qt::UserRole + 1).toMap() == first,
+	       "Cancel from a filtered library replaced an existing image or changed another control");
+	if (library && library->isVisible()) {
+		library->reject();
+		until([&] { return !library || !library->isVisible(); });
+	}
+	expect(click(editor, "viewsPanelIconLibrary") && until([&] { return dialog("viewsPanelIconLibraryDialog"); }),
+	       "the icon library could not be reopened after cancellation");
+	library = dialog("viewsPanelIconLibraryDialog");
+	if (!library)
+		return;
+	palette = library->findChild<QComboBox *>("viewsPanelIconLibraryPalette");
+	items = library->findChild<QListWidget *>("viewsPanelIconLibraryItems");
+	expect(select_library_option(palette, "ocean") && select_library_icon(items, "source:camera") &&
+		       click(library, "viewsPanelIconLibraryUse") &&
+		       until([&] { return !library || !library->isVisible(); }) &&
+		       saved_library_icon(pins->item(1)->data(Qt::UserRole + 1).toMap()) &&
+		       pins->item(1)->data(Qt::UserRole + 1).toMap().value("iconPng") != previous.value("iconPng") &&
+		       pins->item(0)->data(Qt::UserRole + 1).toMap() == first && scene_is(scene),
+	       "Use icon did not embed the selected palette on only its control without changing scenes");
+	if (library && library->isVisible())
+		library->reject();
+}
+
 inline bool check_saved_panel(QWidget *panel, const char *layout = "list", bool navigate = true)
 {
 	if (!click(panel, "viewsPanelEdit") || !until([&] { return dialog("viewsPanelEditor"); }))
@@ -509,6 +659,8 @@ inline bool check_saved_panel(QWidget *panel, const char *layout = "list", bool 
 			row->data(0, Qt::UserRole + 1).toMap().value("id").toString() == id;
 		if (valid && i < 2)
 			valid = embedded_icon(pin) && !found->icon().isNull() && !row->icon(0).isNull();
+		if (valid && i == 1)
+			valid = saved_library_icon(pin);
 		if (valid && i == 7) {
 			OBSSourceAutoRelease replacement = obs_get_source_by_name("Studio spare");
 			valid = !found->isEnabled() && !(row->flags() & Qt::ItemIsEnabled) && replacement &&
@@ -539,6 +691,14 @@ inline void check_collection_isolation(QWidget *panel, QStringList &issues)
 	if (draft)
 		if (auto *label = draft->findChild<QLineEdit *>("viewsPanelLabel"))
 			label->setText("Uncommitted draft");
+	expect(draft && click(draft, "viewsPanelIconLibrary") &&
+		       until([&] { return dialog("viewsPanelIconLibraryDialog"); }),
+	       "could not open an icon library draft before changing collections");
+	QPointer<QDialog> library = dialog("viewsPanelIconLibraryDialog");
+	if (library)
+		expect(select_library_icon(library->findChild<QListWidget *>("viewsPanelIconLibraryItems"),
+					   "source:camera"),
+		       "could not select an uncommitted icon before changing collections");
 	const QString temporary = "Panel empty collection";
 	const bool created = obs_frontend_add_scene_collection(temporary.toUtf8().constData());
 	expect(created && until([&] { return collection_name() == temporary; }),
@@ -546,11 +706,11 @@ inline void check_collection_isolation(QWidget *panel, QStringList &issues)
 	if (!created)
 		return;
 	expect(until([&] {
-		       return (!draft || !draft->isVisible()) &&
+		       return (!draft || !draft->isVisible()) && (!library || !library->isVisible()) &&
 			      panel->findChild<QWidget *>("viewsOperatorBoard")->isVisible() && !button(panel, {}) &&
 			      panel_ready(panel);
 	       }),
-	       "collection change retained a draft, management page or another collection's pins");
+	       "collection change retained a panel or icon draft, management page or another collection's pins");
 	if (click(panel, "viewsPanelEdit") && until([&] { return dialog("viewsPanelEditor"); })) {
 		QPointer<QDialog> editor = dialog("viewsPanelEditor");
 		auto *navigate = editor->findChild<QCheckBox *>("viewsPanelSwitchScene");
@@ -1076,6 +1236,7 @@ inline void check(QStringList &issues, bool restart)
 			       embedded_icon(pins->item(0)->data(Qt::UserRole + 1).toMap()) &&
 			       embedded_icon(pins->item(1)->data(Qt::UserRole + 1).toMap()),
 		       "removing and reapplying an icon changed the wrong pin or lost its embedded image");
+		check_icon_library(editor, pins, issues);
 		expect(QFile::remove(monitor_icon) && QFile::remove(camera_icon),
 		       "could not remove original image files before verifying embedded-icon persistence");
 		expect(label && section && click(editor, "viewsPanelSave") &&
@@ -1340,6 +1501,21 @@ inline void check(QStringList &issues, bool restart)
 				QCoreApplication::processEvents();
 				expect(editor->grab().save(directory.filePath("stagekit-controls-editor.png")),
 				       "could not capture the real panel editor");
+				expect(click(editor, "viewsPanelIconLibrary") &&
+					       until([&] { return dialog("viewsPanelIconLibraryDialog"); }),
+				       "could not open the integrated icon library for capture");
+				QPointer<QDialog> library = dialog("viewsPanelIconLibraryDialog");
+				if (library) {
+					auto *palette = library->findChild<QComboBox *>("viewsPanelIconLibraryPalette");
+					expect(select_library_option(palette, "ocean"),
+					       "could not show a colour palette for the real icon library capture");
+					QCoreApplication::processEvents();
+					expect(library->grab().save(
+						       directory.filePath("stagekit-controls-icon-library.png")),
+					       "could not capture the real integrated icon library");
+					library->reject();
+					until([&] { return !library || !library->isVisible(); });
+				}
 				editor->reject();
 				until([&] { return !editor || !editor->isVisible(); });
 			}
@@ -1359,7 +1535,7 @@ inline void check(QStringList &issues, bool restart)
 	check_collection_isolation(panel, issues);
 	if (issues.size() == before)
 		blog(LOG_INFO,
-		     "[StageKit controls test] PASS: compact list and icon buttons, native mode/view navigation, direct scene selection, Studio Preview, grouped bulk editing, embedded icons and size, native visibility, rename/missing identity, bulk import and scene collection isolation");
+		     "[StageKit controls test] PASS: compact list and icon buttons, native mode/view navigation, direct scene selection, Studio Preview, grouped bulk editing, custom and built-in icon library images, palettes and size, native visibility, rename/missing identity, bulk import and scene collection isolation");
 }
 
 } // namespace control_panel_test

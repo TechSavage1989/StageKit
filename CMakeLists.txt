@@ -52,6 +52,7 @@ if(ENABLE_QT)
     ${CMAKE_PROJECT_NAME}
     PROPERTIES AUTOMOC ON AUTOUIC ON AUTORCC ON
   )
+  target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/controller/view-icons/view-icons.qrc)
 endif()
 
 target_sources(

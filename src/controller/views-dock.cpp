@@ -20,6 +20,7 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
 #include <QDockWidget>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -1189,6 +1190,201 @@ QIcon panel_icon(const QJsonObject &pin)
 	return QIcon(QPixmap::fromImage(reader.read()));
 }
 
+QString embedded_panel_icon(QImage image)
+{
+	if (image.isNull())
+		return {};
+	image = image.scaled(128, 128, Qt::KeepAspectRatio, Qt::SmoothTransformation)
+			.convertToFormat(QImage::Format_ARGB32);
+	QByteArray png;
+	QBuffer buffer(&png);
+	buffer.open(QIODevice::WriteOnly);
+	if (!image.save(&buffer, "PNG"))
+		return {};
+	const auto encoded = QString::fromLatin1(png.toBase64());
+	return encoded.size() <= 128 * 1024 ? encoded : QString();
+}
+
+class ViewIconLibrary final : public QDialog {
+public:
+	ViewIconLibrary(QWidget *parent, std::function<void(const QString &)> apply)
+		: QDialog(parent),
+		  apply_(std::move(apply))
+	{
+		setObjectName("viewsPanelIconLibraryDialog");
+		setWindowTitle(text("Controls.IconLibraryTitle"));
+		setAttribute(Qt::WA_DeleteOnClose);
+		setWindowModality(Qt::WindowModal);
+		auto *layout = new QVBoxLayout(this);
+		layout->addWidget(note(this, text("Controls.IconLibraryHelp")));
+		search_ = new QLineEdit(this);
+		search_->setObjectName("viewsPanelIconLibrarySearch");
+		search_->setPlaceholderText(text("Controls.IconSearch"));
+		search_->setClearButtonEnabled(true);
+		layout->addWidget(search_);
+		auto *filters = new QHBoxLayout;
+		category_ = new QComboBox(this);
+		category_->setObjectName("viewsPanelIconLibraryCategory");
+		category_->setAccessibleName(text("Controls.IconCategory"));
+		category_->addItem(text("Controls.IconAllCategories"), QString());
+		auto *category_label = new QLabel(text("Controls.IconCategory"), this);
+		category_label->setBuddy(category_);
+		filters->addWidget(category_label);
+		filters->addWidget(category_, 1);
+		palette_ = new QComboBox(this);
+		palette_->setObjectName("viewsPanelIconLibraryPalette");
+		palette_->setAccessibleName(text("Controls.IconColour"));
+		auto *palette_label = new QLabel(text("Controls.IconColour"), this);
+		palette_label->setBuddy(palette_);
+		filters->addWidget(palette_label);
+		filters->addWidget(palette_, 1);
+		layout->addLayout(filters);
+		icons_ = new QListWidget(this);
+		icons_->setObjectName("viewsPanelIconLibraryItems");
+		icons_->setViewMode(QListView::IconMode);
+		icons_->setMovement(QListView::Static);
+		icons_->setResizeMode(QListView::Adjust);
+		icons_->setSelectionMode(QAbstractItemView::SingleSelection);
+		icons_->setIconSize(QSize(64, 64));
+		icons_->setGridSize(QSize(128, 112));
+		icons_->setSpacing(4);
+		icons_->setWordWrap(true);
+		icons_->setTextElideMode(Qt::ElideRight);
+		icons_->setUniformItemSizes(true);
+		icons_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+		layout->addWidget(icons_, 1);
+		status_ = note(this, {}, "viewsPanelIconLibraryStatus");
+		layout->addWidget(status_);
+		auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, this);
+		use_ = buttons->addButton(text("Controls.UseIcon"), QDialogButtonBox::AcceptRole);
+		use_->setObjectName("viewsPanelIconLibraryUse");
+		use_->setEnabled(false);
+		buttons->button(QDialogButtonBox::Cancel)->setObjectName("viewsPanelIconLibraryCancel");
+		layout->addWidget(buttons);
+		connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+		connect(buttons, &QDialogButtonBox::accepted, this, [this] { use_selection(); });
+		connect(icons_, &QListWidget::itemActivated, this, [this] { use_selection(); });
+		connect(icons_, &QListWidget::itemSelectionChanged, this, [this] { show_selection(); });
+		connect(search_, &QLineEdit::textChanged, this, [this] { filter_icons(); });
+		connect(category_, &QComboBox::currentIndexChanged, this, [this] { filter_icons(); });
+		connect(palette_, &QComboBox::currentIndexChanged, this, [this] { update_palette(); });
+		load_icons();
+		resize(680, 560);
+	}
+
+private:
+	void load_icons()
+	{
+		QFile file(":/stagekit/view-icons/catalog.json");
+		if (!file.open(QIODevice::ReadOnly)) {
+			status_->setText(text("Controls.IconLibraryError"));
+			return;
+		}
+		const auto catalog = QJsonDocument::fromJson(file.readAll()).object();
+		const QSignalBlocker category_block(category_), palette_block(palette_);
+		for (const QJsonValue value : catalog["groups"].toArray()) {
+			const auto group = value.toObject();
+			const auto label = text(group["labelKey"].toString().toUtf8().constData());
+			groups_.insert(group["id"].toString(), label);
+			category_->addItem(label, group["id"].toString());
+		}
+		for (const QJsonValue value : catalog["palettes"].toArray()) {
+			const auto palette = value.toObject();
+			palette_->addItem(text(palette["labelKey"].toString().toUtf8().constData()),
+					  palette["id"].toString());
+		}
+		for (const QJsonValue value : catalog["icons"].toArray()) {
+			const auto icon = value.toObject();
+			const auto label = text(icon["labelKey"].toString().toUtf8().constData());
+			auto *item = new QListWidgetItem(label, icons_);
+			item->setData(Qt::UserRole, icon["id"].toString());
+			item->setData(Qt::UserRole + 1, icon.toVariantMap());
+			item->setToolTip(label + "\n" + groups_.value(icon["group"].toString()));
+			item->setTextAlignment(Qt::AlignHCenter);
+		}
+		update_palette();
+		filter_icons();
+	}
+
+	QString image_path(const QListWidgetItem *item) const
+	{
+		if (!item)
+			return {};
+		const auto icon = QJsonObject::fromVariantMap(item->data(Qt::UserRole + 1).toMap());
+		const auto path = icon["paths"].toObject()[palette_->currentData().toString()].toString();
+		return path.startsWith(":/stagekit/view-icons/") ? path : QString();
+	}
+
+	void update_palette()
+	{
+		for (int i = 0; i < icons_->count(); ++i) {
+			auto *item = icons_->item(i);
+			item->setIcon(QIcon(image_path(item)));
+		}
+		show_selection();
+	}
+
+	void filter_icons()
+	{
+		const auto query = search_->text().simplified();
+		const auto words = query.split(' ', Qt::SkipEmptyParts);
+		const auto group = category_->currentData().toString();
+		int visible = 0;
+		for (int i = 0; i < icons_->count(); ++i) {
+			auto *item = icons_->item(i);
+			const auto icon = QJsonObject::fromVariantMap(item->data(Qt::UserRole + 1).toMap());
+			QString searchable = item->text() + " " + groups_.value(icon["group"].toString());
+			for (const QJsonValue keyword : icon["keywords"].toArray())
+				searchable += " " + keyword.toString();
+			bool matches = group.isEmpty() || group == icon["group"].toString();
+			for (const auto &word : words)
+				matches = matches && searchable.contains(word, Qt::CaseInsensitive);
+			item->setHidden(!matches);
+			if (matches)
+				++visible;
+		}
+		if (icons_->currentItem() && icons_->currentItem()->isHidden()) {
+			icons_->clearSelection();
+			icons_->setCurrentItem(nullptr);
+		}
+		visible_ = visible;
+		show_selection();
+	}
+
+	void show_selection()
+	{
+		auto *item = icons_->currentItem();
+		const bool selected = item && item->isSelected() && !item->isHidden() && !item->icon().isNull();
+		use_->setEnabled(selected);
+		status_->setText(selected   ? item->toolTip().replace('\n', " - ")
+				 : visible_ ? text("Controls.IconCount").arg(visible_)
+					    : text("Controls.IconNoMatches"));
+	}
+
+	void use_selection()
+	{
+		auto *item = icons_->currentItem();
+		if (!item || !item->isSelected() || item->isHidden() || !use_->isEnabled())
+			return;
+		const auto encoded = embedded_panel_icon(QImage(image_path(item)));
+		if (encoded.isEmpty()) {
+			status_->setText(text("Controls.IconError"));
+			return;
+		}
+		apply_(encoded);
+		accept();
+	}
+
+	std::function<void(const QString &)> apply_;
+	QMap<QString, QString> groups_;
+	QLineEdit *search_ = nullptr;
+	QComboBox *category_ = nullptr, *palette_ = nullptr;
+	QListWidget *icons_ = nullptr;
+	QLabel *status_ = nullptr;
+	QPushButton *use_ = nullptr;
+	int visible_ = 0;
+};
+
 // A click and a keyboard activation have the same meaning, including when the
 // current row already represents an active native selection. A double-click is
 // one command, not two visibility toggles.
@@ -1318,6 +1514,9 @@ public:
 		icon_preview_->setFixedSize(32, 32);
 		icon_preview_->setAlignment(Qt::AlignCenter);
 		icons->addWidget(icon_preview_);
+		icon_library_ = new QPushButton(text("Controls.IconLibrary"), this);
+		icon_library_->setObjectName("viewsPanelIconLibrary");
+		icons->addWidget(icon_library_, 1);
 		choose_icon_ = new QPushButton(text("Controls.ChooseIcon"), this);
 		choose_icon_->setObjectName("viewsPanelChooseIcon");
 		icons->addWidget(choose_icon_, 1);
@@ -1385,6 +1584,7 @@ public:
 			edit_sections();
 			show_pin();
 		});
+		connect(icon_library_, &QPushButton::clicked, this, [this] { choose_library_icon(); });
 		connect(choose_icon_, &QPushButton::clicked, this, [this] { choose_icon(); });
 		connect(remove_icon_, &QPushButton::clicked, this, [this] {
 			const auto selected = pins_->selectedItems();
@@ -1571,6 +1771,7 @@ private:
 						       : text("Controls.EditSelection").arg(selected.size()));
 		remove_->setEnabled(!selected.isEmpty());
 		choose_icon_->setEnabled(one);
+		icon_library_->setEnabled(one);
 		remove_icon_->setEnabled(one && !pin["iconPng"].toString().isEmpty());
 		icon_preview_->clear();
 		if (one)
@@ -1621,6 +1822,28 @@ private:
 		pins_->setCurrentItem(current, QItemSelectionModel::NoUpdate);
 	}
 
+	void set_icon(const QString &id, const QString &encoded)
+	{
+		auto *item = pin_item(id);
+		if (!item || encoded.isEmpty())
+			return;
+		mark_custom();
+		auto pin = pin_data(item);
+		pin["iconPng"] = encoded;
+		update_pin(item, pin);
+		show_pin();
+	}
+
+	void choose_library_icon()
+	{
+		const auto selected = pins_->selectedItems();
+		if (selected.size() != 1)
+			return;
+		const QString id = selected.front()->data(Qt::UserRole).toString();
+		auto *picker = new ViewIconLibrary(this, [this, id](const QString &encoded) { set_icon(id, encoded); });
+		picker->open();
+	}
+
 	void choose_icon()
 	{
 		const auto selected = pins_->selectedItems();
@@ -1652,25 +1875,12 @@ private:
 				return;
 			}
 			reader.setScaledSize(size.scaled(128, 128, Qt::KeepAspectRatio));
-			QImage image = reader.read();
-			if (image.isNull()) {
+			const auto encoded = embedded_panel_icon(reader.read());
+			if (encoded.isEmpty()) {
 				status_->setText(text("Controls.IconError"));
 				return;
 			}
-			image = image.scaled(128, 128, Qt::KeepAspectRatio, Qt::SmoothTransformation)
-					.convertToFormat(QImage::Format_ARGB32);
-			QByteArray png;
-			QBuffer buffer(&png);
-			buffer.open(QIODevice::WriteOnly);
-			if (!image.save(&buffer, "PNG")) {
-				status_->setText(text("Controls.IconError"));
-				return;
-			}
-			mark_custom();
-			auto pin = pin_data(item);
-			pin["iconPng"] = QString::fromLatin1(png.toBase64());
-			update_pin(item, pin);
-			show_pin();
+			set_icon(id, encoded);
 		});
 		picker->open();
 	}
@@ -1682,7 +1892,8 @@ private:
 	QTreeWidget *available_ = nullptr;
 	QListWidget *pins_ = nullptr;
 	QLabel *context_ = nullptr, *status_ = nullptr, *selected_heading_ = nullptr, *icon_preview_ = nullptr;
-	QPushButton *remove_ = nullptr, *clear_ = nullptr, *choose_icon_ = nullptr, *remove_icon_ = nullptr;
+	QPushButton *remove_ = nullptr, *clear_ = nullptr, *choose_icon_ = nullptr, *remove_icon_ = nullptr,
+		    *icon_library_ = nullptr;
 	QCheckBox *switch_scene_ = nullptr;
 	QToolButton *reset_section_ = nullptr;
 	QSet<QString> expanded_before_search_;

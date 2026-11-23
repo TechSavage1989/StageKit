@@ -113,6 +113,15 @@ custom icons as bounded embedded thumbnails so collection exports and restarts d
 original file. Reject invalid images without losing an existing icon, and decode icons only when their
 appearance changes. Button sizing must include wrapped text and icons and retain the OBS theme cap fix.
 
+The Views icon library reuses the companion's generic scene/source types and original unmarked artwork.
+Run scripts/make-view-icon-library.py after changing the canonical type lists or selected picture paths;
+its --check mode validates the committed catalog, Qt resource list and generated ViewIcons locale block.
+The resource list references existing tracked PNGs rather than copying them. Include it only with Qt.
+Keep normal bright key art, not status/on or status/off variants, so native active highlighting remains
+the state indicator. The native plugin must not depend on an installed Stream Deck companion or an
+external icon directory. Both library and Custom image choices save the same bounded iconPng thumbnail.
+Search/category changes must clear a hidden selection, and Cancel must preserve the previous icon.
+
 Panel scene navigation belongs in the native queued command, after successful validation and application.
 An explicit mode or view destination takes priority over the parent scene. Studio Mode changes Preview.
 Keep ordinary source toggles, direct Link Visibility and Show in Scenes behavior unchanged. Turning the
@@ -408,7 +417,7 @@ notice and the confirmation are what there is. This is recorded in the handoff.
 | `data/effects/` | Shaders in OBS `.effect` format. `stagekit-looks.effect` holds the newer looks (mosaic shapes, trail, bloom) apart from the older files |
 | `data/locale/en-US.ini` | Every user-visible string |
 | `tests/` | Headless libobs tests, test-image generators, `run-tests.sh` |
-| `streamdeck/` | The Stream Deck plugin (TypeScript, Elgato's SDK 3, Node): `src/` (the link to OBS over obs-websocket, the key types), `com.techsavage1989.stagekit.sdPlugin/` (manifest, settings pages, icons), `tests/`, `tools/make-icons.py`. It has its own `package.json`; nothing in the OBS plugin depends on it |
+| `streamdeck/` | The Stream Deck plugin (TypeScript, Elgato's SDK 3, Node): `src/` (the link to OBS over obs-websocket, the key types), `com.techsavage1989.stagekit.sdPlugin/` (manifest, settings pages, icons), `tests/`, `tools/make-icons.py`. It has its own `package.json`. The native Views library embeds a selected set of its tracked artwork; the OBS plugin has no dependency on the installed companion |
 | `scripts/` | Repository checks (`check-root.sh`, `root-allowlist.txt`); `rebuild-collection.py` writes a StageKit collection from an old one and `upgrade-collection.py` brings a StageKit collection up to date; `merge-capture-scenes.py` adds the two layout scenes (Live, Chat Live) and `merge-holding-scenes.py` the holding scene (Standby) to a StageKit collection for a side-by-side trial. All four read one file and write another; the owner's collections are private and never committed |
 | `docs/images/` | README imagery, produced by the tests |
 | `.claude/settings.json` | Claude Code's project settings: allows the Workflow tool without a prompt (the owner, 2026-11-18). Only this file is tracked; `settings.local.json` stays ignored |

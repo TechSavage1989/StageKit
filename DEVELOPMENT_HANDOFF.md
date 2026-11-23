@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | feat/compact-views-panel, PR278 for beta256. Beta255 is published. Compact controls and direct scene switching passed the complete Windows OBS run; the final guide/capture revision is awaiting its exact-head release gates. |
+| Working branch | feat/views-icon-library for beta257. Beta256 is published with compact controls, custom icons and direct scene switching. The native icon library is implemented and awaiting Windows and shared release checks. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -22,6 +22,41 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
+
+## Built-in icons for StageKit Views
+
+The owner asked whether scenes can be buttons as well as a dropdown, and expected both custom images
+and an integrated library using the Stream Deck artwork. Beta256 already supports direct scene pins
+under Edit panel > Scenes, shown in List or Buttons, and custom images under Choose icon. The guide now
+states the scene-button steps explicitly. The next beta adds a searchable thumbnail library alongside
+a clearly named Custom image option, with scene, source and control categories and the six existing
+StageKit color palettes. Both choices retain the bounded embedded PNG format used by saved panels.
+
+The library reuses existing tracked companion artwork inside a native Qt resource; it does not require
+the Stream Deck application or companion to be installed. A deterministic catalog generator and check
+keep the native choices tied to the canonical generic scene/source types and actual artwork paths.
+No original image file paths belong in scene collections. The actual OBS frontend fixture must cover
+library selection and cancellation, searching, categories, palette changes, custom images and library
+icons surviving collection reload and a real restart. Update the actual Windows editor and panel
+captures and include a library capture before merging. No user OBS configuration has been edited.
+
+The generated library contains 148 semantic choices (47 scenes, 86 sources and 15 controls), sharing
+130 unmarked images per palette across Mono, Violet, Ocean, Forest, Ember and Neon. The 780 original
+PNGs total 3,195,075 bytes. scripts/make-view-icon-library.py produces the catalog, Qt resource list
+and ViewIcons locale block; repository checks run its --check mode. Actual Qt RCC compilation and
+decoding of every resource passed locally, and every resource matched the original file's bytes.
+The frontend test preserves a custom image on one control and selects an Ocean camera library image
+on another, checking the actual pixels again after collection reload and restart. It also exercises
+category/search filtering, no-match selection clearing, palette changes, Use icon and Cancel. The
+native library adds no scene commands, per-frame work, installed companion dependency or saved paths.
+
+Beta256 completed PR278, squash merge 9eb3bfae43e5c8bb806eed95d108cfd243219368. The final reviewed
+head d76590808b4a1683d03ceeeab8b4907eb257813e passed all eight required Windows/shared jobs, including
+Windows frontend run 45262275085, job 137999890749, first run and real restart. Its tree exactly
+matches the merge tree. The public Windows installer and ZIP matched their release checksums; the
+packaged DLL matched tested SHA-256 6baed41e0be60cfc90b01dc1870cb39f52b514e4f0e9962cddda0619b3b26f16.
+Publisher 45264409185 supplied the release. The next turn confirmed that all seven platform assets
+are listed; beta256's initial Windows announcement did not wait for the other platforms.
 
 ## Compact panel layout and selection navigation
 

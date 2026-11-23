@@ -16,5 +16,7 @@ jobs:
         run: bash scripts/check-root.sh
       - name: Check setting names in the guide
         run: python3 scripts/check-guide-settings.py
+      - name: Check the built-in icon library
+        run: python3 scripts/make-view-icon-library.py --check
       - name: Check public Windows update order
         run: bash tests/check-release-order.sh

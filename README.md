@@ -1207,8 +1207,10 @@ its scene or controller. Keep the dock open while switching scenes; its controls
 **Switch scenes directly.** Use the **Scene** selector at the top of the panel. It follows the order
 in OBS's Scenes dock and shows the actual selected scene. In Studio Mode, the selector is **Preview**
 and changes Preview without changing Program. To keep specific scenes available with one click, open
-**Edit panel...** and check them under **Scenes**. They can appear as list rows or buttons alongside
-your other controls. These scene controls work without a mode or combined view.
+**Edit panel...**, expand **Scenes**, and check the scenes you want. Save, then choose **Buttons** at
+the top of the dock. Each checked scene becomes its own button alongside your other controls. Choose
+**List** for the same scene shortcuts as compact rows. These scene controls work without a mode or
+combined view, and the dropdown stays available in either layout.
 
 **Where the rules live.** StageKit Views is the control panel. A Scene Controller filter stores its
 groups and combined views. A button for an existing standalone filter still uses that filter's rules.
@@ -1225,7 +1227,7 @@ highlighted. Enter or Space applies the current row. Active indicators follow th
 <p align="center"><img src="docs/images/stagekit-controls-list.png" width="560" alt="Compact StageKit Views list in Windows OBS with controls grouped under collapsible scene and section headings"></p>
 
 In **Buttons**, use **Button size** to fit more choices or make them larger. The grid adjusts to the
-dock's width, and labels wrap as needed. Optional custom icons appear on buttons and as small images
+dock's width, and labels wrap as needed. Optional icons appear on buttons and as small images
 beside list rows. Layout and size are remembered for each scene collection.
 
 **Use icons and choose the button size that fits your dock.**
@@ -1243,9 +1245,18 @@ choices. Enter a short **Button label** for an individual control, and give rela
 **Section**. A section can be applied to several selected controls at once. A blank label or section
 follows the control's current name and location.
 
-Select one control to choose or remove its icon. A small copy of the image is saved with the scene
-collection, so the original image file is not required afterward. Icons change the control's appearance
-without changing what it operates.
+**Choose an icon.** Select one entry under **Controls on this panel**, then choose either:
+
+- **Icon library...** opens StageKit's built-in artwork from the Stream Deck plugin. Search by name,
+  narrow the selection to scenes, sources or controls, and choose a color palette. Select a thumbnail
+  and choose **Use icon**.
+- **Custom image...** opens an image file from your computer.
+
+Use **Remove icon** to return to a text-only control. A small copy of either kind of image is saved
+with the scene collection, so the original image file and an installed Stream Deck plugin are not
+required afterward. Icons work for scene shortcuts, modes, combined views and the other controls.
+They change a control's appearance without changing what it operates. Canceling either picker keeps
+the previous icon.
 
 **Save** keeps the selection and settings; **Cancel** leaves the saved panel alone. **Use automatic
 controls** restores automatic discovery when saved. It replaces the customized selection rather than
