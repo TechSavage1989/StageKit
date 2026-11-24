@@ -23,6 +23,15 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Countdown Timer dock shows the deadline (beta261)
+
+The owner: "id like the countdown timer Dock to also show the actual time the clock is counting down
+to, like the key does", then "the on screen source should not shown the real time being counted down
+to". The dock has a `countdownDeadline` label under its status, "Until <time>" (date added when not
+today), hidden for duration and count-up timers; `deadline_text` is shared with TimerControl's
+deadlineTime so the key and the dock agree. The source's drawing is unchanged. Built against OBS
+32.2.2 here; the frontend dock fixture was not run and nothing was seen on Windows.
+
 ## Countdown Timer: marks count from the press (beta260)
 
 The owner: "the countdown timer quarter hour key shouldn't be specific to :15/:30/:45 of the hour, but

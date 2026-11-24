@@ -12,6 +12,8 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <obs-module.h>
 #include <obs.hpp>
 #include <QComboBox>
+#include <QDate>
+#include <QDateTime>
 #include <QFontDatabase>
 #include <QFontMetrics>
 #include <QHBoxLayout>
@@ -40,6 +42,27 @@ constexpr char kDockId[] = "stagekit-countdown-dock";
 QString text(const char *key)
 {
 	return QString::fromUtf8(obs_module_text(key));
+}
+
+// The clock time a date-and-time timer ends at, as the Stream Deck key shows it: the system's
+// short time, without seconds. With `with_date`, a deadline on another day also says its date.
+// Empty for any other kind of timer.
+QString deadline_text(const TimerOptions &options, bool with_date)
+{
+	const auto deadline = QDateTime::fromMSecsSinceEpoch(options.deadline);
+	if (options.mode != TimerMode::Deadline || options.deadline <= 0 || !deadline.isValid())
+		return {};
+	const QLocale locale = QLocale::system();
+	QString format = locale.timeFormat(QLocale::ShortFormat);
+	// Some system formats, including the C locale, retain seconds.
+	// Keep the clock compact while preserving its 12/24-hour choice.
+	if (format.contains(QLatin1Char('s')))
+		format = format.contains(QStringLiteral("AP"), Qt::CaseInsensitive) ? QStringLiteral("h:mm AP")
+										    : QStringLiteral("HH:mm");
+	QString shown = locale.toString(deadline.time(), format);
+	if (with_date && deadline.date() != QDate::currentDate())
+		shown = locale.toString(deadline.date(), QLocale::ShortFormat) + QLatin1Char(' ') + shown;
+	return shown;
 }
 
 // OBS themes can override setFont() on a QLabel. Give this label its own
@@ -198,6 +221,12 @@ public:
 		status_->setObjectName("countdownStatus");
 		status_->setAlignment(Qt::AlignCenter);
 		layout->addWidget(status_);
+		deadline_ = new QLabel(this);
+		deadline_->setObjectName("countdownDeadline");
+		deadline_->setAlignment(Qt::AlignCenter);
+		deadline_->setToolTip(text("Countdown.Until.Tip"));
+		deadline_->hide();
+		layout->addWidget(deadline_);
 		auto *buttons = new QHBoxLayout;
 		auto button = [&](const char *name, const char *key, void (*command)(obs_source_t *)) {
 			auto *widget = new QPushButton(text(key), this);
@@ -389,6 +418,13 @@ public:
 		pause_->setEnabled(state == OBS_MEDIA_STATE_PLAYING);
 		OBSDataAutoRelease settings = obs_source_get_settings(source);
 		label_marks(marks_from_now(settings));
+		const QString until = deadline_text(TimerOptions::read(settings), true);
+		if (until.isEmpty()) {
+			deadline_->hide();
+		} else {
+			deadline_->setText(text("Countdown.Until").arg(until));
+			deadline_->show();
+		}
 	}
 
 private:
@@ -414,6 +450,7 @@ private:
 	QComboBox *targets_ = nullptr;
 	TimerReadout *readout_ = nullptr;
 	QLabel *status_ = nullptr;
+	QLabel *deadline_ = nullptr;
 	QPushButton *start_ = nullptr;
 	QPushButton *pause_ = nullptr;
 	QTimer refresh_;
@@ -523,19 +560,10 @@ void timer_vendor_control(obs_data_t *request, obs_data_t *response, void *)
 					  obs_source_media_get_state(timer) == OBS_MEDIA_STATE_PLAYING);
 			obs_data_set_string(response, "text", timer_readout(timer).toUtf8().constData());
 			const auto options = TimerOptions::read(settings);
-			const auto deadline = QDateTime::fromMSecsSinceEpoch(options.deadline);
-			if (options.mode == TimerMode::Deadline && options.deadline > 0 && deadline.isValid()) {
-				const QLocale locale = QLocale::system();
-				QString format = locale.timeFormat(QLocale::ShortFormat);
-				// Some system formats, including the C locale, retain seconds.
-				// Keep this key's clock compact while preserving its 12/24-hour choice.
-				if (format.contains(QLatin1Char('s')))
-					format = format.contains(QStringLiteral("AP"), Qt::CaseInsensitive)
-							 ? QStringLiteral("h:mm AP")
-							 : QStringLiteral("HH:mm");
+			const QString until = deadline_text(options, false);
+			if (!until.isEmpty()) {
 				obs_data_set_int(response, "deadlineMs", options.deadline);
-				obs_data_set_string(response, "deadlineTime",
-						    locale.toString(deadline.time(), format).toUtf8().constData());
+				obs_data_set_string(response, "deadlineTime", until.toUtf8().constData());
 			}
 		} else {
 			obs_data_set_string(response, "error",
