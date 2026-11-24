@@ -26,6 +26,7 @@
 #include <QListWidget>
 #include <QLayout>
 #include <QAction>
+#include <QElapsedTimer>
 #include <QMainWindow>
 #include <QDockWidget>
 #include <QMenu>
@@ -13784,6 +13785,73 @@ static void fit_tool_test(uint32_t w, uint32_t h)
 	obs_scene_release(scene);
 }
 
+// A dock added after the saved window layout came back (a service's browser
+// dock, a Quick Access dock) is put where it was saved once docks stop
+// coming. The owner: "my dock layout is not restoring at startup". Run alone:
+// STAGEKIT_TEST_ONLY_WINDOW_LATE.
+static void window_late_test()
+{
+	printf("\n[window layout: docks added late]\n");
+	QMainWindow window;
+	window.setObjectName("lateTestWindow");
+	auto *one = new QDockWidget("One", &window);
+	one->setObjectName("lateTestOne");
+	window.addDockWidget(Qt::LeftDockWidgetArea, one);
+	auto *late_dock = new QDockWidget("Late", &window);
+	late_dock->setObjectName("lateTestLate");
+	window.addDockWidget(Qt::RightDockWidgetArea, late_dock);
+	auto layout = [&](bool save) {
+		calldata_t cd = {};
+		calldata_set_ptr(&cd, "window", &window);
+		calldata_set_bool(&cd, "save", save);
+		proc_handler_call(obs_get_proc_handler(), "stagekit_window_layout", &cd);
+		const bool ok = calldata_bool(&cd, "ok");
+		calldata_free(&cd);
+		return ok;
+	};
+	auto late = [&](int ms) {
+		calldata_t cd = {};
+		calldata_set_ptr(&cd, "window", &window);
+		calldata_set_int(&cd, "ms", ms);
+		proc_handler_call(obs_get_proc_handler(), "stagekit_window_layout_late", &cd);
+		const int n = (int)calldata_int(&cd, "n");
+		calldata_free(&cd);
+		return n;
+	};
+	const bool saved = layout(true);
+	delete late_dock;
+	const bool back = layout(false);
+	late(5000);
+	auto *again = new QDockWidget("Late", &window);
+	again->setObjectName("lateTestLate");
+	window.addDockWidget(Qt::TopDockWidgetArea, again);
+	const bool placed_new = window.dockWidgetArea(again) == Qt::TopDockWidgetArea;
+	QElapsedTimer waited;
+	waited.start();
+	while (waited.elapsed() < 3000 && window.dockWidgetArea(again) != Qt::RightDockWidgetArea) {
+		QCoreApplication::processEvents();
+		os_sleep_ms(10);
+	}
+	const int restores = late(0);
+	CHECK(saved && back && placed_new && window.dockWidgetArea(again) == Qt::RightDockWidgetArea && restores >= 1 &&
+		      window.dockWidgetArea(one) == Qt::LeftDockWidgetArea,
+	      "a dock added after the layout came back is put where it was saved (restores %d, after %lld ms)",
+	      restores, (long long)waited.elapsed());
+	// A dock that was never saved stays where OBS put it, and nothing else moves.
+	auto *fresh = new QDockWidget("Fresh", &window);
+	fresh->setObjectName("lateTestFresh");
+	window.addDockWidget(Qt::BottomDockWidgetArea, fresh);
+	waited.restart();
+	while (waited.elapsed() < 800) {
+		QCoreApplication::processEvents();
+		os_sleep_ms(10);
+	}
+	CHECK(window.dockWidgetArea(fresh) == Qt::BottomDockWidgetArea &&
+		      window.dockWidgetArea(again) == Qt::RightDockWidgetArea &&
+		      window.dockWidgetArea(one) == Qt::LeftDockWidgetArea,
+	      "a new dock the layout does not know stays where it was put, and the others stay too");
+}
+
 // The dock's Bounds list and its Auto-fit switch, at both levels. Run
 // alone: STAGEKIT_TEST_ONLY_DOCK_BOUNDS.
 static void dock_bounds_test()
@@ -22110,6 +22178,14 @@ int main(int argc, char **argv)
 		return g_failures ? 1 : 0;
 	}
 
+	if (getenv("STAGEKIT_TEST_ONLY_WINDOW_LATE")) { // to try that section alone
+		window_late_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
+
 	if (getenv("STAGEKIT_TEST_ONLY_DOCK_BOUNDS")) { // to try that section alone
 		dock_bounds_test();
 		obs_shutdown();
@@ -22734,6 +22810,7 @@ int main(int argc, char **argv)
 	filter_remove_while_drawn_test(w, h);                        // (alone: STAGEKIT_TEST_ONLY_FILTER_REMOVE)
 	fit_tool_test(w, h);                                         // (alone: STAGEKIT_TEST_ONLY_FIT_TOOL)
 	dock_bounds_test();                                          // (alone: STAGEKIT_TEST_ONLY_DOCK_BOUNDS)
+	window_late_test();                                          // (alone: STAGEKIT_TEST_ONLY_WINDOW_LATE)
 
 	// ==== scene-filters:blur ====
 	// ------------------------------------------------------------ scene blur

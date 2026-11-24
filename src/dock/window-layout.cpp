@@ -15,6 +15,11 @@ the Free Software Foundation; either version 2 of the License, or
 #include <util/platform.h>
 
 #include <QAction>
+#include <QApplication>
+#include <QChildEvent>
+#include <QDockWidget>
+#include <QElapsedTimer>
+#include <QList>
 #include <QByteArray>
 #include <QMainWindow>
 #include <QMenu>
@@ -31,6 +36,16 @@ namespace {
 // How long after OBS says it has loaded the layout is brought back: docks
 // that plugins and browser docks add late are there by then.
 constexpr int kAfterLoadingMs = 1500;
+// How long after that a dock that appears late puts the layout back again.
+// Qt places a dock that is not there yet nowhere: the Stream Information
+// dock (added once the service has signed in), Quick Access, Views and
+// Timer docks could come up after the layout had been brought back, and OBS
+// put them where it puts a new dock. The owner: "my dock layout is not
+// restoring at startup. I have to manually restore".
+constexpr int kLateDocksMs = 30000;
+// A late dock is waited on this long for others before the layout comes back,
+// so a burst of docks is one restore.
+constexpr int kLateSettleMs = 400;
 
 std::string layout_file()
 {
@@ -128,6 +143,92 @@ bool window_layout_restore(QMainWindow *window)
 	return fitted;
 }
 
+namespace {
+
+// Watches the main window for docks added after the layout came back, for a
+// while, and brings the layout back once they stop coming. Never while a
+// mouse button is down: the user may be dragging a dock.
+class LateDocks : public QObject {
+public:
+	LateDocks(QMainWindow *window, int for_ms) : QObject(window), window_(window)
+	{
+		left_.start();
+		for_ms_ = for_ms;
+		settle_.setSingleShot(true);
+		settle_.setInterval(kLateSettleMs);
+		QObject::connect(&settle_, &QTimer::timeout, this, [this] { settled(); });
+		window->installEventFilter(this);
+	}
+	int restores() const { return restores_; }
+
+protected:
+	bool eventFilter(QObject *watched, QEvent *event) override
+	{
+		// A child is announced while it is still being made (not yet a
+		// QDockWidget), and polished once it is: look at it after this
+		// event, by then it is what it will be.
+		if (watched == window_ &&
+		    (event->type() == QEvent::ChildAdded || event->type() == QEvent::ChildPolished)) {
+			QPointer<QObject> child = static_cast<QChildEvent *>(event)->child();
+			QTimer::singleShot(0, this, [this, child] {
+				if (child && qobject_cast<QDockWidget *>(child.data()) &&
+				    !seen_.contains(child.data())) {
+					seen_.append(child.data());
+					settle_.start();
+				}
+			});
+		}
+		return QObject::eventFilter(watched, event);
+	}
+
+private:
+	void settled()
+	{
+		if (!window_)
+			return;
+		if (QApplication::mouseButtons() != Qt::NoButton) {
+			settle_.start();
+			return;
+		}
+		obs_log(LOG_INFO, "Window layout: a dock was added after the layout came back; bringing it back again");
+		if (window_layout_restore(window_))
+			++restores_;
+		if (left_.elapsed() > for_ms_)
+			deleteLater();
+	}
+
+	QPointer<QMainWindow> window_;
+	QTimer settle_;
+	QElapsedTimer left_;
+	qint64 for_ms_ = 0;
+	int restores_ = 0;
+	QList<QObject *> seen_; // (only compared, never used)
+};
+
+QPointer<LateDocks> g_late;
+
+} // namespace
+
+int window_layout_follow_late_docks(QMainWindow *window, int for_ms)
+{
+	if (!window)
+		return 0;
+	if (g_late)
+		delete g_late.data();
+	g_late = new LateDocks(window, for_ms);
+	QPointer<LateDocks> late = g_late;
+	QTimer::singleShot(for_ms, window, [late] {
+		if (late)
+			late->deleteLater();
+	});
+	return 1;
+}
+
+int window_layout_late_restores()
+{
+	return g_late ? g_late->restores() : -1;
+}
+
 void window_layout_menu(QMenu *menu)
 {
 	if (!menu)
@@ -182,8 +283,10 @@ void window_layout_event(enum obs_frontend_event event)
 		if (!window)
 			return;
 		QTimer::singleShot(kAfterLoadingMs, window, [window] {
-			if (window)
-				window_layout_restore(window);
+			if (!window)
+				return;
+			window_layout_restore(window);
+			window_layout_follow_late_docks(window, kLateDocksMs);
 		});
 	} else if (event == OBS_FRONTEND_EVENT_SCRIPTING_SHUTDOWN) {
 		// (Sent before OBS takes its window apart: the docks are still

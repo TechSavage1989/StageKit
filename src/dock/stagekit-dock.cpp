@@ -3079,6 +3079,18 @@ void register_dock()
 								    : window_layout_restore(window));
 		},
 		nullptr);
+	// For the tests: watch a window for late docks for `ms` (ms > 0), or
+	// read how often the watch brought the layout back (ms 0).
+	proc_handler_add(
+		obs_get_proc_handler(), "void stagekit_window_layout_late(in ptr window, in int ms, out int n)",
+		[](void *, calldata_t *cd) {
+			auto *window = static_cast<QMainWindow *>(calldata_ptr(cd, "window"));
+			const int ms = (int)calldata_int(cd, "ms");
+			calldata_set_int(cd, "n",
+					 ms > 0 ? window_layout_follow_late_docks(window, ms)
+						: window_layout_late_restores());
+		},
+		nullptr);
 	// For the tests: whether a layout saved comes back after this OBS event.
 	proc_handler_add(
 		obs_get_proc_handler(), "void stagekit_window_layout_after(in int event, out bool restores)",

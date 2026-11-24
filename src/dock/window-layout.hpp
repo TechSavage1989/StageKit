@@ -31,6 +31,13 @@ bool window_layout_save(QMainWindow *window);
 // this window.
 bool window_layout_restore(QMainWindow *window);
 bool window_layout_saved();
+// For `for_ms` after the layout came back, a dock added to `window` brings
+// the layout back again once docks stop coming (0.4 s), so docks that are
+// added late (a service's browser dock, Quick Access docks) are put where
+// they were saved. Replaces an earlier watch.
+int window_layout_follow_late_docks(QMainWindow *window, int for_ms);
+// How often the current watch brought the layout back (-1 without one).
+int window_layout_late_restores();
 
 // The entries for StageKit's menu under OBS's Tools: save, restore, and the
 // two tick boxes (restore when OBS starts, save when OBS closes).

@@ -23,6 +23,19 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Window layout: docks that come up late (betaNEXT)
+
+The owner: "my dock layout is not restoring at startup. I have to manually restore" (two screenshots:
+after start-up the Stream Information dock was narrow; after Restore it was wide). StageKit restored
+once, 1.5 s after `FINISHED_LOADING`; Qt cannot place a dock that does not exist yet, so a dock added
+later (a service's Stream Information browser dock, Quick Access, Views, Timer) kept OBS's default
+place. Now `LateDocks` (`src/dock/window-layout.cpp`) watches the main window for 30 s after each
+restore and restores again 0.4 s after docks stop coming, never with a mouse button down. Tested in
+`[window layout: docks added late]` (`STAGEKIT_TEST_ONLY_WINDOW_LATE`). **Not seen on Windows**, and
+the owner's log was not read: if it still fails, ask for the log and look for
+`Window layout:` lines (whether the late restore ran, and whether the bundled Dock Layouts port's
+default layout at 500 ms is also set).
+
 ## Beta258 CI validation update
 
 PR #280 implements 24-112 pixel sizing, an image-only square button option,
