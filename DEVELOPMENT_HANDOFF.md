@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Window layout: docks that come up late (betaNEXT)
+## Window layout: docks that come up late (beta259)
 
 The owner: "my dock layout is not restoring at startup. I have to manually restore" (two screenshots:
 after start-up the Stream Information dock was narrow; after Restore it was wide). StageKit restored

@@ -388,7 +388,7 @@ the Stream Deck plugin knows a kind's own name now and before (`isOwnName`, `OLD
 `streamdeck/src/kinds.ts`). The rest of this file names filters without the prefix.
 
 A sixth, stage 1 of the whole-plugin review (2026-11-19; the owner, of the proposal: "make it so with
-all your recommendations"; betaNEXT). Words only: values in `data/locale/en-US.ini` and the README; no
+all your recommendations"; beta259). Words only: values in `data/locale/en-US.ini` and the README; no
 key, id, setting or saved number changed, and **the rest of this file still uses the names from before
 it**. The Stream Deck plugin's share waits for the review's stage 4. Then and now: *item* in every
 label and tooltip: *source* (Item to move: Source to move; the dock's Item: Source; Items to show:
@@ -425,7 +425,7 @@ Stream Deck plugin and saved bindings go by, are unchanged, and the global arran
 "StageKit: <tool>" (the preview menu reads the text after the first ": "). A tooltip on a transition
 list starts with *As the scene sets*.
 
-Stage 2 of the review (betaNEXT; windows only, no key, id, default or saved number changed): every
+Stage 2 of the review (beta259; windows only, no key, id, default or saved number changed): every
 filter window ends with **one line of help** (`add_help_line` in `src/common/tooltip.hpp`, a word-wrapped
 info line named `help`; Scene Fit's is its first line, because its sources' groups are added under
 everything while the window is open), and a scene filter on a group starts with
@@ -646,7 +646,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   startup". **Why OBS lost their layout was not found**; this restores it afterwards whatever the
   cause. Only the docks' state is kept, not the main window's size and place, which OBS restores
   itself. **Docks that come up late are followed** (`LateDocks`, `window_layout_follow_late_docks`,
-  betaNEXT): Qt places a dock that does not exist yet nowhere, and the Stream Information dock
+  beta259): Qt places a dock that does not exist yet nowhere, and the Stream Information dock
   (added once a service has signed in), Quick Access, Views and Timer docks could come up after
   the 1.5 s restore, so OBS put them where it puts a new dock (the owner: "my dock layout is not
   restoring at startup. I have to manually restore"). For `kLateDocksMs` (30 s) after each
