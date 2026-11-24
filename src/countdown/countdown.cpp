@@ -393,7 +393,7 @@ public:
 		vendor_emit_timer_changed(source_);
 	}
 
-	bool command(const char *op, int mark)
+	bool command(const char *op, int mark, int from = kMarkFromTimer)
 	{
 		const bool cycle = std::strcmp(op, "cycle") == 0;
 		const bool hold = std::strcmp(op, "cycleToggle") == 0;
@@ -423,7 +423,9 @@ public:
 				mark = current == 15 ? 30 : current == 30 ? 45 : current == 45 ? 0 : 15;
 		}
 		if (mark != kSavedTimer) {
-			const auto next = next_timer_mark(QDateTime::currentDateTime(), mark);
+			const bool from_now = from == kMarkFromNow ||
+					      (from != kMarkFromClock && marks_from_now(settings));
+			const auto next = timer_mark_deadline(QDateTime::currentDateTime(), mark, from_now);
 			if (!next.isValid())
 				return false;
 			obs_data_set_int(settings, "clock_shortcut", mark);
@@ -783,7 +785,7 @@ void defaults(obs_data_t *s)
 
 } // namespace
 
-bool timer_command(obs_source_t *source, const char *operation, int mark)
+bool timer_command(obs_source_t *source, const char *operation, int mark, int from)
 {
 	if (!source || !operation || obs_source_removed(source) ||
 	    std::strcmp(obs_source_get_id(source), kCountdownId) != 0)
@@ -791,6 +793,7 @@ bool timer_command(obs_source_t *source, const char *operation, int mark)
 	calldata_t call{};
 	calldata_set_string(&call, "operation", operation);
 	calldata_set_int(&call, "mark", mark);
+	calldata_set_int(&call, "from", from);
 	proc_handler_call(obs_source_get_proc_handler(source), "timer_command", &call);
 	const bool success = calldata_bool(&call, "success");
 	calldata_free(&call);
@@ -844,12 +847,13 @@ void register_countdown()
 			timer);
 		proc_handler_add(
 			obs_source_get_proc_handler(source),
-			"void timer_command(in string operation, in int mark, out bool success)",
+			"void timer_command(in string operation, in int mark, in int from, out bool success)",
 			[](void *data, calldata_t *params) {
 				const char *op = calldata_string(params, "operation");
 				calldata_set_bool(params, "success",
 						  op && static_cast<Countdown *>(data)->command(
-								op, int(calldata_int(params, "mark"))));
+								op, int(calldata_int(params, "mark")),
+								int(calldata_int(params, "from"))));
 			},
 			timer);
 		return timer;

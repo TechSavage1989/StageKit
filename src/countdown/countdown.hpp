@@ -45,7 +45,8 @@ struct TimerOptions {
 	QString output_format = QStringLiteral("%time%");
 	int box_width = kTimerBoxWidth, box_height = kTimerBoxHeight;
 	int alignment = 0, dock_pixels = 0;
-	int units = 0; // zero selects the automatic format
+	int units = 0;     // zero selects the automatic format
+	int mark_from = 0; // MarkFrom, saved as mark_from
 	QString message;
 	QString scene;
 
@@ -73,12 +74,41 @@ inline QDateTime next_timer_mark(const QDateTime &now, int mark)
 		next = next.addSecs(60);
 	return next;
 }
+// Saved as mark_from, by number, append-only. An absent key reads as From now (the owner, 2026-11-24:
+// "the new behavior as default"), so every timer saved before counts its marks from the press.
+enum class MarkFrom { Now = 0, Clock = 1 };
+// The request's override for one command: 0 follows the timer, 1 from now, 2 clock time.
+inline constexpr int kMarkFromTimer = 0, kMarkFromNow = 1, kMarkFromClock = 2;
+inline bool marks_from_now(obs_data_t *settings)
+{
+	return obs_data_get_int(settings, "mark_from") != int(MarkFrom::Clock);
+}
+// Minutes from the press a mark stands for when marks count from now: 15, 30, 45 and 60 for the hour.
+inline int timer_mark_minutes(int mark)
+{
+	return mark == kNextQuarter ? 15 : mark == 0 ? 60 : mark;
+}
+inline QDateTime timer_mark_deadline(const QDateTime &now, int mark, bool from_now)
+{
+	if (!from_now)
+		return next_timer_mark(now, mark);
+	if (!now.isValid() || (mark != kNextQuarter && mark != 0 && mark != 15 && mark != 30 && mark != 45))
+		return {};
+	// Seconds are kept, so the countdown shows exactly 15:00 (and so on) at the press.
+	return now.addSecs(int64_t(timer_mark_minutes(mark)) * 60);
+}
+inline const char *timer_mark_label(size_t index, bool from_now)
+{
+	static constexpr const char *from_now_labels[]{"Countdown.In15", "Countdown.In15", "Countdown.In30",
+						       "Countdown.In45", "Countdown.In60"};
+	return from_now ? from_now_labels[index] : timer_mark_labels[index];
+}
 inline int saved_timer_mark(obs_data_t *settings)
 {
 	return obs_data_has_user_value(settings, "clock_shortcut") ? int(obs_data_get_int(settings, "clock_shortcut"))
 								   : kSavedTimer;
 }
-bool timer_command(obs_source_t *source, const char *operation, int mark = kSavedTimer);
+bool timer_command(obs_source_t *source, const char *operation, int mark = kSavedTimer, int from = kMarkFromTimer);
 void timer_vendor_list(obs_data_t *request, obs_data_t *response, void *);
 void timer_vendor_control(obs_data_t *request, obs_data_t *response, void *);
 

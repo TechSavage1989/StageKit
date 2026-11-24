@@ -9,6 +9,7 @@
 #include <QDial>
 #include <QMouseEvent>
 #include <cmath>
+#include <cstring>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QCheckBox>
@@ -248,16 +249,22 @@ inline void check(QStringList &issues, bool restart)
 		return vendor("TimerControl", request);
 	};
 	if (mark && set_start) {
+		// A timer without mark_from counts its marks from the press: the list says "In 45 min".
+		expect(until([&] { return mark->itemText(mark->findData(45)) == "In 45 min"; }),
+		       "the dock's shortcut list did not name minutes from now");
 		mark->setCurrentIndex(mark->findData(45));
+		const qint64 pressed = QDateTime::currentMSecsSinceEpoch();
 		set_start->click();
 		expect(until([&] { return status->text() == "Running"; }),
 		       "dock clock shortcut did not start the private timer");
 		OBSDataAutoRelease stopped = press("private", "toggle", 45);
-		expect(obs_data_get_bool(stopped, "success") && !obs_data_get_bool(stopped, "running"),
+		expect(obs_data_get_bool(stopped, "success") && !obs_data_get_bool(stopped, "running") &&
+			       std::strcmp(obs_data_get_string(stopped, "markFrom"), "now") == 0,
 		       "Stream Deck toggle did not stop the private timer");
 		const auto private_deadline = obs_data_get_int(stopped, "deadlineMs");
 		OBSDataAutoRelease private_state = press("private", "state", -2);
-		expect(private_deadline > 0 && QDateTime::fromMSecsSinceEpoch(private_deadline).time().minute() == 45 &&
+		expect(private_deadline >= pressed + 45 * 60000 &&
+			       private_deadline <= QDateTime::currentMSecsSinceEpoch() + 45 * 60000 &&
 			       deadline_matches(stopped, private_deadline) &&
 			       deadline_matches(private_state, private_deadline),
 		       "the private timer did not report its unchanged saved local target after stopping");
@@ -412,6 +419,12 @@ inline void check(QStringList &issues, bool restart)
 	}
 	blog(LOG_INFO, "StageKit timer controls: checking scene timer clock marks");
 	const char *id = obs_source_get_uuid(source);
+	{
+		// The scene timer is set to clock time, as every timer was before marks counted from now.
+		OBSDataAutoRelease clock_marks = obs_data_create();
+		obs_data_set_int(clock_marks, "mark_from", 1);
+		obs_source_update(source, clock_marks);
+	}
 	for (const int minute : {15, 30, 45, 0, 15}) {
 		OBSDataAutoRelease cycled = press(id, "cycle", -2);
 		OBSDataAutoRelease saved = obs_source_get_settings(source);

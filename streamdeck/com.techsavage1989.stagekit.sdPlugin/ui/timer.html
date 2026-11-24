@@ -33,7 +33,7 @@
 		<sdpi-item label="On press" title="Cycle advances the selected mark when tapped. Hold for 0.8 seconds to start or stop.">
 			<sdpi-select setting="timerPress" default="toggle">
 				<option value="toggle">Set and start / Stop</option>
-				<option value="cycle">Cycle :15 / :30 / :45 / :00</option>
+				<option value="cycle">Cycle 15 / 30 / 45 / 60</option>
 				<option value="setStart">Set and start</option>
 				<option value="set">Set only</option>
 				<option value="start">Start or resume</option>
@@ -41,17 +41,24 @@
 				<option value="stop">Stop and reset</option>
 			</sdpi-select>
 		</sdpi-item>
-		<sdpi-item label="Clock shortcut" title="Set the timer to the next occurrence on the OBS computer&#x27;s clock.">
+		<sdpi-item label="Clock shortcut" title="Set the timer 15, 30, 45 or 60 minutes from the press, or, on clock time, to the next :15, :30, :45 or :00 on the OBS computer&#x27;s clock.">
 			<sdpi-select setting="timerMark" default="next">
-				<option value="next">Next quarter hour</option>
-				<option value="15">Next :15</option>
-				<option value="30">Next :30</option>
-				<option value="45">Next :45</option>
-				<option value="hour">Next full hour (:00)</option>
+				<option value="next">Quarter hour: +15 min (or next ¼)</option>
+				<option value="15">+15 min (or :15)</option>
+				<option value="30">+30 min (or :30)</option>
+				<option value="45">+45 min (or :45)</option>
+				<option value="hour">+60 min (or :00)</option>
 				<option value="saved">Saved timer settings</option>
 			</sdpi-select>
 		</sdpi-item>
-<sdpi-item id="cycleHelp" label="Cycle" title="The key shows the selected mark and its deadline on the OBS computer. A tap changes the deadline. A hold starts or stops without advancing the mark."><span>Tap to select :15, :30, :45 or :00. The key shows the mark and the time it is set to. Hold for 0.8 seconds to start or stop.</span></sdpi-item>
+		<sdpi-item label="Count from" title="As the timer says follows the Countdown Timer&#x27;s Shortcut marks setting (from now as it comes). From now or Clock time decide for this key alone.">
+			<sdpi-select setting="timerFrom" default="timer">
+				<option value="timer">As the timer says</option>
+				<option value="now">From now (+15 ... +60 min)</option>
+				<option value="clock">Clock time (:15 ... :00)</option>
+			</sdpi-select>
+		</sdpi-item>
+<sdpi-item id="cycleHelp" label="Cycle" title="The key shows the selected mark and its deadline on the OBS computer. A tap changes the deadline. A hold starts or stops without advancing the mark."><span>Tap to select +15, +30, +45 or +60 min (:15, :30, :45 or :00 on clock time). The key shows the mark and the time it is set to. Hold for 0.8 seconds to start or stop.</span></sdpi-item>
 		<details open>
 			<summary>Image</summary>
 		<sdpi-item label="Image layout" title="Live adds a camera. Live + chat adds a camera and a chat column. Standalone removes the frame from the six game, window and capture-card layout images. Other images keep their usual drawing.">
@@ -244,10 +251,12 @@
             (() => {
                 const select = document.querySelector('[setting="timerPress"]');
                 const shortcut = document.querySelector('[setting="timerMark"]').closest('sdpi-item');
+                const from = document.querySelector('[setting="timerFrom"]').closest('sdpi-item');
                 const help = document.getElementById('cycleHelp');
                 const update = () => {
                     const op = select.value || 'toggle';
                     shortcut.style.display = ['set', 'toggle', 'setStart'].includes(op) ? '' : 'none';
+                    from.style.display = ['set', 'toggle', 'setStart', 'cycle'].includes(op) ? '' : 'none';
                     help.style.display = op === 'cycle' ? '' : 'none';
                 };
                 for (const e of ['change', 'valuechange']) select.addEventListener(e, update);

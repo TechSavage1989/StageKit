@@ -115,7 +115,7 @@ test("View presentation has shared type, layout, palette and custom-title defaul
 	const plugin = new URL("../com.techsavage1989.stagekit.sdPlugin/", import.meta.url);
 	const manifest = JSON.parse(readFileSync(new URL("manifest.json", plugin), "utf8"));
 	const action = manifest.Actions.find((entry: { UUID: string }) => entry.UUID.endsWith(".view"));
-	assert.equal(manifest.Version, "0.43.0.0");
+	assert.equal(manifest.Version, "0.44.0.0");
 	assert.equal(action.Name, "View");
 	assert.equal(action.DisableAutomaticStates, true);
 	assert.equal(action.States.length, 2);

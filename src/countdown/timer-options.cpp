@@ -80,6 +80,15 @@ public:
 		date_->setCalendarPopup(true);
 		date_->setDisplayFormat("ddd, MMM d, yyyy");
 		timing->addRow(label("Countdown.Date"), date_);
+		mark_from_ = new QComboBox(this);
+		mark_from_->setObjectName("timerMarkFrom");
+		// Listed by the saved number (append-only): 0 from now, 1 clock time.
+		for (const char *key : {"Countdown.MarkFromNow", "Countdown.MarkFromClock"})
+			mark_from_->addItem(label(key));
+		mark_from_->setCurrentIndex(std::clamp(o.mark_from, 0, 1));
+		mark_from_->setToolTip(label("Countdown.MarkFromHelp"));
+		mark_from_->setAccessibleName(label("Countdown.MarkFrom"));
+		timing->addRow(label("Countdown.MarkFrom"), mark_from_);
 		layout->addLayout(timing);
 
 		auto *body = new QHBoxLayout;
@@ -89,6 +98,9 @@ public:
 			exact_deadline_ = instant;
 			date_->setDate(instant.date());
 		};
+		clock_->set_marks_from_now(o.mark_from != int(MarkFrom::Clock));
+		connect(mark_from_, &QComboBox::currentIndexChanged, this,
+			[this](int index) { clock_->set_marks_from_now(index != int(MarkFrom::Clock)); });
 		body->addWidget(clock_, 0, Qt::AlignTop);
 		auto *options_layout = new QVBoxLayout;
 		body->addLayout(options_layout, 1);
@@ -282,6 +294,7 @@ public:
 		o.switch_scene = scene_on_->isChecked();
 		o.message = message_->text();
 		o.scene = scene_->currentData().toString();
+		o.mark_from = mark_from_->currentIndex();
 		return o;
 	}
 
@@ -296,7 +309,7 @@ private:
 	QHBoxLayout *dimensions_;
 	QButtonGroup *alignment_;
 	QSpinBox *width_, *height_, *dock_size_;
-	QComboBox *mode_, *scene_;
+	QComboBox *mode_, *scene_, *mark_from_;
 	QDateEdit *date_;
 	QDateTime exact_deadline_;
 	ClockPicker *clock_;
@@ -420,6 +433,7 @@ TimerOptions TimerOptions::read(obs_data_t *s)
 	if (obs_data_has_user_value(s, "output_format"))
 		o.output_format = QString::fromUtf8(obs_data_get_string(s, "output_format"));
 	o.units = int(obs_data_get_int(s, "display_units")) & 15;
+	o.mark_from = marks_from_now(s) ? int(MarkFrom::Now) : int(MarkFrom::Clock);
 	o.message = QString::fromUtf8(obs_data_get_string(s, "end_message"));
 	o.scene = QString::fromUtf8(obs_data_get_string(s, "end_scene_uuid"));
 	// Older collections enabled an action by giving it a message or scene.
@@ -454,6 +468,7 @@ void TimerOptions::write(obs_data_t *s) const
 	obs_data_set_bool(s, "use_end_message", use_message);
 	obs_data_set_bool(s, "switch_end_scene", switch_scene);
 	obs_data_set_int(s, "display_units", units);
+	obs_data_set_int(s, "mark_from", mark_from);
 	obs_data_set_string(s, "end_message", message.toUtf8().constData());
 	obs_data_set_string(s, "end_scene_uuid", scene.toUtf8().constData());
 }

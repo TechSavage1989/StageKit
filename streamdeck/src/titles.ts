@@ -84,10 +84,11 @@ const WAYS: Record<string, string> = {
 };
 
 /** The selected cycle mark and its saved deadline, formatted by the OBS computer. */
-export function timerCycleTitle(state?: Record<string, unknown>): string {
+export function timerCycleTitle(state?: Record<string, unknown>, fromNow = false): string {
 	const minute = state?.mark;
+	// From now, a mark is minutes after the press (the hour is 60), else a clock minute.
 	const mark = typeof minute === "number" && [15, 30, 45, 0].includes(minute)
-		? ":" + String(minute).padStart(2, "0") : "Cycle";
+		? fromNow ? `+${minute || 60}m` : ":" + String(minute).padStart(2, "0") : "Cycle";
 	// Older StageKit versions only return the mark. Never guess the hour using the deck's clock.
 	const deadline = typeof state?.deadlineTime === "string" ? state.deadlineTime.trim() : "";
 	return deadline ? `${mark}\n${deadline}` : mark;

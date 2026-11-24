@@ -143,3 +143,54 @@ test("cycle keys restore and refresh the selected timer's deadline through norma
 	await action.onDidReceiveSettings(event());
 	assert.equal(title, ":15", "other timer operations keep their existing titles");
 });
+
+test("marks count from the press unless the timer or the key chooses clock time; older plugins read as clock", async () => {
+	const { MARK_FROM, keyMarkFrom, marksFromNow, timerMarkTitle } = await import("../src/timer.ts");
+	assert.deepEqual(MARK_FROM.map(([value]) => value), ["timer", "now", "clock"], "the key's list is append-only");
+	const now = { running: false, mark: 15, markFrom: "now", deadlineTime: "9:15 PM" };
+	const clock = { running: false, mark: 15, markFrom: "clock", deadlineTime: "9:15 PM" };
+	const old = { running: false, mark: 15, deadlineTime: "9:15 PM" };
+	const titles: Record<string, [string, string]> = { next: ["+15m", "Next ¼"], "15": ["+15m", ":15"], "30": ["+30m", ":30"], "45": ["+45m", ":45"], hour: ["+60m", ":00"], saved: ["Timer", "Timer"] };
+	for (const [value, [fromNow, onClock]] of Object.entries(titles)) {
+		const key = { target: "private", timerPress: "set", timerMark: value };
+		assert.equal(timerMarkTitle(key, now), fromNow);
+		assert.equal(timerMarkTitle(key), fromNow, "no answer reads as the default, from now");
+		assert.equal(timerMarkTitle(key, clock), onClock);
+		assert.equal(timerMarkTitle(key, old), onClock, "a StageKit without markFrom sets clock marks");
+		assert.equal(timerMarkTitle({ ...key, timerFrom: "clock" }, now), onClock, "the key's own choice wins");
+		assert.equal(timerMarkTitle({ ...key, timerFrom: "now" }, clock), fromNow);
+		assert.equal(timerMarkTitle({ ...key, timerFrom: "now" }, old), onClock, "an older StageKit cannot count from now");
+	}
+	assert.equal(keyMarkFrom({ timerFrom: "timer" }), undefined);
+	assert.equal(marksFromNow({}, { mark: 0 }), false);
+	for (const [mark, fromNow, onClock] of [[15, "+15m", ":15"], [30, "+30m", ":30"], [45, "+45m", ":45"], [0, "+60m", ":00"]] as const) {
+		assert.equal(timerCycleTitle({ mark, deadlineTime: "9:45 PM" }, true), `${fromNow}\n9:45 PM`);
+		assert.equal(timerCycleTitle({ mark }, true), fromNow);
+		assert.equal(timerCycleTitle({ mark, deadlineTime: "9:45 PM" }, false), `${onClock}\n9:45 PM`);
+	}
+	assert.equal(timerCycleTitle({ mark: -2 }, true), "Cycle");
+	assert.ok(!MARKS.some((m) => /^Next :/.test(m.label)), "no list label names only the clock");
+	assert.ok(!OPERATIONS.some(([, label]) => label.includes(":15")), "the cycle's label does not name only the clock");
+});
+
+test("a key's Count from is sent with set and cycle presses only when it is not the timer's own", () => {
+	assert.deepEqual(timerPress({ target: "private", timerPress: "set", timerMark: "30", timerFrom: "clock" }), { timer: "private", operation: "set", mark: 30, markFrom: "clock" });
+	assert.deepEqual(timerPress({ target: "private", timerPress: "cycle", timerFrom: "now" }, true), { timer: "private", operation: "cycleToggle", mark: -2, markFrom: "now" });
+	assert.deepEqual(timerPress({ target: "private", timerPress: "toggle", timerMark: "hour", timerFrom: "timer" }), { timer: "private", operation: "toggle", mark: 0 });
+	assert.deepEqual(timerPress({ target: "private", timerPress: "stop", timerFrom: "now" }), { timer: "private", operation: "stop", mark: -2 });
+});
+
+test("cycle keys title a from-now timer's marks as minutes from the press", async (t) => {
+	const { obs } = await import("../src/obs.ts");
+	const { TimerKey } = await import("../src/actions/timer.ts");
+	const settings = { target: "private", timerPress: "cycle", palette: "mono", layout: "auto" };
+	let title = "";
+	t.mock.method(obs, "stageKit", async () => ({ running: false, mark: 0, markFrom: "now", deadlineTime: "10:42 PM" }));
+	const key = {
+		id: "from-now-test", isKey: () => true, getSettings: async () => settings,
+		setImage: async () => {}, setState: async () => {}, setTitle: async (value: string) => { title = value; },
+	};
+	const action = new TimerKey() as unknown as { onWillAppear(e: unknown): Promise<void> };
+	await action.onWillAppear({ action: key, payload: { settings } });
+	assert.equal(title, "+60m\n10:42 PM");
+});

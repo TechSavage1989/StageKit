@@ -140,6 +140,95 @@ inline void clock_shortcuts(QStringList &issues)
 	}
 }
 
+// Quick marks count from the press unless the timer chooses clock time (mark_from 1); a request can override.
+inline void mark_origins(QStringList &issues)
+{
+	auto fail = [&](bool ok, const QString &msg) {
+		if (!ok)
+			issues.append(QStringLiteral("Countdown marks: ") + msg);
+	};
+	{
+		OBSDataAutoRelease empty = obs_data_create();
+		fail(stagekit::marks_from_now(empty),
+		     QStringLiteral("a timer saved without mark_from did not read as from now"));
+		const QDateTime at(QDate(2026, 11, 21), QTime(23, 38, 12, 777), QTimeZone(0));
+		for (const auto &pair : {std::pair{-1, 15}, {15, 15}, {30, 30}, {45, 45}, {0, 60}})
+			fail(stagekit::timer_mark_deadline(at, pair.first, true) == at.addSecs(pair.second * 60),
+			     QStringLiteral("from-now mark %1 is not now + %2 min").arg(pair.first).arg(pair.second));
+		fail(stagekit::timer_mark_deadline(at, 30, false) == stagekit::next_timer_mark(at, 30) &&
+			     !stagekit::timer_mark_deadline(at, 14, true).isValid(),
+		     QStringLiteral("clock marks or an unknown mark changed"));
+	}
+	OBSDataAutoRelease config = obs_data_create();
+	obs_data_set_int(config, "minutes", 2);
+	OBSSourceAutoRelease timer = obs_source_create("stagekit_countdown", "Mark origin fixture", config, nullptr);
+	if (!timer) {
+		fail(false, QStringLiteral("source unavailable"));
+		return;
+	}
+	auto command = [&](const char *op, int mark, int from = stagekit::kMarkFromTimer) {
+		calldata_t call{};
+		calldata_set_string(&call, "operation", op);
+		calldata_set_int(&call, "mark", mark);
+		calldata_set_int(&call, "from", from);
+		const qint64 before = QDateTime::currentMSecsSinceEpoch();
+		proc_handler_call(obs_source_get_proc_handler(timer), "timer_command", &call);
+		const qint64 after = QDateTime::currentMSecsSinceEpoch();
+		const bool ok = calldata_bool(&call, "success");
+		calldata_free(&call);
+		OBSDataAutoRelease saved = obs_source_get_settings(timer);
+		struct Result {
+			bool ok;
+			qint64 before, after, deadline;
+			int mark;
+		};
+		return Result{ok, before, after, obs_data_get_int(saved, "deadline_ms"),
+			      int(obs_data_get_int(saved, "clock_shortcut"))};
+	};
+	auto from_now = [](const auto &r, int minutes) {
+		const qint64 span = qint64(minutes) * 60000;
+		return r.ok && r.deadline >= r.before + span && r.deadline <= r.after + span;
+	};
+	auto on_clock = [](const auto &r, int minute) {
+		const auto at = QDateTime::fromMSecsSinceEpoch(r.deadline);
+		return r.ok && at.time().minute() == minute && at.time().second() == 0 && at.time().msec() == 0 &&
+		       r.deadline > r.before && r.deadline <= r.after + 3600000;
+	};
+	// Saved without the key: from now, for every mark and for the cycle.
+	for (const auto &pair : {std::pair{-1, 15}, {15, 15}, {30, 30}, {45, 45}, {0, 60}})
+		fail(from_now(command("set", pair.first), pair.second),
+		     QStringLiteral("default mark %1 did not set now + %2 min").arg(pair.first).arg(pair.second));
+	command("set", 0);
+	for (const auto &pair : {std::pair{15, 15}, {30, 30}, {45, 45}, {0, 60}, {15, 15}}) {
+		const auto r = command("cycle", stagekit::kSavedTimer);
+		fail(from_now(r, pair.second) && r.mark == pair.first,
+		     QStringLiteral("from-now cycle step %1 did not set now + %2 min").arg(pair.first).arg(pair.second));
+	}
+	const auto held = command("cycleToggle", stagekit::kSavedTimer);
+	fail(from_now(held, 15) && held.mark == 15 && obs_source_media_get_state(timer) == OBS_MEDIA_STATE_PLAYING,
+	     QStringLiteral("holding the cycle did not start 15 min from now"));
+	command("stop", stagekit::kSavedTimer);
+	fail(from_now(command("set", 30, stagekit::kMarkFromNow), 30) &&
+		     on_clock(command("set", 45, stagekit::kMarkFromClock), 45),
+	     QStringLiteral("a request's override was not honoured on a from-now timer"));
+	// Clock time, as every timer behaved before.
+	obs_data_set_int(config, "mark_from", int(stagekit::MarkFrom::Clock));
+	obs_source_update(timer, config);
+	OBSDataAutoRelease clock_settings = obs_source_get_settings(timer);
+	fail(!stagekit::marks_from_now(clock_settings), QStringLiteral("mark_from 1 did not read as clock time"));
+	for (const int mark : {15, 30, 45, 0})
+		fail(on_clock(command("set", mark), mark), QStringLiteral("clock mark :%1 changed").arg(mark));
+	command("set", 0);
+	for (const int mark : {15, 30, 45, 0})
+		fail(on_clock(command("cycle", stagekit::kSavedTimer), mark),
+		     QStringLiteral("clock cycle step :%1 changed").arg(mark));
+	const auto quarter = command("set", stagekit::kNextQuarter);
+	fail(quarter.ok && QDateTime::fromMSecsSinceEpoch(quarter.deadline).time().minute() % 15 == 0,
+	     QStringLiteral("the clock's next quarter hour changed"));
+	fail(from_now(command("set", 45, stagekit::kMarkFromNow), 45),
+	     QStringLiteral("a request's override was not honoured on a clock timer"));
+}
+
 inline void modes(QStringList &issues)
 {
 	auto fail = [&](bool ok, const char *msg) {
@@ -1116,6 +1205,7 @@ inline void check(QStringList &issues, const QString &sheet_path = {})
 	obs_source_dec_showing(source);
 	obs_source_release(source);
 	clock_shortcuts(issues);
+	mark_origins(issues);
 	modes(issues);
 	fitted_states(issues, sheet_path);
 	steady_ticks(issues, sheet_path);
