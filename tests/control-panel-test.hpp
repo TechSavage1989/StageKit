@@ -717,7 +717,7 @@ inline QTreeWidgetItem *section_heading(QWidget *panel, const QString &name)
 }
 
 inline bool check_saved_panel(QWidget *panel, const char *layout = "list", bool navigate = true,
-			      bool require_collapsed = false)
+			      bool require_collapsed = false, bool image_only = false)
 {
 	if (!click(panel, "viewsPanelEdit") || !until([&] { return dialog("viewsPanelEditor"); }))
 		return false;
@@ -726,12 +726,13 @@ inline bool check_saved_panel(QWidget *panel, const char *layout = "list", bool 
 	auto *show_scene = editor->findChild<QCheckBox *>("viewsPanelSwitchScene");
 	auto *sections = editor->findChild<QComboBox *>("viewsPanelSectionChoice");
 	auto *size = panel->findChild<QSlider *>("viewsPanelButtonSize");
+	auto *only = panel->findChild<QCheckBox *>("viewsPanelImageOnly");
 	const auto names = saved_labels();
 	bool valid = pins && pins->count() == names.size() && layout_is(panel, layout) && show_scene &&
-		     show_scene->isChecked() == navigate && size && size->value() == 64 && sections &&
-		     sections->findData("Quick choices") >= 0 && sections->findData("Visibility") >= 0 &&
-		     sections->findData("Spare shortcuts") >= 0 && sections->findData("Discarded section") < 0 &&
-		     sections->findData("Uncommitted section") < 0;
+		     show_scene->isChecked() == navigate && size && size->value() == 64 && only &&
+		     only->isChecked() == image_only && sections && sections->findData("Quick choices") >= 0 &&
+		     sections->findData("Visibility") >= 0 && sections->findData("Spare shortcuts") >= 0 &&
+		     sections->findData("Discarded section") < 0 && sections->findData("Uncommitted section") < 0;
 	if (require_collapsed) {
 		const auto *heading = section_heading(panel, "Visibility");
 		if (!heading || heading->isExpanded()) {
@@ -869,6 +870,10 @@ inline void check_collection_isolation(QWidget *panel, QStringList &issues)
 		}
 	}
 	obs_frontend_save();
+	// Give OBS time to finish writing the second collection's intentionally
+	// empty panel before opening another collection. The native catalog is
+	// updated asynchronously while its new source filters are discovered.
+	settle(200);
 	obs_frontend_set_current_scene_collection(original.toUtf8().constData());
 	expect(until([&] { return collection_name() == original && panel_ready(panel) && button(panel, {}); }) &&
 		       check_saved_panel(panel, "buttons", false, true),
@@ -1487,10 +1492,10 @@ inline void check(QStringList &issues, bool restart)
 	expect(board && board->isVisible(), "operator panel was not visible");
 	if (restart) {
 		expect(until([&] { return panel_ready(panel) && button(panel, {}); }) &&
-			       check_saved_panel(panel, "buttons", false, true),
+			       check_saved_panel(panel, "buttons", false, true, true),
 		       "saved pins, target identities, labels, sections or order did not survive restart");
 		expect(select_layout(panel, "list") && set_show_scene(panel, true) &&
-			       check_saved_panel(panel, "list", true, true),
+			       check_saved_panel(panel, "list", true, true, true),
 		       "restored layout or scene navigation could not be changed after OBS restart");
 		if (issues.size() == before)
 			blog(LOG_INFO,
@@ -1522,7 +1527,7 @@ inline void check(QStringList &issues, bool restart)
 		obs_frontend_set_preview_program_mode(false);
 		auto *size = panel->findChild<QSlider *>("viewsPanelButtonSize");
 		expect(layout_is(panel, "list") && control_list(panel) && control_list(panel)->isVisible() && size &&
-			       size->minimum() == 40 && size->maximum() == 112 && size->value() == 48,
+			       size->minimum() == 24 && size->maximum() == 112 && size->value() == 48,
 		       "new panel did not default to a compact list with the expected button-size range");
 		auto *scenes = panel->findChild<QComboBox *>("viewsScene");
 		auto *controllers = panel->findChild<QComboBox *>("viewsController");
@@ -1744,12 +1749,29 @@ inline void check(QStringList &issues, bool restart)
 		obs_data_set_string(legacy_settings, "mode|detail|go_to", "");
 		obs_source_update(legacy, legacy_settings);
 		obs_data_set_string(camera_settings, "mode|detail|go_to", "Views demo second layout");
-		expect(configure(id, config), "could not configure a controller mode destination");
+		expect(configure(id, config) && until([&] {
+			       OBSDataAutoRelease state = get(id);
+			       OBSDataAutoRelease definition = obs_data_get_obj(state, "config");
+			       OBSDataAutoRelease selected = row(definition, "groups", "camera");
+			       OBSDataAutoRelease settings = obs_data_get_obj(selected, "settings");
+			       return std::strcmp(obs_data_get_string(settings, "mode|detail|go_to"),
+						  "Views demo second layout") == 0;
+		       }),
+		       "could not apply the controller mode destination before selecting it");
+		settle(150);
 		obs_frontend_set_current_scene(first_scene);
 		expect(press_control(panel, second) && until([&] { return scene_is(destination_scene); }),
 		       "a controller mode's explicit destination did not override its parent scene");
 		obs_data_set_string(camera_settings, "mode|detail|go_to", "");
-		expect(configure(id, config), "could not restore the controller mode's parent-scene fallback");
+		expect(configure(id, config) && until([&] {
+			       OBSDataAutoRelease state = get(id);
+			       OBSDataAutoRelease definition = obs_data_get_obj(state, "config");
+			       OBSDataAutoRelease selected = row(definition, "groups", "camera");
+			       OBSDataAutoRelease settings = obs_data_get_obj(selected, "settings");
+			       return std::strlen(obs_data_get_string(settings, "mode|detail|go_to")) == 0;
+		       }),
+		       "could not restore the controller mode's parent-scene fallback");
+		settle(150);
 
 		expect(set_show_scene(panel, false), "could not disable automatic panel scene navigation");
 		obs_frontend_set_current_scene(first_scene);
@@ -2096,7 +2118,7 @@ inline void check(QStringList &issues, bool restart)
 				       (i >= 2 || !pin_button->icon().isNull()),
 			       "Buttons did not retain the list's names, sections, targets and embedded icons");
 		}
-		expect(slider_key(size, Qt::Key_Home) && size->value() == 40,
+		expect(slider_key(size, Qt::Key_Home) && size->value() == 24,
 		       "the live size slider did not reach its compact button size");
 		check_geometry(panel, issues, "a compact control button extended outside its section");
 		const QSize small_button = retained_button ? retained_button->size() : QSize();
@@ -2107,10 +2129,48 @@ inline void check(QStringList &issues, bool restart)
 		       "increasing button size did not change both height and grid density live");
 		check_geometry(panel, issues, "a large control button extended outside its section");
 		expect(slider_key(size, Qt::Key_Home), "could not reset the button-size slider");
-		for (int i = 0; i < 6; ++i)
+		for (int i = 0; i < 10; ++i)
 			expect(slider_key(size, Qt::Key_Right), "could not adjust the button-size slider by keyboard");
 		expect(size->value() == 64, "the button-size slider did not retain its chosen intermediate size");
 		check_geometry(panel, issues, "an icon button extended outside its section at the normal dock width");
+		auto *image_only = panel->findChild<QCheckBox *>("viewsPanelImageOnly");
+		expect(image_only && !image_only->isChecked(), "existing panels did not default to labeled buttons");
+		if (image_only)
+			image_only->setChecked(true);
+		auto square_at = [&](int pixels, int min_icon) {
+			auto *key = button_id(panel, first);
+			auto *no_image = button_id(panel, ids[8]);
+			auto *scroll = panel->findChild<QScrollArea *>("viewsPanelScroll");
+			return image_only && image_only->isChecked() && key && no_image && scroll &&
+			       key->width() == pixels && key->height() == pixels &&
+			       key->sizeHint() == QSize(pixels, pixels) && key->iconSize().width() >= min_icon &&
+			       no_image->size() == QSize(pixels, pixels) && !no_image->toolTip().isEmpty() &&
+			       no_image->toolTip().contains(no_image->text()) &&
+			       !scroll->horizontalScrollBar()->isVisible();
+		};
+		expect(until([&] { return square_at(64, 54); }),
+		       "Image only did not produce square tiles with large images and usable tooltips");
+		expect(slider_key(size, Qt::Key_Home) && size->value() == 24 &&
+			       until([&] { return square_at(24, 20); }),
+		       "compact image-only buttons did not reach list-row scale with visible artwork");
+		check_geometry(panel, issues, "a compact square control extended outside its section");
+		expect(press_control(panel, second) &&
+			       until([&] { return current(id, "camera") == "detail" && checked(panel, second); }),
+		       "an image-only button did not dispatch its native controller action");
+		expect(slider_key(size, Qt::Key_End) && until([&] { return square_at(112, 96); }),
+		       "a large image-only button did not scale its artwork with the tile");
+		check_geometry(panel, issues, "a large square control extended outside its section");
+		expect(slider_key(size, Qt::Key_Home), "could not return to compact image-only size");
+		for (int i = 0; i < 10; ++i)
+			expect(slider_key(size, Qt::Key_Right), "could not restore image-only button size");
+		expect(size->value() == 64 && select_layout(panel, "list") && select_layout(panel, "buttons") &&
+			       until([&] { return square_at(64, 54); }),
+		       "switching presentations lost image-only mode or square image sizing");
+		if (image_only)
+			image_only->setChecked(false);
+		expect(until([&] { return image_only && !image_only->isChecked(); }) &&
+			       check_saved_panel(panel, "buttons"),
+		       "turning Image only off did not restore existing labeled-button settings");
 		obs_frontend_set_current_scene(first_scene);
 		expect(press_control(panel, second) && until([&] { return scene_is(scene); }),
 		       "an already-active mode button did not show its scene in Buttons layout");
@@ -2286,7 +2346,7 @@ inline void check(QStringList &issues, bool restart)
 			       "the compact list did not fit the selected controls at the guide capture size");
 			expect(panel->grab().save(directory.filePath("stagekit-controls-list.png")),
 			       "could not capture the real compact control list");
-			expect(select_layout(panel, "buttons") && slider_key(size, Qt::Key_Home) && size->value() == 40,
+			expect(select_layout(panel, "buttons") && slider_key(size, Qt::Key_Home) && size->value() == 24,
 			       "could not show compact icon buttons for the guide capture");
 			check_geometry(panel, issues,
 				       "a control button was clipped by its section after resizing the dock");
@@ -2298,6 +2358,19 @@ inline void check(QStringList &issues, bool restart)
 			QCoreApplication::processEvents();
 			expect(panel->grab().save(directory.filePath("stagekit-controls.png")),
 			       "could not capture the real icon button panel");
+			if (auto *only = panel->findChild<QCheckBox *>("viewsPanelImageOnly")) {
+				only->setChecked(true);
+				for (int i = 0; i < 10; ++i)
+					expect(slider_key(size, Qt::Key_Right),
+					       "could not enlarge image-only tiles for the guide capture");
+				expect(size->value() == 64, "the image-only guide capture was not at 64 pixels");
+				QCoreApplication::processEvents();
+				expect(panel->grab().save(directory.filePath("stagekit-controls-image-only.png")),
+				       "could not capture the real image-only panel");
+				only->setChecked(false);
+				expect(slider_key(size, Qt::Key_Home),
+				       "could not restore the button size after the image-only capture");
+			}
 			expect(click(panel, "viewsPanelEdit") && until([&] { return dialog("viewsPanelEditor"); }),
 			       "could not open the panel editor for capture");
 			editor = dialog("viewsPanelEditor");
@@ -2327,7 +2400,7 @@ inline void check(QStringList &issues, bool restart)
 				editor->reject();
 				until([&] { return !editor || !editor->isVisible(); });
 			}
-			for (int i = 0; i < 6; ++i)
+			for (int i = 0; i < 10; ++i)
 				expect(slider_key(size, Qt::Key_Right),
 				       "could not restore the saved size after capture");
 			expect(size->value() == 64, "the capture changed the saved intermediate button size");
@@ -2348,6 +2421,16 @@ inline void check(QStringList &issues, bool restart)
 		obs_frontend_save();
 	}
 	check_collection_isolation(panel, issues);
+	// Persist the nondefault image-only presentation for the real OBS
+	// restart probe. The ordinary labeled captures above retain their look.
+	auto *image_only = panel->findChild<QCheckBox *>("viewsPanelImageOnly");
+	expect(select_layout(panel, "buttons") && image_only,
+	       "the image-only setting was not available after switching collections");
+	if (image_only)
+		image_only->setChecked(true);
+	expect(check_saved_panel(panel, "buttons", false, true, true),
+	       "could not preserve the image-only setting for the restart test");
+	obs_frontend_save();
 	if (issues.size() == before)
 		blog(LOG_INFO,
 		     "[StageKit controls test] PASS: compact list and icon buttons, native mode/view navigation, direct scene selection, Studio Preview, section presets and reusable custom sections, source-based visibility names, grouped bulk editing, custom and built-in icon library images, palettes and size, native visibility, rename/missing identity, bulk import and scene collection isolation");

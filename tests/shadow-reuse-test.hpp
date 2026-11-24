@@ -439,7 +439,14 @@ inline bool check_non_consumers(Fixture &fixture, QStringList &issues)
 	Sample whole;
 	const bool whole_ready = until([&] {
 		whole = sample(fixture);
-		return whole.work[0].preparations == 1 && whole.work[1].preparations == 1;
+		const auto &a = whole.work[0], &b = whole.work[1];
+		// OBS accepts the blur-area edit before its native render path has
+		// necessarily retired the preceding per-source reuse state.
+		// Do not validate a transitional sample as a whole-scene frame.
+		return whole.same_frame && whole.repeated_equal && whole.repeated_idle &&
+		       whole.pixels[0] == whole.pixels[1] && visible(whole.pixels[0]) && a.preparations == 1 &&
+		       b.preparations == 1 && a.reuses == 0 && b.reuses == 0 && a.passes > 0 && a.passes == b.passes &&
+		       a.retentions == 0 && b.retentions == 0 && a.eligibility_checks == 0 && b.eligibility_checks == 0;
 	});
 	check_no_consumer("whole-scene Scene Blur", whole, issues);
 	area(1);
