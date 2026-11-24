@@ -1625,7 +1625,7 @@ In Stream Deck, add **StageKit > Countdown Timer**, select the private timer or 
 
 Update both the StageKit OBS plugin and its Stream Deck companion to show the deadline on cycle keys. An older OBS plugin still shows the selected mark, and sets clock marks whatever **Count from** says, so its keys show **:15** and so on. Leave Stream Deck's **Title** field blank to use the automatic two-line label; a title you enter takes its place.
 
-Use **Start**, **Pause** and **Reset** in the dock. **Start** also resumes a paused timer. The source properties offer the same controls. **Reset** leaves the timer ready. For a scene source, **Restart when the scene goes live** starts it when the scene enters Program.
+Use **Start**, **Pause** and **Reset** in the dock. For a timer set to a date and time, the dock shows the time it counts down to under its status, such as **Until 9:45 PM** (with the date when it is not today); the timer on screen does not show it. **Start** also resumes a paused timer. The source properties offer the same controls. **Reset** leaves the timer ready. For a scene source, **Restart when the scene goes live** starts it when the scene enters Program.
 
 **Time display** previews the number layout. Leave **Automatic format** on or select any combination of **Days**, **Hours**, **Minutes** and **Seconds**. Selecting minutes and seconds, for example, shows 90 minutes as **90:00**. The source properties also control the overlay font, size and color.
 
