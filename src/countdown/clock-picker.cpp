@@ -220,17 +220,13 @@ ClockPicker::ClockPicker(int64_t duration_ms, QTime target, QWidget *parent) : Q
 	marks_layout->setContentsMargins(0, 0, 0, 0);
 	for (size_t i = 0; i < std::size(timer_marks); ++i) {
 		const int mark = timer_marks[i];
-		auto *b = new QPushButton(mark == kNextQuarter
-						  ? label("Countdown.NextQuarterShort")
-						  : QStringLiteral(":%1").arg(mark, 2, 10, QLatin1Char('0')),
-					  marks_row);
+		auto *b = new QPushButton(marks_row);
 		b->setObjectName(QStringLiteral("clockMark%1").arg(mark));
-		b->setToolTip(label(timer_mark_labels[i]));
-		b->setAccessibleName(b->toolTip());
 		b->setAutoDefault(false);
 		marks_layout->addWidget(b);
+		marks_[i] = b;
 		connect(b, &QPushButton::clicked, this, [this, mark] {
-			const auto next = next_timer_mark(QDateTime::currentDateTime(), mark);
+			const auto next = timer_mark_deadline(QDateTime::currentDateTime(), mark, from_now_);
 			target_ = next.time();
 			if (deadline_picked)
 				deadline_picked(next);
@@ -239,6 +235,7 @@ ClockPicker::ClockPicker(int64_t duration_ms, QTime target, QWidget *parent) : Q
 	}
 	layout->addWidget(marks_row);
 	marks_row_ = marks_row;
+	set_marks_from_now(from_now_);
 
 	duration_row_ = new QWidget(this);
 	auto *duration_layout = new QVBoxLayout(duration_row_);
@@ -279,6 +276,26 @@ void ClockPicker::set_wall_time(bool wall)
 		return;
 	wall_ = wall;
 	select_unit(wall ? 0 : 1);
+}
+
+void ClockPicker::set_marks_from_now(bool from_now)
+{
+	from_now_ = from_now;
+	for (size_t i = 0; i < marks_.size(); ++i) {
+		auto *b = marks_[i];
+		if (!b)
+			continue;
+		const int mark = timer_marks[i];
+		if (from_now)
+			b->setText(QStringLiteral("+%1").arg(timer_mark_minutes(mark)));
+		else
+			b->setText(mark == kNextQuarter ? label("Countdown.NextQuarterShort")
+							: QStringLiteral(":%1").arg(mark, 2, 10, QLatin1Char('0')));
+		b->setToolTip(label(timer_mark_label(i, from_now)));
+		b->setAccessibleName(b->toolTip());
+		// From now, the quarter-hour mark is the same as +15.
+		b->setVisible(!(from_now && mark == kNextQuarter));
+	}
 }
 
 void ClockPicker::select_unit(int unit)

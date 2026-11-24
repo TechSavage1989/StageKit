@@ -23,6 +23,25 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Countdown Timer: marks count from the press (betaNEXT)
+
+The owner: "the countdown timer quarter hour key shouldn't be specific to :15/:30/:45 of the hour, but
+rather the next 15/30/45 minutes. or add a configuration for that", then "the new behavior as default".
+Each timer has `mark_from` (absent or 0 From now, 1 Clock time; `marks_from_now`,
+`timer_mark_deadline` in `src/countdown/countdown.hpp`), set in Timer settings as *Shortcut marks*.
+From now, a mark is now + 15/30/45/60 minutes with seconds kept (the quarter-hour mark is 15, the hour
+60), and the cycle steps the same; `clock_shortcut` keeps its numbers. Saved timers have no key and so
+count from now. The dock list and picker follow the timer (*In 15 min* / *+15* vs *Next :15* / *:15*;
+the quarter-hour entry hidden from now). TimerControl takes `markFrom` ("now"/"clock") for one request
+(the proc's new `from` argument) and TimerControl and ListTimers report the timer's `markFrom`.
+Companion 0.44.0.0: the key's *Count from* (`timerFrom`: timer, now, clock), titles +15m to +60m or
+:15 to :00, neutral list labels (*+15 min (or :15)*, *Cycle 15 / 30 / 45 / 60*); a response without
+`markFrom` (an older plugin) reads as clock. Tested in the native countdown fixture
+(`mark_origins` in `tests/countdown-test.hpp`, run by `stagekit-replacement-test`) and
+`streamdeck/tests/timer.test.ts`. The frontend fixture (`tests/countdown-dock-test.hpp`) was updated
+(the private timer from now; the scene timer set to clock time before its clock checks) but **not run
+here**; nor was the editor's new combo or the dock list seen on Windows.
+
 ## Window layout: docks that come up late (beta259)
 
 The owner: "my dock layout is not restoring at startup. I have to manually restore" (two screenshots:

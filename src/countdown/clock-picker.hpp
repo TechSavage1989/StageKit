@@ -24,6 +24,8 @@ class ClockPicker : public QWidget {
 public:
 	ClockPicker(int64_t duration_ms, QTime target, QWidget *parent);
 	void set_wall_time(bool wall);
+	// Marks count from the press (+15 ... +60 min) or name the clock (:15 ... :00).
+	void set_marks_from_now(bool from_now);
 	int64_t duration_ms() const;
 	QTime local_time() const { return target_; }
 	std::function<void()> changed;
@@ -45,6 +47,8 @@ private:
 	int unit_ = 1;
 	QWidget *marks_row_ = nullptr;
 	bool wall_ = false;
+	bool from_now_ = true;
+	std::array<QPushButton *, 5> marks_{};
 };
 
 } // namespace stagekit

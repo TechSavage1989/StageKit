@@ -240,7 +240,7 @@ test("all three Auto Frame commands have distinct images, badges, editable art a
 
 test("only the two saving inspectors offer Remember by with Window name as the default", () => {
 	const manifest = JSON.parse(readFileSync(new URL("manifest.json", plugin), "utf8"));
-	assert.equal(manifest.Version, "0.43.0.0");
+	assert.equal(manifest.Version, "0.44.0.0");
 	for (const feature of AUTO_FRAME_COMMANDS) {
 		const page = readFileSync(new URL(`ui/${feature.key}.html`, plugin), "utf8");
 		const settings = [...new Set([...page.matchAll(/<sdpi-[^>]+\bsetting="([^"]+)"/g)].map((match) => match[1]))].sort();

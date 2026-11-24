@@ -16,6 +16,7 @@ SPDX-License-Identifier: GPL-2.0-or-later
 #include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QListView>
 #include <QLocale>
 #include <QPointer>
 #include <QPushButton>
@@ -224,6 +225,8 @@ public:
 		mark->setAccessibleName(text("Countdown.ClockShortcut"));
 		for (size_t i = 0; i < std::size(timer_marks); ++i)
 			mark->addItem(text(timer_mark_labels[i]), timer_marks[i]);
+		mark_ = mark;
+		label_marks(true);
 		auto *go = new QPushButton(text("Countdown.SetStart"), this);
 		go->setObjectName("countdownSetStart");
 		shortcuts->addWidget(mark, 1);
@@ -384,9 +387,30 @@ public:
 		status_->setText(text(key));
 		start_->setEnabled(state != OBS_MEDIA_STATE_PLAYING);
 		pause_->setEnabled(state == OBS_MEDIA_STATE_PLAYING);
+		OBSDataAutoRelease settings = obs_source_get_settings(source);
+		label_marks(marks_from_now(settings));
 	}
 
 private:
+	// The list names the clock (Next :15) or the minutes from the press (In 15 min), as the timer says.
+	void label_marks(bool from_now)
+	{
+		if (!mark_ || (labelled_ && from_now == from_now_))
+			return;
+		labelled_ = true;
+		from_now_ = from_now;
+		for (int i = 0; i < mark_->count() && i < int(std::size(timer_marks)); ++i)
+			mark_->setItemText(i, text(timer_mark_label(size_t(i), from_now)));
+		// From now, the quarter-hour mark is the same as 15 minutes: leave it out of the list.
+		if (auto *view = qobject_cast<QListView *>(mark_->view()))
+			view->setRowHidden(0, from_now);
+		if (from_now && mark_->currentIndex() == 0)
+			mark_->setCurrentIndex(1);
+	}
+
+	QComboBox *mark_ = nullptr;
+	bool labelled_ = false;
+	bool from_now_ = true;
 	QComboBox *targets_ = nullptr;
 	TimerReadout *readout_ = nullptr;
 	QLabel *status_ = nullptr;
@@ -430,15 +454,17 @@ void timer_vendor_list(obs_data_t *, obs_data_t *response, void *)
 {
 	auto list = [&] {
 		OBSDataArrayAutoRelease entries = obs_data_array_create();
-		auto append = [](obs_data_array_t *items, const char *id, const char *name) {
+		auto append = [](obs_data_array_t *items, const char *id, const char *name, obs_source_t *timer) {
 			OBSDataAutoRelease entry = obs_data_create();
 			obs_data_set_string(entry, "value", id);
 			obs_data_set_string(entry, "label", name);
+			OBSDataAutoRelease settings = obs_source_get_settings(timer);
+			obs_data_set_string(entry, "markFrom", marks_from_now(settings) ? "now" : "clock");
 			obs_data_array_push_back(items, entry);
 		};
 		OBSSourceAutoRelease hidden = dock ? dock->private_timer() : nullptr;
 		if (hidden)
-			append(entries, "private", obs_module_text("Countdown.Private"));
+			append(entries, "private", obs_module_text("Countdown.Private"), hidden);
 		struct Context {
 			obs_data_array_t *items;
 			decltype(append) &add;
@@ -448,7 +474,7 @@ void timer_vendor_list(obs_data_t *, obs_data_t *response, void *)
 				auto &c = *static_cast<Context *>(p);
 				if (!obs_obj_is_private(s) && !obs_source_removed(s) &&
 				    std::strcmp(obs_source_get_id(s), kCountdownId) == 0)
-					c.add(c.items, obs_source_get_uuid(s), obs_source_get_name(s));
+					c.add(c.items, obs_source_get_uuid(s), obs_source_get_name(s), s);
 				return true;
 			},
 			&ctx);
@@ -474,7 +500,12 @@ void timer_vendor_control(obs_data_t *request, obs_data_t *response, void *)
 		if (ok && std::strcmp(op, "state") != 0) {
 			const auto mark = obs_data_has_user_value(request, "mark") ? obs_data_get_int(request, "mark")
 										   : kSavedTimer;
-			ok = mark >= kSavedTimer && mark <= 45 && timer_command(timer, op, int(mark));
+			// A key may say how its marks count; "timer" or nothing follows the timer's own setting.
+			const char *from_text = obs_data_get_string(request, "markFrom");
+			const int from = std::strcmp(from_text, "now") == 0     ? kMarkFromNow
+					 : std::strcmp(from_text, "clock") == 0 ? kMarkFromClock
+										: kMarkFromTimer;
+			ok = mark >= kSavedTimer && mark <= 45 && timer_command(timer, op, int(mark), from);
 			if (ok && dock)
 				dock->refresh_time();
 			if (ok &&
@@ -487,6 +518,7 @@ void timer_vendor_control(obs_data_t *request, obs_data_t *response, void *)
 		if (ok) {
 			OBSDataAutoRelease settings = obs_source_get_settings(timer);
 			obs_data_set_int(response, "mark", saved_timer_mark(settings));
+			obs_data_set_string(response, "markFrom", marks_from_now(settings) ? "now" : "clock");
 			obs_data_set_bool(response, "running",
 					  obs_source_media_get_state(timer) == OBS_MEDIA_STATE_PLAYING);
 			obs_data_set_string(response, "text", timer_readout(timer).toUtf8().constData());

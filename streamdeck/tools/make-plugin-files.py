@@ -19,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 PLUGIN = os.path.join(ROOT, "com.techsavage1989.stagekit.sdPlugin")
 BASE = "com.techsavage1989.stagekit"
-VERSION = "0.43.0.0"
+VERSION = "0.44.0.0"
 
 # The pack picture each feature's key starts with (its "on" and "off" look).
 PICTURES = {
@@ -721,22 +721,25 @@ def main():
         add(feature["key"], feature["name"], feature["tip"], feature["key"], "imgs/actions/switch/icon", two(feature["key"]))
 
     timer = features["timer"]
-    timer_script = "import { MARKS, OPERATIONS } from './src/timer.ts'; console.log(JSON.stringify([MARKS.map(m => [m.value, m.label]), OPERATIONS]));"
-    marks, operations = json.loads(subprocess.run(["node", "--input-type=module", "-e", timer_script], cwd=ROOT, capture_output=True, text=True, check=True).stdout)
+    timer_script = "import { MARKS, MARK_FROM, OPERATIONS } from './src/timer.ts'; console.log(JSON.stringify([MARKS.map(m => [m.value, m.label]), OPERATIONS, MARK_FROM]));"
+    marks, operations, mark_from = json.loads(subprocess.run(["node", "--input-type=module", "-e", timer_script], cwd=ROOT, capture_output=True, text=True, check=True).stdout)
     key_pictures("timer", "options/type-countdown-on", "options/type-countdown-off")
     page("timer", "StageKit Countdown Timer",
          one_list("Timer", "getTimers", "target", "Choose a timer", "The private timer or a named Countdown Timer source in this OBS collection.")
          + options("On press", "timerPress", "toggle", operations, "Cycle advances the selected mark when tapped. Hold for 0.8 seconds to start or stop.")
-         + options("Clock shortcut", "timerMark", "next", marks, "Set the timer to the next occurrence on the OBS computer's clock.")
-         + '<sdpi-item id="cycleHelp" label="Cycle" title="The key shows the selected mark and its deadline on the OBS computer. A tap changes the deadline. A hold starts or stops without advancing the mark."><span>Tap to select :15, :30, :45 or :00. The key shows the mark and the time it is set to. Hold for 0.8 seconds to start or stop.</span></sdpi-item>\n',
+         + options("Clock shortcut", "timerMark", "next", marks, "Set the timer 15, 30, 45 or 60 minutes from the press, or, on clock time, to the next :15, :30, :45 or :00 on the OBS computer's clock.")
+         + options("Count from", "timerFrom", "timer", mark_from, "As the timer says follows the Countdown Timer's Shortcut marks setting (from now as it comes). From now or Clock time decide for this key alone.")
+         + '<sdpi-item id="cycleHelp" label="Cycle" title="The key shows the selected mark and its deadline on the OBS computer. A tap changes the deadline. A hold starts or stops without advancing the mark."><span>Tap to select +15, +30, +45 or +60 min (:15, :30, :45 or :00 on clock time). The key shows the mark and the time it is set to. Hold for 0.8 seconds to start or stop.</span></sdpi-item>\n',
          script="""<script>
             (() => {
                 const select = document.querySelector('[setting="timerPress"]');
                 const shortcut = document.querySelector('[setting="timerMark"]').closest('sdpi-item');
+                const from = document.querySelector('[setting="timerFrom"]').closest('sdpi-item');
                 const help = document.getElementById('cycleHelp');
                 const update = () => {
                     const op = select.value || 'toggle';
                     shortcut.style.display = ['set', 'toggle', 'setStart'].includes(op) ? '' : 'none';
+                    from.style.display = ['set', 'toggle', 'setStart', 'cycle'].includes(op) ? '' : 'none';
                     help.style.display = op === 'cycle' ? '' : 'none';
                 };
                 for (const e of ['change', 'valuechange']) select.addEventListener(e, update);

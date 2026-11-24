@@ -6,11 +6,11 @@ import type { JsonValue } from "@elgato/utils";
 import { obs } from "../obs.ts";
 import { HoldPress } from "../hold.ts";
 import { timerPicture } from "../pictures.ts";
-import { MARKS, timerPress } from "../timer.ts";
+import { marksFromNow, timerMarkTitle, timerPress } from "../timer.ts";
 import { timerCycleTitle } from "../titles.ts";
 import { answerLists, type KeySettings, showOnOff } from "./shared.ts";
 
-type Settings = KeySettings & { timerPress?: string; timerMark?: string };
+type Settings = KeySettings & { timerPress?: string; timerMark?: string; timerFrom?: string };
 
 export class TimerKey extends SingletonAction<Settings> {
 	override readonly manifestId = "com.techsavage1989.stagekit.timer";
@@ -59,7 +59,7 @@ export class TimerKey extends SingletonAction<Settings> {
 			return;
 		}
 		await key.setState(state.running === true ? 1 : 0);
-		if (settings.timerPress === "cycle") await key.setTitle(timerCycleTitle(state));
+		if (settings.timerPress === "cycle") await key.setTitle(timerCycleTitle(state, marksFromNow(settings, state)));
 	}
 
 	override async onSendToPlugin(ev: SendToPluginEvent<JsonValue, Settings>): Promise<void> {
@@ -83,8 +83,7 @@ export class TimerKey extends SingletonAction<Settings> {
 		if (picture) await showOnOff(key, picture, running, settings);
 		else await key.setState(running ? 1 : 0);
 		const operation = settings.timerPress ?? "toggle";
-		const preset = MARKS.find((m) => m.value === (settings.timerMark ?? "next"));
-		const title = operation === "cycle" ? timerCycleTitle(state) : operation === "stop" ? "Stop" : operation === "pause" ? "Pause" : operation === "start" ? "Start" : preset?.title ?? "Timer";
+		const title = operation === "cycle" ? timerCycleTitle(state, marksFromNow(settings, state)) : operation === "stop" ? "Stop" : operation === "pause" ? "Pause" : operation === "start" ? "Start" : timerMarkTitle(settings, state);
 		await key.setTitle(title);
 	}
 
