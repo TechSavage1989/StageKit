@@ -19,7 +19,7 @@ jobs:
         if: always()
         shell: bash
         run: |
-          /home/linuxbrew/.linuxbrew/opt/clang-format@19/bin/clang-format -i src/controller/views-dock.cpp tests/control-panel-test.hpp
+          clang-format-19 -i src/controller/views-dock.cpp tests/control-panel-test.hpp
           git diff -- src/controller/views-dock.cpp tests/control-panel-test.hpp
 
   gersemi:
