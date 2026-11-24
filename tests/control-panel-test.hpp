@@ -1745,12 +1745,29 @@ inline void check(QStringList &issues, bool restart)
 		obs_data_set_string(legacy_settings, "mode|detail|go_to", "");
 		obs_source_update(legacy, legacy_settings);
 		obs_data_set_string(camera_settings, "mode|detail|go_to", "Views demo second layout");
-		expect(configure(id, config), "could not configure a controller mode destination");
+		expect(configure(id, config) && until([&] {
+			       OBSDataAutoRelease state = get(id);
+			       OBSDataAutoRelease definition = obs_data_get_obj(state, "config");
+			       OBSDataAutoRelease selected = row(definition, "groups", "camera");
+			       OBSDataAutoRelease settings = obs_data_get_obj(selected, "settings");
+			       return std::strcmp(obs_data_get_string(settings, "mode|detail|go_to"),
+						  "Views demo second layout") == 0;
+		       }),
+		       "could not apply the controller mode destination before selecting it");
+		settle(150);
 		obs_frontend_set_current_scene(first_scene);
 		expect(press_control(panel, second) && until([&] { return scene_is(destination_scene); }),
 		       "a controller mode's explicit destination did not override its parent scene");
 		obs_data_set_string(camera_settings, "mode|detail|go_to", "");
-		expect(configure(id, config), "could not restore the controller mode's parent-scene fallback");
+		expect(configure(id, config) && until([&] {
+			       OBSDataAutoRelease state = get(id);
+			       OBSDataAutoRelease definition = obs_data_get_obj(state, "config");
+			       OBSDataAutoRelease selected = row(definition, "groups", "camera");
+			       OBSDataAutoRelease settings = obs_data_get_obj(selected, "settings");
+			       return std::strlen(obs_data_get_string(settings, "mode|detail|go_to")) == 0;
+		       }),
+		       "could not restore the controller mode's parent-scene fallback");
+		settle(150);
 
 		expect(set_show_scene(panel, false), "could not disable automatic panel scene navigation");
 		obs_frontend_set_current_scene(first_scene);
@@ -2339,10 +2356,16 @@ inline void check(QStringList &issues, bool restart)
 			       "could not capture the real icon button panel");
 			if (auto *only = panel->findChild<QCheckBox *>("viewsPanelImageOnly")) {
 				only->setChecked(true);
+				for (int i = 0; i < 10; ++i)
+					expect(slider_key(size, Qt::Key_Right),
+					       "could not enlarge image-only tiles for the guide capture");
+				expect(size->value() == 64, "the image-only guide capture was not at 64 pixels");
 				QCoreApplication::processEvents();
 				expect(panel->grab().save(directory.filePath("stagekit-controls-image-only.png")),
 				       "could not capture the real image-only panel");
 				only->setChecked(false);
+				expect(slider_key(size, Qt::Key_Home),
+				       "could not restore the button size after the image-only capture");
 			}
 			expect(click(panel, "viewsPanelEdit") && until([&] { return dialog("viewsPanelEditor"); }),
 			       "could not open the panel editor for capture");
