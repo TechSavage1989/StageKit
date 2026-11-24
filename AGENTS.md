@@ -216,6 +216,18 @@ of Polish and StyleChange, clear that inherited height cap with QWIDGETSIZE_MAX.
 painting. Assert containment and maximumHeight >= heightForWidth at normal and resized dock widths,
 and inspect the actual Windows capture after responsive layout changes.
 
+The Views button slider must support list-row scale (24 pixels) as well as large
+tiles (112 pixels). Preserve the existing labeled-button layout by default. Image-only
+mode makes each control exactly square; its icon is centered and uses most of the
+square while retaining the native checked/disabled style. For controls with no
+assigned image, show readable initials and keep the full name in the tooltip and
+accessible name. Images are bounded and embedded as before. Reflow by actual
+viewport width with no horizontal scrollbar, permitting more than six small
+square buttons per row when space allows. The selected mode and size belong to
+the scene collection and survive List/Buttons changes, collection switches and a
+real OBS restart. Exercise the physical button actions at the 24-pixel size and
+capture the actual Windows image-only presentation for the guide.
+
 The native control catalog's available value is the panel's readiness gate. The frontend collection
 event arrives before scenes_loaded allows a complete catalog; never enable Edit panel solely from
 the dock's loaded flag or the presence of saved fallback buttons. Check a fresh catalog before opening

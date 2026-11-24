@@ -1227,9 +1227,17 @@ Space applies the current row. Active indicators follow the real native state.
 
 <p align="center"><img src="docs/images/stagekit-controls-list.png" width="560" alt="Compact StageKit Views list in Windows OBS with controls grouped under collapsible scene and section headings"></p>
 
-In **Buttons**, use **Button size** to fit more choices or make them larger. The grid adjusts to the
-dock's width, and labels wrap as needed. Optional icons appear on buttons and as small images
-beside list rows. Layout and size are remembered for each scene collection.
+In **Buttons**, use **Button size** from 24 to 112 pixels. At the smallest setting, buttons
+can be nearly as compact as List rows. The regular labeled layout remains the default,
+with names wrapping as needed.
+
+Check **Image only** to switch to square Stream Deck-style tiles. The icon fills most of
+each tile, centered and scaled with the button size. Buttons without assigned icons show
+short initials instead of an empty tile. Hover over any button for its full name and
+section, or use the accessible name. The grid automatically fits more square buttons
+across the dock as they shrink, without horizontal scrolling. List and Buttons continue
+to share the same controls, actions and saved order. Button size and Image only are
+saved separately for each scene collection.
 
 **Use icons and choose the button size that fits your dock.**
 

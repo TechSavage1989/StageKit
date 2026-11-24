@@ -9,7 +9,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | Version | 0.1.0 (in `buildspec.json`). First pre-release is `0.1.0-beta1` |
 | Repository | https://github.com/TechSavage1989/StageKit (public; visibility verified, not changed) |
 | Default branch | `main`, which holds all work so far (pull request #1, merged 2026-11-12) |
-| Working branch | feat/views-icon-library, PR279 for beta257. Beta256 is published. Shared scene controls and all other requested panel changes passed the eight Windows/shared gates at 5a09f8b8. Binary comparison then found icon resource timestamps made independent builds differ. The icon QRC now omits those timestamps; new exact-head gates and matching package/frontend DLLs are required before merge. |
+| Working branch | feat/views-compact-image-buttons for beta258. Beta257 was published from PR279 and verified. The pending change adds square image-only buttons and reduces the slider minimum to 24 pixels. Preserve labeled buttons by default and require exact-head Windows frontend, real restart, package identity and a real image-only screenshot before merge and release. |
 | Releases / update feed | GitHub releases on this repository, which the plugin's updater reads (`src/update/`) |
 | Built against | OBS 31.1.1 (`buildspec.json`). The owner runs OBS 32.2.2 on Windows |
 | Gate | Checks passed |
@@ -22,6 +22,21 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `LAYOUT`, `MODES_HIDE`, `SCENE_TRANS_OVERRIDE` | 40, 29, 9 |
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
+
+## Compact and image-only StageKit Views buttons (beta258 work)
+
+The new feature request is to shrink Views buttons to list-row scale, allow image-only
+controls and enlarge their icons to Stream Deck-like proportions. Existing labeled
+panels stay the default. The candidate includes a 24-112 pixel slider, an Image only
+checkbox saved under imageOnly, exact square icon tiles with small margins, initials
+for controls without artwork, full-name tooltips and responsive grid packing.
+List is unchanged. Test that clicking a 24-pixel button still applies the real
+controller command, image size grows with the tile, icons and fallback labels remain
+available, the widget stays inside the section at several sizes, and settings survive
+a collection switch and a real OBS restart. The Windows OBS screenshot for the new
+mode must be a genuine captured dock, not a drawing.
+
+The old detailed beta257 handoff is preserved below for historical context.
 
 ## Shared scene controls, reusable sections and built-in icons
 

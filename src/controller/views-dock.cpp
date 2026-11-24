@@ -1177,31 +1177,51 @@ void combo_items(QComboBox *box, const QList<QPair<QString, QString>> &items, co
 	box->setCurrentIndex(found >= 0 ? found : box->count() ? 0 : -1);
 }
 
-// A native button keeps the OBS theme while wrapping long, user-provided names.
+// A native button keeps the OBS theme. Labeled tiles wrap, while image-only
+// tiles stay square like Stream Deck keys, even at compact list-row sizes.
 class ViewControlButton final : public QPushButton {
 public:
 	ViewControlButton(const QString &label, QWidget *parent) : QPushButton(label, parent)
 	{
-		// These wrapped size hints describe the full widget rectangle.
 		setAttribute(Qt::WA_LayoutUsesWidgetRect);
+	}
+	void set_image_only(bool enabled)
+	{
+		image_only_ = enabled;
+		auto policy = image_only_ ? QSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed)
+					 : QSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+		policy.setHeightForWidth(!image_only_);
+		setSizePolicy(policy);
+		set_display_size(size_);
 	}
 	void set_display_size(int value)
 	{
-		size_ = std::clamp(value, 40, 112);
-		setMinimumHeight(size_);
+		size_ = std::clamp(value, 24, 112);
+		if (image_only_) {
+			setFixedSize(size_, size_);
+		} else {
+			setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+			setMinimumSize(0, size_);
+		}
 		setIconSize(QSize(icon_side(), icon_side()));
 		updateGeometry();
 		update();
 	}
-	int preferred_width() const { return size_ * 3 + 6; }
-	QSize sizeHint() const override { return {preferred_width(), heightForWidth(preferred_width())}; }
-	QSize minimumSizeHint() const override { return {80, size_}; }
+	int preferred_width() const { return image_only_ ? size_ : std::max(80, size_ * 3 + 6); }
+	QSize sizeHint() const override
+	{
+		return image_only_ ? QSize(size_, size_) : QSize(preferred_width(), heightForWidth(preferred_width()));
+	}
+	QSize minimumSizeHint() const override { return image_only_ ? QSize(size_, size_) : QSize(80, size_); }
 	int heightForWidth(int width) const override
 	{
-		const int label_height = fontMetrics()
-						 .boundingRect(QRect(0, 0, std::max(40, width - padding() * 2), 1000),
-							       Qt::TextWordWrap | Qt::AlignCenter, text())
-						 .height();
+		if (image_only_)
+			return size_;
+		const int label_height =
+			fontMetrics()
+				.boundingRect(QRect(0, 0, std::max(40, width - padding() * 2), 1000),
+					      Qt::TextWordWrap | Qt::AlignCenter, text())
+				.height();
 		return std::max(size_, label_height + padding() * 2 + (icon().isNull() ? 0 : icon_side() + 4));
 	}
 
@@ -1210,10 +1230,9 @@ protected:
 	{
 		const bool handled = QPushButton::event(event);
 		if (event->type() == QEvent::Polish || event->type() == QEvent::StyleChange) {
-			// OBS themes can cap ordinary buttons below our wrapped minimum.
-			// Clear that cap after polish so the grid can use heightForWidth()
-			// without centering a smaller maximum rectangle inside the row.
-			setMaximumHeight(QWIDGETSIZE_MAX);
+			// Theme-imposed height caps can clip wrapped labels. Compact
+			// image-only buttons instead retain their exact square bounds.
+			setMaximumHeight(image_only_ ? size_ : QWIDGETSIZE_MAX);
 		}
 		return handled;
 	}
@@ -1229,6 +1248,28 @@ protected:
 		const auto group = isEnabled() ? QPalette::Active : QPalette::Disabled;
 		painter.setPen(palette().color(group, isChecked() && isEnabled() ? QPalette::HighlightedText
 										 : QPalette::ButtonText));
+		if (image_only_) {
+			if (!icon().isNull()) {
+				const int side = icon_side();
+				const QRect image((width() - side) / 2, (height() - side) / 2, side, side);
+				icon().paint(&painter, image, Qt::AlignCenter, isEnabled() ? QIcon::Normal : QIcon::Disabled,
+					     isChecked() ? QIcon::On : QIcon::Off);
+			} else {
+				// A saved control without artwork must remain identifiable.
+				// Its full name is also retained as a tooltip and accessible name.
+				const auto words = text().simplified().split(QLatin1Char(' '), Qt::SkipEmptyParts);
+				QString initials;
+				for (int i = 0; i < std::min(2, int(words.size())); ++i)
+					initials += words[i].left(1).toUpper();
+				QFont abbreviated = painter.font();
+				abbreviated.setBold(true);
+				abbreviated.setPixelSize(std::clamp(size_ / 3, 9, 28));
+				painter.setFont(abbreviated);
+				painter.drawText(rect().adjusted(padding(), 0, -padding(), 0),
+						 Qt::AlignCenter | Qt::TextSingleLine, initials);
+			}
+			return;
+		}
 		QRect label = rect().adjusted(padding(), padding(), -padding(), -padding());
 		if (!icon().isNull()) {
 			const QRect image((width() - icon_side()) / 2, padding(), icon_side(), icon_side());
@@ -1240,9 +1281,10 @@ protected:
 	}
 
 private:
-	int padding() const { return std::max(6, size_ / 8); }
-	int icon_side() const { return std::clamp(size_ / 2, 20, 56); }
+	int padding() const { return image_only_ ? std::max(2, size_ / 16) : std::max(6, size_ / 8); }
+	int icon_side() const { return image_only_ ? size_ - padding() * 2 : std::clamp(size_ / 2, 20, 56); }
 	int size_ = 48;
+	bool image_only_ = false;
 };
 
 QJsonObject panel_pin(const QJsonObject &control)
@@ -2180,13 +2222,15 @@ public:
 		pages_->addWidget(scroll_);
 		size_controls_ = new QWidget(this);
 		size_controls_->setObjectName("viewsPanelSizeControls");
-		auto *sizes = new QHBoxLayout(size_controls_);
-		sizes->setContentsMargins(0, 0, 0, 0);
+		auto *size_layout = new QVBoxLayout(size_controls_);
+		size_layout->setContentsMargins(0, 0, 0, 0);
+		auto *sizes = new QHBoxLayout;
+		size_layout->addLayout(sizes);
 		auto *size_label = new QLabel(text("Controls.ButtonSize"), size_controls_);
 		sizes->addWidget(size_label);
 		button_size_ = new QSlider(Qt::Horizontal, size_controls_);
 		button_size_->setObjectName("viewsPanelButtonSize");
-		button_size_->setRange(40, 112);
+		button_size_->setRange(24, 112);
 		button_size_->setSingleStep(4);
 		button_size_->setPageStep(12);
 		button_size_->setValue(48);
@@ -2194,6 +2238,10 @@ public:
 		button_size_->setToolTip(text("Controls.ButtonSizeHelp"));
 		size_label->setBuddy(button_size_);
 		sizes->addWidget(button_size_, 1);
+		image_only_ = new QCheckBox(text("Controls.ImageOnly"), size_controls_);
+		image_only_->setObjectName("viewsPanelImageOnly");
+		image_only_->setToolTip(text("Controls.ImageOnlyHelp"));
+		size_layout->addWidget(image_only_);
 		layout->addWidget(size_controls_);
 		status_ = note(this, {}, "viewsPanelStatus");
 		layout->addWidget(status_);
@@ -2214,6 +2262,14 @@ public:
 				button->set_display_size(value);
 			reflow();
 			if (loaded_ && !button_size_->isSliderDown())
+				obs_frontend_save();
+		});
+		connect(image_only_, &QCheckBox::toggled, this, [this](bool enabled) {
+			config_["imageOnly"] = enabled;
+			for (auto *button : buttons_)
+				button->set_image_only(enabled);
+			reflow();
+			if (loaded_)
 				obs_frontend_save();
 		});
 		connect(button_size_, &QSlider::sliderReleased, this, [this] {
@@ -2279,6 +2335,7 @@ public:
 		edit_->setEnabled(loaded && !editor_);
 		layout_choice_->setEnabled(loaded);
 		button_size_->setEnabled(loaded);
+		image_only_->setEnabled(loaded);
 		QJsonArray appearance;
 		for (const QJsonValue value : effective_pins()) {
 			const auto pin = value.toObject();
@@ -2305,7 +2362,8 @@ public:
 			button->setFont(font);
 			const QString reason = unavailable_reason(control, available);
 			const QString context = button->property("viewsControlContext").toString();
-			button->setToolTip(context + (reason.isEmpty() ? QString() : "\n" + reason));
+			button->setToolTip(button->text() + (context.isEmpty() ? QString() : "\n" + context) +
+					   (reason.isEmpty() ? QString() : "\n" + reason));
 			button->setAccessibleDescription(context + "\n" + (active ? text("Controls.Active") : reason));
 		}
 		for (auto *item : list_items_) {
@@ -2385,13 +2443,16 @@ private:
 	void apply_display()
 	{
 		const bool buttons = config_["layout"].toString() == "buttons";
-		const QSignalBlocker layout_block(layout_choice_), size_block(button_size_);
+		const QSignalBlocker layout_block(layout_choice_), size_block(button_size_), icon_block(image_only_);
 		layout_choice_->setCurrentIndex(buttons ? 1 : 0);
-		button_size_->setValue(std::clamp(config_["buttonSize"].toInt(48), 40, 112));
+		button_size_->setValue(std::clamp(config_["buttonSize"].toInt(48), 24, 112));
+		image_only_->setChecked(config_["imageOnly"].toBool());
 		pages_->setCurrentWidget(buttons ? static_cast<QWidget *>(scroll_) : list_);
 		size_controls_->setVisible(buttons);
-		for (auto *button : buttons_)
+		for (auto *button : buttons_) {
+			button->set_image_only(image_only_->isChecked());
 			button->set_display_size(button_size_->value());
+		}
 		reflow();
 	}
 
@@ -2461,13 +2522,11 @@ private:
 			button->setAccessibleName(entry["name"].toString());
 			button->setCheckable(true);
 			button->setIcon(icon);
+			button->set_image_only(image_only_->isChecked());
 			button->set_display_size(button_size_->value());
 			button->setStyleSheet(
 				"QPushButton:checked { background-color: palette(highlight); color: palette(highlighted-text); }");
-			auto policy = QSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-			policy.setHeightForWidth(true);
-			button->setSizePolicy(policy);
-			sections_[at].buttons.append(button);
+						sections_[at].buttons.append(button);
 			buttons_.append(button);
 			connect(button, &QPushButton::clicked, this, [this, button] {
 				const QString id = button->property("viewsControlId").toString();
@@ -2520,15 +2579,26 @@ private:
 
 	void reflow()
 	{
-		const int width = button_size_ ? button_size_->value() * 3 + 6 : 150;
-		const int columns = std::clamp((scroll_->viewport()->width() + 6) / width, 1, 6);
+		const bool icons_only = image_only_->isChecked();
+		const int tile = button_size_->value();
+		const int gap = icons_only ? std::clamp(tile / 12, 3, 8) : 6;
+		const int width = icons_only ? tile : std::max(80, tile * 3 + 6);
+		const int columns =
+			std::clamp((std::max(1, scroll_->viewport()->width()) + gap) / (width + gap), 1,
+				   icons_only ? 48 : 6);
 		for (auto &section : sections_) {
 			for (auto *button : section.buttons)
 				section.grid->removeWidget(button);
-			for (int i = 0; i < 6; ++i)
-				section.grid->setColumnStretch(i, i < columns ? 1 : 0);
-			for (int i = 0; i < section.buttons.size(); ++i)
-				section.grid->addWidget(section.buttons[i], i / columns, i % columns);
+			section.grid->setSpacing(gap);
+			for (int i = 0; i <= 48; ++i)
+				section.grid->setColumnStretch(i, icons_only ? int(i == columns) : int(i < columns));
+			for (int i = 0; i < section.buttons.size(); ++i) {
+				if (icons_only)
+					section.grid->addWidget(section.buttons[i], i / columns, i % columns,
+								Qt::AlignLeft | Qt::AlignTop);
+				else
+					section.grid->addWidget(section.buttons[i], i / columns, i % columns);
+			}
 		}
 	}
 
@@ -2584,6 +2654,7 @@ private:
 	QScrollArea *scroll_ = nullptr;
 	QWidget *content_ = nullptr, *size_controls_ = nullptr;
 	QSlider *button_size_ = nullptr;
+	QCheckBox *image_only_ = nullptr;
 	QVBoxLayout *content_layout_ = nullptr;
 	QLabel *status_ = nullptr, *scene_label_ = nullptr;
 	QPointer<ViewPanelEditor> editor_;
