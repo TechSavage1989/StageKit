@@ -1189,7 +1189,7 @@ public:
 	{
 		image_only_ = enabled;
 		auto policy = image_only_ ? QSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed)
-					 : QSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+					  : QSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 		policy.setHeightForWidth(!image_only_);
 		setSizePolicy(policy);
 		set_display_size(size_);
@@ -1217,11 +1217,10 @@ public:
 	{
 		if (image_only_)
 			return size_;
-		const int label_height =
-			fontMetrics()
-				.boundingRect(QRect(0, 0, std::max(40, width - padding() * 2), 1000),
-					      Qt::TextWordWrap | Qt::AlignCenter, text())
-				.height();
+		const int label_height = fontMetrics()
+						 .boundingRect(QRect(0, 0, std::max(40, width - padding() * 2), 1000),
+							       Qt::TextWordWrap | Qt::AlignCenter, text())
+						 .height();
 		return std::max(size_, label_height + padding() * 2 + (icon().isNull() ? 0 : icon_side() + 4));
 	}
 
@@ -1252,7 +1251,8 @@ protected:
 			if (!icon().isNull()) {
 				const int side = icon_side();
 				const QRect image((width() - side) / 2, (height() - side) / 2, side, side);
-				icon().paint(&painter, image, Qt::AlignCenter, isEnabled() ? QIcon::Normal : QIcon::Disabled,
+				icon().paint(&painter, image, Qt::AlignCenter,
+					     isEnabled() ? QIcon::Normal : QIcon::Disabled,
 					     isChecked() ? QIcon::On : QIcon::Off);
 			} else {
 				// A saved control without artwork must remain identifiable.
@@ -2526,7 +2526,7 @@ private:
 			button->set_display_size(button_size_->value());
 			button->setStyleSheet(
 				"QPushButton:checked { background-color: palette(highlight); color: palette(highlighted-text); }");
-						sections_[at].buttons.append(button);
+			sections_[at].buttons.append(button);
 			buttons_.append(button);
 			connect(button, &QPushButton::clicked, this, [this, button] {
 				const QString id = button->property("viewsControlId").toString();
@@ -2583,9 +2583,8 @@ private:
 		const int tile = button_size_->value();
 		const int gap = icons_only ? std::clamp(tile / 12, 3, 8) : 6;
 		const int width = icons_only ? tile : std::max(80, tile * 3 + 6);
-		const int columns =
-			std::clamp((std::max(1, scroll_->viewport()->width()) + gap) / (width + gap), 1,
-				   icons_only ? 48 : 6);
+		const int columns = std::clamp((std::max(1, scroll_->viewport()->width()) + gap) / (width + gap), 1,
+					       icons_only ? 48 : 6);
 		for (auto &section : sections_) {
 			for (auto *button : section.buttons)
 				section.grid->removeWidget(button);

@@ -14,14 +14,6 @@ jobs:
         with:
           failCondition: error
 
-
-      - name: Temporary formatting diagnostic
-        if: always()
-        shell: bash
-        run: |
-          clang-format-19 -i src/controller/views-dock.cpp tests/control-panel-test.hpp
-          git diff -- src/controller/views-dock.cpp tests/control-panel-test.hpp
-
   gersemi:
     runs-on: ubuntu-24.04
     steps:

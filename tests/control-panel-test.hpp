@@ -730,10 +730,9 @@ inline bool check_saved_panel(QWidget *panel, const char *layout = "list", bool 
 	const auto names = saved_labels();
 	bool valid = pins && pins->count() == names.size() && layout_is(panel, layout) && show_scene &&
 		     show_scene->isChecked() == navigate && size && size->value() == 64 && only &&
-		     only->isChecked() == image_only && sections &&
-		     sections->findData("Quick choices") >= 0 && sections->findData("Visibility") >= 0 &&
-		     sections->findData("Spare shortcuts") >= 0 && sections->findData("Discarded section") < 0 &&
-		     sections->findData("Uncommitted section") < 0;
+		     only->isChecked() == image_only && sections && sections->findData("Quick choices") >= 0 &&
+		     sections->findData("Visibility") >= 0 && sections->findData("Spare shortcuts") >= 0 &&
+		     sections->findData("Discarded section") < 0 && sections->findData("Uncommitted section") < 0;
 	if (require_collapsed) {
 		const auto *heading = section_heading(panel, "Visibility");
 		if (!heading || heading->isExpanded()) {
@@ -2114,8 +2113,7 @@ inline void check(QStringList &issues, bool restart)
 		expect(size->value() == 64, "the button-size slider did not retain its chosen intermediate size");
 		check_geometry(panel, issues, "an icon button extended outside its section at the normal dock width");
 		auto *image_only = panel->findChild<QCheckBox *>("viewsPanelImageOnly");
-		expect(image_only && !image_only->isChecked(),
-		       "existing panels did not default to labeled buttons");
+		expect(image_only && !image_only->isChecked(), "existing panels did not default to labeled buttons");
 		if (image_only)
 			image_only->setChecked(true);
 		auto square_at = [&](int pixels, int min_icon) {
@@ -2124,10 +2122,9 @@ inline void check(QStringList &issues, bool restart)
 			auto *scroll = panel->findChild<QScrollArea *>("viewsPanelScroll");
 			return image_only && image_only->isChecked() && key && no_image && scroll &&
 			       key->width() == pixels && key->height() == pixels &&
-			       key->sizeHint() == QSize(pixels, pixels) &&
-			       key->iconSize().width() >= min_icon &&
-			       no_image->size() == QSize(pixels, pixels) &&
-			       !no_image->toolTip().isEmpty() && no_image->toolTip().contains(no_image->text()) &&
+			       key->sizeHint() == QSize(pixels, pixels) && key->iconSize().width() >= min_icon &&
+			       no_image->size() == QSize(pixels, pixels) && !no_image->toolTip().isEmpty() &&
+			       no_image->toolTip().contains(no_image->text()) &&
 			       !scroll->horizontalScrollBar()->isVisible();
 		};
 		expect(until([&] { return square_at(64, 54); }),
@@ -2145,8 +2142,8 @@ inline void check(QStringList &issues, bool restart)
 		expect(slider_key(size, Qt::Key_Home), "could not return to compact image-only size");
 		for (int i = 0; i < 10; ++i)
 			expect(slider_key(size, Qt::Key_Right), "could not restore image-only button size");
-		expect(size->value() == 64 && select_layout(panel, "list") &&
-			       select_layout(panel, "buttons") && until([&] { return square_at(64, 54); }),
+		expect(size->value() == 64 && select_layout(panel, "list") && select_layout(panel, "buttons") &&
+			       until([&] { return square_at(64, 54); }),
 		       "switching presentations lost image-only mode or square image sizing");
 		if (image_only)
 			image_only->setChecked(false);
