@@ -1177,6 +1177,15 @@ void combo_items(QComboBox *box, const QList<QPair<QString, QString>> &items, co
 	box->setCurrentIndex(found >= 0 ? found : box->count() ? 0 : -1);
 }
 
+// The title positions an image-only tile offers, panel-wide and per button.
+void add_title_positions(QComboBox *box)
+{
+	box->addItem(text("Controls.TitleBottom"), "bottom");
+	box->addItem(text("Controls.TitleTop"), "top");
+	box->addItem(text("Controls.TitleMiddle"), "middle");
+	box->addItem(text("Controls.TitleHidden"), "hidden");
+}
+
 // A native button keeps the OBS theme. Labeled tiles wrap, while image-only
 // tiles stay square like Stream Deck keys, even at compact list-row sizes.
 class ViewControlButton final : public QPushButton {
@@ -1205,6 +1214,15 @@ public:
 		}
 		setIconSize(QSize(icon_side(), icon_side()));
 		updateGeometry();
+		update();
+	}
+	// Where an image-only tile shows its name, as a Stream Deck key shows its
+	// title: "bottom" (the dark band under the key art), "top", "middle" or
+	// "hidden". The size is "small", "medium" or "large".
+	void set_title_style(const QString &position, const QString &size)
+	{
+		title_position_ = position;
+		title_size_ = size;
 		update();
 	}
 	int preferred_width() const { return image_only_ ? size_ : std::max(80, size_ * 3 + 6); }
@@ -1248,12 +1266,17 @@ protected:
 		painter.setPen(palette().color(group, isChecked() && isEnabled() ? QPalette::HighlightedText
 										 : QPalette::ButtonText));
 		if (image_only_) {
+			const bool titled = shows_title();
 			if (!icon().isNull()) {
 				const int side = icon_side();
 				const QRect image((width() - side) / 2, (height() - side) / 2, side, side);
 				icon().paint(&painter, image, Qt::AlignCenter,
 					     isEnabled() ? QIcon::Normal : QIcon::Disabled,
 					     isChecked() ? QIcon::On : QIcon::Off);
+				if (titled)
+					paint_title(painter, true);
+			} else if (titled) {
+				paint_title(painter, false);
 			} else {
 				// A saved control without artwork must remain identifiable.
 				// Its full name is also retained as a tooltip and accessible name.
@@ -1281,10 +1304,87 @@ protected:
 	}
 
 private:
+	// Below 32 pixels a title cannot be read; the tooltip still names it.
+	bool shows_title() const { return title_position_ != "hidden" && size_ >= 32 && !text().trimmed().isEmpty(); }
+
+	// A Stream Deck-style title: light text with a dark outline over the key
+	// art, at most two lines (three without art), the last one elided.
+	void paint_title(QStylePainter &painter, bool over_image)
+	{
+		const double share = title_size_ == "small" ? 0.12 : title_size_ == "large" ? 0.19 : 0.15;
+		QFont font = painter.font();
+		font.setBold(true);
+		const QRect box = rect().adjusted(padding() + 1, padding() + 1, -padding() - 1, -padding() - 1);
+		// Smaller, down to 8 pixels, until the longest word fits: a word is
+		// never broken across lines while a smaller size can hold it.
+		int pixels = std::clamp(int(size_ * share + 0.5), 8, 24);
+		const auto words = text().simplified().split(QLatin1Char(' '), Qt::SkipEmptyParts);
+		for (; pixels > 8; --pixels) {
+			font.setPixelSize(pixels);
+			const QFontMetrics trial(font);
+			bool fits = true;
+			for (const auto &word : words)
+				fits = fits && trial.horizontalAdvance(word) <= box.width();
+			if (fits)
+				break;
+		}
+		font.setPixelSize(pixels);
+		painter.setFont(font);
+		const QFontMetrics metrics(font);
+		const int most = over_image ? 2 : 3;
+		QStringList lines;
+		QString rest = text().simplified();
+		while (!rest.isEmpty() && lines.size() < most) {
+			if (lines.size() == most - 1 || metrics.horizontalAdvance(rest) <= box.width()) {
+				lines.append(metrics.elidedText(rest, Qt::ElideRight, box.width()));
+				break;
+			}
+			// The longest run of whole words that fits, else as much as fits.
+			int cut = -1;
+			for (int at = rest.indexOf(QLatin1Char(' ')); at > 0;
+			     at = rest.indexOf(QLatin1Char(' '), at + 1)) {
+				if (metrics.horizontalAdvance(rest.left(at)) > box.width())
+					break;
+				cut = at;
+			}
+			if (cut < 0) {
+				cut = 1;
+				while (cut < rest.size() &&
+				       metrics.horizontalAdvance(rest.left(cut + 1)) <= box.width())
+					++cut;
+			}
+			lines.append(rest.left(cut).trimmed());
+			rest = rest.mid(cut).trimmed();
+		}
+		const int line_height = metrics.height();
+		const int block = line_height * int(lines.size());
+		const int top = title_position_ == "top"      ? box.top()
+				: title_position_ == "middle" ? box.top() + (box.height() - block) / 2
+							      : box.bottom() + 1 - block;
+		const auto group = isEnabled() ? QPalette::Active : QPalette::Disabled;
+		const QColor plain = palette().color(group, isChecked() && isEnabled() ? QPalette::HighlightedText
+										       : QPalette::ButtonText);
+		const QColor fill = !over_image ? plain : isEnabled() ? QColor(255, 255, 255) : QColor(170, 170, 170);
+		for (int i = 0; i < lines.size(); ++i) {
+			const QRect line(box.left(), top + i * line_height, box.width(), line_height);
+			if (over_image) {
+				painter.setPen(QColor(0, 0, 0, 220));
+				for (const QPoint step : {QPoint(-1, 0), QPoint(1, 0), QPoint(0, -1), QPoint(0, 1),
+							  QPoint(1, 1), QPoint(-1, -1), QPoint(1, -1), QPoint(-1, 1)})
+					painter.drawText(line.translated(step), Qt::AlignHCenter | Qt::AlignVCenter,
+							 lines[i]);
+			}
+			painter.setPen(fill);
+			painter.drawText(line, Qt::AlignHCenter | Qt::AlignVCenter, lines[i]);
+		}
+	}
+
 	int padding() const { return image_only_ ? std::max(2, size_ / 16) : std::max(6, size_ / 8); }
 	int icon_side() const { return image_only_ ? size_ - padding() * 2 : std::clamp(size_ / 2, 20, 56); }
 	int size_ = 48;
 	bool image_only_ = false;
+	QString title_position_ = "bottom";
+	QString title_size_ = "medium";
 };
 
 QJsonObject panel_pin(const QJsonObject &control)
@@ -1636,6 +1736,12 @@ public:
 		label_->setObjectName("viewsPanelLabel");
 		label_->setPlaceholderText(text("Controls.UseName"));
 		form->addRow(text("Controls.Label"), label_);
+		pin_title_ = new QComboBox(this);
+		pin_title_->setObjectName("viewsPanelPinTitle");
+		pin_title_->setToolTip(text("Controls.PinTitleHelp"));
+		pin_title_->addItem(text("Controls.TitleAsPanel"), QString());
+		add_title_positions(pin_title_);
+		form->addRow(text("Controls.Title"), pin_title_);
 		section_choice_ = new QComboBox(this);
 		section_choice_->setObjectName("viewsPanelSectionChoice");
 		section_choice_->setEditable(true);
@@ -1738,6 +1844,22 @@ public:
 		connect(pins_, &QListWidget::itemSelectionChanged, this, [this] { show_pin(); });
 		connect(pins_->model(), &QAbstractItemModel::rowsMoved, this, [this] { mark_custom(); });
 		connect(label_, &QLineEdit::textChanged, this, [this] { edit_labels(); });
+		connect(pin_title_, &QComboBox::activated, this, [this] {
+			const auto selected = pins_->selectedItems();
+			if (selected.isEmpty())
+				return;
+			mark_custom();
+			const QString chosen = pin_title_->currentData().toString();
+			for (auto *item : selected) {
+				auto pin = pin_data(item);
+				if (chosen.isEmpty())
+					pin.remove("titlePosition");
+				else
+					pin["titlePosition"] = chosen;
+				update_pin(item, pin);
+			}
+			show_pin();
+		});
 		connect(section_, &QLineEdit::textChanged, this, [this] {
 			// The editable combo can publish its label before activated. The
 			// original-section placeholder must never become a saved section.
@@ -1927,7 +2049,7 @@ private:
 	{
 		remember_pin_sections();
 		const QSignalBlocker label_block(label_), section_block(section_),
-			section_choice_block(section_choice_);
+			section_choice_block(section_choice_), title_block(pin_title_);
 		const auto selected = pins_->selectedItems();
 		const bool one = selected.size() == 1;
 		const auto pin = one ? pin_data(selected.front()) : QJsonObject{};
@@ -1935,6 +2057,13 @@ private:
 		label_->setText(pin["label"].toString());
 		section_choice_->setEnabled(!selected.isEmpty());
 		reset_section_->setEnabled(!selected.isEmpty());
+		pin_title_->setEnabled(!selected.isEmpty());
+		const QString title = selected.isEmpty() ? QString()
+							 : pin_data(selected.front())["titlePosition"].toString();
+		bool same_title = true;
+		for (auto *item : selected)
+			same_title = same_title && pin_data(item)["titlePosition"].toString() == title;
+		pin_title_->setCurrentIndex(same_title ? std::max(0, pin_title_->findData(title)) : -1);
 		QString section = selected.isEmpty() ? QString() : pin_data(selected.front())["section"].toString();
 		bool same_section = true;
 		for (auto *item : selected)
@@ -2139,6 +2268,7 @@ private:
 	std::function<void(QJsonArray, QJsonArray, bool, bool)> apply_;
 	QStringList section_presets_, custom_sections_;
 	QComboBox *section_choice_ = nullptr;
+	QComboBox *pin_title_ = nullptr;
 	QLineEdit *search_ = nullptr, *label_ = nullptr, *section_ = nullptr;
 	QTreeWidget *available_ = nullptr;
 	QListWidget *pins_ = nullptr;
@@ -2160,8 +2290,12 @@ public:
 		setObjectName("viewsOperatorBoard");
 		auto *layout = new QVBoxLayout(this);
 		layout->setContentsMargins(0, 0, 0, 0);
+		// Everything but the controls themselves lives in one bar at the
+		// bottom: the Scene list and a settings button that opens the rest
+		// (edit, manage, presentation) above it. The owner: "the controls take
+		// too much vertical space ... id also prefer settings to be located at
+		// the bottom".
 		auto *tools = new QHBoxLayout;
-		layout->addLayout(tools);
 		edit_ = new QPushButton(text("Controls.EditPanel"), this);
 		edit_->setObjectName("viewsPanelEdit");
 		tools->addWidget(edit_);
@@ -2170,11 +2304,11 @@ public:
 		tools->addWidget(configure);
 		connect(configure, &QPushButton::clicked, this, std::move(manage));
 		connect(edit_, &QPushButton::clicked, this, [this] { edit(); });
+		auto *bar = new QHBoxLayout;
 		auto *display = new QHBoxLayout;
-		layout->addLayout(display);
 		scene_label_ = new QLabel(text("Views.Scene"), this);
 		scene_label_->setObjectName("viewsPanelSceneLabel");
-		display->addWidget(scene_label_);
+		bar->addWidget(scene_label_);
 		scene_choice_ = new QComboBox(this);
 		scene_choice_->setObjectName("viewsPanelScene");
 		scene_choice_->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
@@ -2182,7 +2316,15 @@ public:
 		scene_choice_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 		scene_choice_->setToolTip(text("Controls.SceneTip"));
 		scene_label_->setBuddy(scene_choice_);
-		display->addWidget(scene_choice_, 1);
+		bar->addWidget(scene_choice_, 1);
+		settings_toggle_ = new QToolButton(this);
+		settings_toggle_->setObjectName("viewsPanelSettingsToggle");
+		settings_toggle_->setText(QString::fromUtf8("\xe2\x9a\x99"));
+		settings_toggle_->setCheckable(true);
+		settings_toggle_->setAutoRaise(true);
+		settings_toggle_->setToolTip(text("Controls.SettingsHelp"));
+		settings_toggle_->setAccessibleName(text("Controls.Settings"));
+		bar->addWidget(settings_toggle_);
 		auto *display_label = new QLabel(text("Controls.Layout"), this);
 		display->addWidget(display_label);
 		layout_choice_ = new QComboBox(this);
@@ -2190,7 +2332,7 @@ public:
 		layout_choice_->addItem(text("Controls.List"), "list");
 		layout_choice_->addItem(text("Controls.Buttons"), "buttons");
 		display_label->setBuddy(layout_choice_);
-		display->addWidget(layout_choice_);
+		display->addWidget(layout_choice_, 1);
 		pages_ = new QStackedWidget(this);
 		pages_->setObjectName("viewsPanelLayouts");
 		layout->addWidget(pages_, 1);
@@ -2242,9 +2384,41 @@ public:
 		image_only_->setObjectName("viewsPanelImageOnly");
 		image_only_->setToolTip(text("Controls.ImageOnlyHelp"));
 		size_layout->addWidget(image_only_);
-		layout->addWidget(size_controls_);
+		title_controls_ = new QWidget(size_controls_);
+		auto *titles = new QHBoxLayout(title_controls_);
+		titles->setContentsMargins(0, 0, 0, 0);
+		auto *title_label = new QLabel(text("Controls.Title"), title_controls_);
+		titles->addWidget(title_label);
+		title_choice_ = new QComboBox(title_controls_);
+		title_choice_->setObjectName("viewsPanelTitle");
+		title_choice_->setToolTip(text("Controls.TitleHelp"));
+		add_title_positions(title_choice_);
+		title_label->setBuddy(title_choice_);
+		titles->addWidget(title_choice_, 1);
+		auto *title_size_label = new QLabel(text("Controls.TitleSize"), title_controls_);
+		titles->addWidget(title_size_label);
+		title_size_choice_ = new QComboBox(title_controls_);
+		title_size_choice_->setObjectName("viewsPanelTitleSize");
+		title_size_choice_->setToolTip(text("Controls.TitleSizeHelp"));
+		title_size_choice_->addItem(text("Controls.TitleSmall"), "small");
+		title_size_choice_->addItem(text("Controls.TitleMedium"), "medium");
+		title_size_choice_->addItem(text("Controls.TitleLarge"), "large");
+		title_size_label->setBuddy(title_size_choice_);
+		titles->addWidget(title_size_choice_, 1);
+		size_layout->addWidget(title_controls_);
 		status_ = note(this, {}, "viewsPanelStatus");
 		layout->addWidget(status_);
+		settings_ = new QWidget(this);
+		settings_->setObjectName("viewsPanelSettings");
+		auto *settings_layout = new QVBoxLayout(settings_);
+		settings_layout->setContentsMargins(0, 0, 0, 0);
+		settings_layout->addLayout(tools);
+		settings_layout->addLayout(display);
+		settings_layout->addWidget(size_controls_);
+		settings_->setVisible(false);
+		layout->addWidget(settings_);
+		layout->addLayout(bar);
+		connect(settings_toggle_, &QToolButton::toggled, settings_, &QWidget::setVisible);
 		connect(scene_choice_, &QComboBox::activated, this, [this](int index) {
 			const QString id = scene_choice_->itemData(index).toString();
 			if (!id.isEmpty())
@@ -2266,9 +2440,22 @@ public:
 		});
 		connect(image_only_, &QCheckBox::toggled, this, [this](bool enabled) {
 			config_["imageOnly"] = enabled;
+			title_controls_->setVisible(enabled);
 			for (auto *button : buttons_)
 				button->set_image_only(enabled);
 			reflow();
+			if (loaded_)
+				obs_frontend_save();
+		});
+		connect(title_choice_, &QComboBox::activated, this, [this] {
+			config_["iconTitle"] = title_choice_->currentData().toString();
+			apply_titles();
+			if (loaded_)
+				obs_frontend_save();
+		});
+		connect(title_size_choice_, &QComboBox::activated, this, [this] {
+			config_["iconTitleSize"] = title_size_choice_->currentData().toString();
+			apply_titles();
 			if (loaded_)
 				obs_frontend_save();
 		});
@@ -2336,6 +2523,8 @@ public:
 		layout_choice_->setEnabled(loaded);
 		button_size_->setEnabled(loaded);
 		image_only_->setEnabled(loaded);
+		title_choice_->setEnabled(loaded);
+		title_size_choice_->setEnabled(loaded);
 		QJsonArray appearance;
 		for (const QJsonValue value : effective_pins()) {
 			const auto pin = value.toObject();
@@ -2344,7 +2533,8 @@ public:
 						      {"target", pin["target"]},
 						      {"name", panel_title(pin, control)},
 						      {"section", panel_section(pin, control)},
-						      {"iconPng", pin["iconPng"]}});
+						      {"iconPng", pin["iconPng"]},
+						      {"title", pin["titlePosition"]}});
 		}
 		if (appearance != appearance_) {
 			appearance_ = appearance;
@@ -2447,13 +2637,39 @@ private:
 		layout_choice_->setCurrentIndex(buttons ? 1 : 0);
 		button_size_->setValue(std::clamp(config_["buttonSize"].toInt(48), 24, 112));
 		image_only_->setChecked(config_["imageOnly"].toBool());
+		title_controls_->setVisible(image_only_->isChecked());
+		const QSignalBlocker title_block(title_choice_), title_size_block(title_size_choice_);
+		title_choice_->setCurrentIndex(std::max(0, title_choice_->findData(panel_title_position())));
+		title_size_choice_->setCurrentIndex(std::max(0, title_size_choice_->findData(panel_title_size())));
 		pages_->setCurrentWidget(buttons ? static_cast<QWidget *>(scroll_) : list_);
 		size_controls_->setVisible(buttons);
 		for (auto *button : buttons_) {
 			button->set_image_only(image_only_->isChecked());
 			button->set_display_size(button_size_->value());
 		}
+		apply_titles();
 		reflow();
+	}
+
+	// The panel's title choice, "bottom" unless set: the band under Stream
+	// Deck-style key art.
+	QString panel_title_position() const
+	{
+		const QString chosen = config_["iconTitle"].toString();
+		return chosen == "top" || chosen == "middle" || chosen == "hidden" ? chosen : QStringLiteral("bottom");
+	}
+	QString panel_title_size() const
+	{
+		const QString chosen = config_["iconTitleSize"].toString();
+		return chosen == "small" || chosen == "large" ? chosen : QStringLiteral("medium");
+	}
+
+	void apply_titles()
+	{
+		for (auto *button : buttons_) {
+			const QString own = button->property("viewsControlTitle").toString();
+			button->set_title_style(own.isEmpty() ? panel_title_position() : own, panel_title_size());
+		}
 	}
 
 	QJsonArray effective_pins() const
@@ -2519,6 +2735,7 @@ private:
 			button->setProperty("viewsControlId", entry["id"].toString());
 			button->setProperty("viewsControlTarget", entry["target"].toObject().toVariantMap());
 			button->setProperty("viewsControlContext", entry["section"].toString());
+			button->setProperty("viewsControlTitle", entry["title"].toString());
 			button->setAccessibleName(entry["name"].toString());
 			button->setCheckable(true);
 			button->setIcon(icon);
@@ -2547,6 +2764,7 @@ private:
 			section.heading->setExpanded(!collapsed.contains(section.title));
 		content_layout_->addStretch(1);
 		list_->verticalScrollBar()->setValue(scroll);
+		apply_titles();
 		reflow();
 	}
 
@@ -2654,6 +2872,11 @@ private:
 	QWidget *content_ = nullptr, *size_controls_ = nullptr;
 	QSlider *button_size_ = nullptr;
 	QCheckBox *image_only_ = nullptr;
+	QWidget *title_controls_ = nullptr;
+	QWidget *settings_ = nullptr;
+	QToolButton *settings_toggle_ = nullptr;
+	QComboBox *title_choice_ = nullptr;
+	QComboBox *title_size_choice_ = nullptr;
 	QVBoxLayout *content_layout_ = nullptr;
 	QLabel *status_ = nullptr, *scene_label_ = nullptr;
 	QPointer<ViewPanelEditor> editor_;

@@ -23,6 +23,17 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Views: titles on image-only tiles, settings behind ⚙ (betaNEXT)
+
+The owner: "in icon mode, the button label should be positioned in the black area, similar to
+streamdeck. in fact, it should be configurable", then "the controls take too much vertical space"
+and "id also prefer an settings to be located at the bottom". Image-only tiles draw a title
+(`ViewControlButton::paint_title`), positioned by the panel's `iconTitle` / `iconTitleSize` or a
+pin's `titlePosition` (editor `viewsPanelPinTitle`). The panel is now its controls plus one bottom
+bar (Scene selector, ⚙ `viewsPanelSettingsToggle`); Edit panel, Manage, Layout, size, Image only
+and Title sit in `viewsPanelSettings` above it, hidden until ⚙ is clicked. The OBS frontend control
+panel fixture passed on Linux here (llvmpipe, with a longer limit); not seen on Windows.
+
 ## Countdown Timer dock shows the deadline (beta261)
 
 The owner: "id like the countdown timer Dock to also show the actual time the clock is counting down

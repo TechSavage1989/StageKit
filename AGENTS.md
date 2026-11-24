@@ -236,6 +236,18 @@ square buttons per row when space allows. The selected mode and size belong to
 the scene collection and survive List/Buttons changes, collection switches and a
 real OBS restart. Exercise the physical button actions at the 24-pixel size and
 capture the actual Windows image-only presentation for the guide.
+Image-only tiles draw their name as a Stream Deck-style title (beta262; the owner: "in icon mode,
+the button label should be positioned in the black area, similar to streamdeck. in fact, it should
+be configurable"): panel-wide `iconTitle` ("bottom" when absent, "top", "middle", "hidden") and
+`iconTitleSize` ("medium" when absent, "small", "large") in the panel config, and a per-pin
+`titlePosition` override that is part of the appearance (so a change rebuilds). Light text with a
+dark outline over art, at most two lines, the font shrunk down to 8 px before a word is broken; no
+title under 32 px. A button without art shows the title, or initials when hidden.
+The panel's settings live in `viewsPanelSettings`, hidden until the bottom bar's
+`viewsPanelSettingsToggle` (⚙) opens it, above the bar with the Scene selector (the owner: "the
+controls take too much vertical space"; "settings ... at the bottom"). Object names are unchanged;
+the fixture opens the settings (`open_panel_settings`) before it drives them and closes them for
+the guide captures.
 
 The native control catalog's available value is the panel's readiness gate. The frontend collection
 event arrives before scenes_loaded allows a complete catalog; never enable Edit panel solely from
