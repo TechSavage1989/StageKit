@@ -82,8 +82,29 @@ inline bool checked(QWidget *panel, const QString &id)
 	return found && found->isChecked();
 }
 
+// The panel's settings (edit, manage, layout, size, titles) open above its
+// bottom bar from the settings button; the fixture drives them while open.
+inline void open_panel_settings(QWidget *panel)
+{
+	auto *toggle = panel ? panel->findChild<QAbstractButton *>("viewsPanelSettingsToggle") : nullptr;
+	if (toggle && !toggle->isChecked()) {
+		toggle->click();
+		QCoreApplication::processEvents();
+	}
+}
+
+inline void close_panel_settings(QWidget *panel)
+{
+	auto *toggle = panel ? panel->findChild<QAbstractButton *>("viewsPanelSettingsToggle") : nullptr;
+	if (toggle && toggle->isChecked()) {
+		toggle->click();
+		QCoreApplication::processEvents();
+	}
+}
+
 inline bool panel_ready(QWidget *panel)
 {
+	open_panel_settings(panel);
 	const auto *edit = panel->findChild<QAbstractButton *>("viewsPanelEdit");
 	return edit && edit->isEnabled();
 }
@@ -121,6 +142,7 @@ inline bool layout_is(QWidget *panel, const char *layout)
 
 inline bool select_layout(QWidget *panel, const char *layout)
 {
+	open_panel_settings(panel);
 	auto *choice = panel->findChild<QComboBox *>("viewsPanelLayout");
 	const int at = choice ? choice->findData(layout) : -1;
 	if (at < 0)
@@ -374,6 +396,8 @@ inline bool select_pins(QListWidget *pins, const QList<int> &rows)
 
 inline bool slider_key(QSlider *slider, Qt::Key key)
 {
+	if (slider)
+		open_panel_settings(slider->window());
 	if (!slider || !slider->isVisible() || !slider->isEnabled())
 		return false;
 	QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier);
@@ -2150,6 +2174,17 @@ inline void check(QStringList &issues, bool restart)
 		};
 		expect(until([&] { return square_at(64, 54); }),
 		       "Image only did not produce square tiles with large images and usable tooltips");
+		auto *title_choice = panel->findChild<QComboBox *>("viewsPanelTitle");
+		auto *title_size = panel->findChild<QComboBox *>("viewsPanelTitleSize");
+		expect(title_choice && title_size && title_choice->isVisible() &&
+			       title_choice->currentData().toString() == "bottom" &&
+			       title_size->currentData().toString() == "medium",
+		       "Image only did not offer its title, at the bottom and medium by default");
+		expect(select_combo_option(title_choice, "top") && select_combo_option(title_size, "large") &&
+			       until([&] { return title_choice->currentData().toString() == "top"; }),
+		       "the image-only title position and size could not be chosen");
+		expect(select_combo_option(title_choice, "bottom") && select_combo_option(title_size, "medium"),
+		       "the image-only title could not return to its default");
 		expect(slider_key(size, Qt::Key_Home) && size->value() == 24 &&
 			       until([&] { return square_at(24, 20); }),
 		       "compact image-only buttons did not reach list-row scale with visible artwork");
@@ -2344,6 +2379,7 @@ inline void check(QStringList &issues, bool restart)
 					      control_list(panel)->verticalScrollBar()->maximum() == 0;
 			       }),
 			       "the compact list did not fit the selected controls at the guide capture size");
+			close_panel_settings(panel);
 			expect(panel->grab().save(directory.filePath("stagekit-controls-list.png")),
 			       "could not capture the real compact control list");
 			expect(select_layout(panel, "buttons") && slider_key(size, Qt::Key_Home) && size->value() == 24,
@@ -2356,6 +2392,7 @@ inline void check(QStringList &issues, bool restart)
 				       "compact icon buttons did not fit all selected controls in the guide capture");
 			}
 			QCoreApplication::processEvents();
+			close_panel_settings(panel);
 			expect(panel->grab().save(directory.filePath("stagekit-controls.png")),
 			       "could not capture the real icon button panel");
 			if (auto *only = panel->findChild<QCheckBox *>("viewsPanelImageOnly")) {
@@ -2365,8 +2402,12 @@ inline void check(QStringList &issues, bool restart)
 					       "could not enlarge image-only tiles for the guide capture");
 				expect(size->value() == 64, "the image-only guide capture was not at 64 pixels");
 				QCoreApplication::processEvents();
+				close_panel_settings(panel);
 				expect(panel->grab().save(directory.filePath("stagekit-controls-image-only.png")),
 				       "could not capture the real image-only panel");
+				open_panel_settings(panel);
+				expect(panel->grab().save(directory.filePath("stagekit-controls-settings.png")),
+				       "could not capture the real panel settings");
 				only->setChecked(false);
 				expect(slider_key(size, Qt::Key_Home),
 				       "could not restore the button size after the image-only capture");

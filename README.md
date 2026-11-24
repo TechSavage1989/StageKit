@@ -1204,11 +1204,11 @@ Existing Scene Modes, Link Visibility and Show in Scenes controls appear automat
 Scene Controller choices and combined views. Select a row or button directly without first choosing
 its scene or controller. Keep the dock open while switching scenes; its controls stay available.
 
-**Switch scenes directly.** Use the **Scene** selector at the top of the panel. It follows the order
+**Switch scenes directly.** Use the **Scene** selector in the bar at the bottom of the panel. It follows the order
 in OBS's Scenes dock and shows the actual selected scene. In Studio Mode, the selector is **Preview**
 and changes Preview without changing Program. To keep specific scenes available with one click, open
-**Edit panel...**, expand **Scenes**, and check the scenes you want. Save, then choose **Buttons** at
-the top of the dock. Each checked scene becomes its own button alongside your other controls. Choose
+**Edit panel...**, expand **Scenes**, and check the scenes you want. Save, then choose **Buttons** under
+the panel settings (⚙). Each checked scene becomes its own button alongside your other controls. Choose
 **List** for the same scene shortcuts as compact rows. These scene controls work without a mode or
 combined view, and the dropdown stays available in either layout.
 
@@ -1217,7 +1217,12 @@ groups and combined views. A button for an existing standalone filter still uses
 Import can move Scene Modes and Link Visibility rules into Scene Controller. Show in Scenes buttons
 continue to use their original filters.
 
-**Choose a compact list or adjustable buttons.** Choose **List** or **Buttons** at the top of the dock.
+**Panel settings stay out of the way.** The panel's only fixed row is the bar at the bottom: the
+**Scene** selector and a ⚙ button. Click ⚙ to show or hide the panel settings above that bar:
+**Edit panel...**, **Manage controllers...**, **View**, **Button size**, **Image only** and its **Title** choices.
+
+**Choose a compact list or adjustable buttons.** Choose **List** or **Buttons** under **View** in the
+panel settings.
 Both layouts use the same saved controls, labels, sections and order. List is the default and groups
 compact rows under collapsible headings. A single click applies a choice, including one that is already
 highlighted. Collapsed headings are remembered when you switch collections or restart OBS. Enter or
@@ -1232,12 +1237,17 @@ can be nearly as compact as List rows. The regular labeled layout remains the de
 with names wrapping as needed.
 
 Check **Image only** to switch to square Stream Deck-style tiles. The icon fills most of
-each tile, centered and scaled with the button size. Buttons without assigned icons show
-short initials instead of an empty tile. Hover over any button for its full name and
+each tile, centered and scaled with the button size. Each tile shows its name as a title,
+like a Stream Deck key: light text with a dark outline, at most two lines. **Title** places it
+at the **Bottom** (the default, in the dark band under the key art), **Top** or **Middle**, or
+**Hidden**; **Size** makes it **Small**, **Medium** or **Large**. A button can have its own
+position: in **Edit panel...**, select it and choose its **Title** (*As the panel* follows the
+panel's choice). Buttons under 32 pixels show no title. A button without an icon shows its
+title in the middle of the tile, or short initials with the title hidden. Hover over any button for its full name and
 section, or use the accessible name. The grid automatically fits more square buttons
 across the dock as they shrink, without horizontal scrolling. List and Buttons continue
-to share the same controls, actions and saved order. Button size and Image only are
-saved separately for each scene collection.
+to share the same controls, actions and saved order. Button size, Image only and
+the title choices are saved separately for each scene collection.
 
 **Use icons and choose the button size that fits your dock.**
 
