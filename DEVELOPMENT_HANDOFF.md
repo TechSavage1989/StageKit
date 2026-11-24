@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Views: titles on image-only tiles, settings behind ⚙ (betaNEXT)
+## Views: titles on image-only tiles, settings behind ⚙ (beta262)
 
 The owner: "in icon mode, the button label should be positioned in the black area, similar to
 streamdeck. in fact, it should be configurable", then "the controls take too much vertical space"
