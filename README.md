@@ -1243,6 +1243,10 @@ saved separately for each scene collection.
 
 <p align="center"><img src="docs/images/stagekit-controls.png" width="560" alt="StageKit Views buttons in Windows OBS with custom icons and a button-size control"></p>
 
+**Use image-only square buttons with larger, centered icons.**
+
+<p align="center"><img src="docs/images/stagekit-controls-image-only.png" width="520" alt="StageKit Views in Windows OBS displaying large centered images on square buttons at a 64-pixel size"></p>
+
 **Choose what stays visible.** Open **Edit panel...** and check the controls you want under **Available
 controls**. Check a group to include its choices together. Search narrows the available list without
 removing choices you have already selected. Ordinary source and OBS Sources group visibility controls

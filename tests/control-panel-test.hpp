@@ -870,6 +870,10 @@ inline void check_collection_isolation(QWidget *panel, QStringList &issues)
 		}
 	}
 	obs_frontend_save();
+	// Give OBS time to finish writing the second collection's intentionally
+	// empty panel before opening another collection. The native catalog is
+	// updated asynchronously while its new source filters are discovered.
+	settle(200);
 	obs_frontend_set_current_scene_collection(original.toUtf8().constData());
 	expect(until([&] { return collection_name() == original && panel_ready(panel) && button(panel, {}); }) &&
 		       check_saved_panel(panel, "buttons", false, true),

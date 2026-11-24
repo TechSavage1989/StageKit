@@ -216,6 +216,13 @@ of Polish and StyleChange, clear that inherited height cap with QWIDGETSIZE_MAX.
 painting. Assert containment and maximumHeight >= heightForWidth at normal and resized dock widths,
 and inspect the actual Windows capture after responsive layout changes.
 
+After changing a whole-scene Scene Blur area's settings, the shadow-reuse fixture
+must wait for the complete no-consumer frame before asserting exact pixels and
+zero reuse/retention. OBS may accept the update before the old render state
+retires. Readiness needs unchanged prepared/pass counts and matching pixels,
+not merely one preparation per scene; never relax the final pixel or pass
+checks to hide an actual reuse defect.
+
 The Views button slider must support list-row scale (24 pixels) as well as large
 tiles (112 pixels). Preserve the existing labeled-button layout by default. Image-only
 mode makes each control exactly square; its icon is centered and uses most of the

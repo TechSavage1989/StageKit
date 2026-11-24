@@ -14,6 +14,13 @@ jobs:
         with:
           failCondition: error
 
+      - name: Temporary formatting diagnostic for shadow reuse test
+        if: always()
+        shell: bash
+        run: |
+          clang-format-19 -i tests/shadow-reuse-test.hpp tests/control-panel-test.hpp
+          git diff -- tests/shadow-reuse-test.hpp tests/control-panel-test.hpp
+
   gersemi:
     runs-on: ubuntu-24.04
     steps:

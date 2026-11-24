@@ -23,6 +23,19 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Beta258 CI validation update
+
+PR #280 implements 24-112 pixel sizing, an image-only square button option,
+large centered artwork, short-initial fallback and a responsive grid. The
+Windows OBS 32.2.2 frontend exercise confirmed the compact icons and actual
+button actions, but another rendering fixture intermittently rejected the
+whole-scene Scene Blur transition (its first sampled frame still reported
+per-source reuse). The updated shadow-reuse-test.hpp waits for a fully
+applied no-consumer frame, including exact pixels, zero reuse/retention and
+matching pass counts. It does not change production Scene Blur/Shadow code.
+A new final-head Windows and native validation is required before release.
+The actual Windows image-only capture is recorded as a 64-pixel tile.
+
 ## Compact and image-only StageKit Views buttons (beta258 work)
 
 The new feature request is to shrink Views buttons to list-row scale, allow image-only

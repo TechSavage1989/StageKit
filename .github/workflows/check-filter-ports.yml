@@ -189,16 +189,6 @@ jobs:
           $env:STAGEKIT_AUTO_FRAME_CAPTURE = Join-Path $PWD 'build_x64/frontend-results/auto-frame-detection.png'
           $env:STAGEKIT_VIEWS_CAPTURE = Join-Path $PWD 'build_x64/frontend-results/stagekit-views.png'
           ./tests/check-replacement-windows.ps1 -PackageDirectory release/RelWithDebInfo/stagekit -ProbePath $probe.FullName -ResultDirectory build_x64/frontend-results
-      - name: Temporary export of OBS screenshot for guide
-        if: always()
-        shell: pwsh
-        run: |
-          $image = 'build_x64/frontend-results/stagekit-controls-image-only.png'
-          if (Test-Path $image) {
-            Write-Output 'STAGEKIT_CAPTURE_BASE64_BEGIN'
-            Write-Output ([Convert]::ToBase64String([System.IO.File]::ReadAllBytes((Resolve-Path $image))))
-            Write-Output 'STAGEKIT_CAPTURE_BASE64_END'
-          }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
