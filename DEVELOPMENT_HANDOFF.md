@@ -23,7 +23,7 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
-## Countdown Timer: marks count from the press (betaNEXT)
+## Countdown Timer: marks count from the press (beta260)
 
 The owner: "the countdown timer quarter hour key shouldn't be specific to :15/:30/:45 of the hour, but
 rather the next 15/30/45 minutes. or add a configuration for that", then "the new behavior as default".
