@@ -23,6 +23,16 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Window layout saved on the window's Close event (beta264)
+
+The owner: "the stagekit dock keeps resizing after obs loads and ignores the stored window layout".
+*Save layout when OBS closes* saved at `SCRIPTING_SHUTDOWN`, which OBS sends after it has saved its
+own DockState and removed its browser and service docks. The owner's `window-layout.json` had the
+StageKit dock's group at position 0 with 1090 px (OBS's DockState: 428 / 662) and three docks at 0,
+restored 1.5 s after each start and for each late dock. Now `CloseWatch` saves on the main window's
+`QEvent::Close`, every save writes `format` 2, and automatic restores refuse an unformatted file with
+`at_exit` on. Tested in `STAGEKIT_TEST_ONLY_WINDOW_CLOSE`. PR #286. Not yet seen on Windows.
+
 ## Item Morph on OBS 32, Views editor race, Scene Controller shutdown (beta263)
 
 The Linux CI test job failed on three item Morph checks after beta262. Cause: since OBS 32,
