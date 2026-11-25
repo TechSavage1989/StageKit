@@ -3259,8 +3259,12 @@ private:
 		OBSDataAutoRelease controls = obs_data_create();
 		if (loaded_)
 			view_controls_list(controls);
-		panel_->set_inventory(object(controls)["controls"].toArray(),
-				      loaded_ && obs_data_get_bool(controls, "available"));
+		const bool catalog_ready = loaded_ && obs_data_get_bool(controls, "available");
+		panel_->set_inventory(object(controls)["controls"].toArray(), catalog_ready);
+		// The collection event arrives before its scenes are loaded. Look again
+		// soon rather than leaving Edit panel off until the next slow refresh.
+		if (loaded_ && !catalog_ready)
+			QTimer::singleShot(250, this, [this] { queue_refresh(); });
 		if (loaded_ && pages_->currentWidget() != manager_)
 			return;
 		const QSignalBlocker scene_block(scenes_), controller_block(controllers_), scope_block(scope_),

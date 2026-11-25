@@ -257,7 +257,8 @@ the guide captures.
 The native control catalog's available value is the panel's readiness gate. The frontend collection
 event arrives before scenes_loaded allows a complete catalog; never enable Edit panel solely from
 the dock's loaded flag or the presence of saved fallback buttons. Check a fresh catalog before opening
-an editor. Collection and restart fixtures wait for that same ready state, and distinguish an empty
+an editor. While loaded and not yet ready, the dock looks again every 250 ms rather than
+waiting for its 2 s fallback refresh, which could miss a fixture's 4 s wait. Collection and restart fixtures wait for that same ready state, and distinguish an empty
 available inventory from an intentionally empty customized board.
 
 The Ubuntu CI package build and Linux native/frontend job use the checksum-pinned official OBS 32.2.2
