@@ -76,6 +76,9 @@ state inside retained scene-enumeration callbacks; recursive lookup returns a bo
 unlocking, which can be removed before a later visibility read. Saved-view dock requests carry only
 viewId, not the same ID again as choiceId; the backend rejects mixed targets before making changes.
 
+A scene being destroyed still signals item_remove after the controller is gone, and its weak reference
+can no longer reach it to disconnect: the scene signal handlers (structure, changed) act only while the
+controller is still in the registry, under registry_mutex, which the destructor takes first.
 Emit SceneControllerChanged and stagekit_scene_controller_changed only after releasing engine locks.
 The event carries only controllerId; subscribers coalesce a later snapshot refresh. Native editing is
 on the frontend thread. The dock's scene selector must never change Program as a browsing side effect.
@@ -269,7 +272,7 @@ supplement its dependencies with the verified OBS package version for the pinned
 actual DEB packaging on pull requests and inspect its OBS, libc and Qt dependencies before release;
 a passing tar archive build does not validate the Debian package metadata.
 
-The standalone LINK_FOLLOW settings and legacy fixtures and its nested capture-hide fixture must remove
+The countdown fixture's public spacing scene, and the standalone LINK_FOLLOW settings and legacy fixtures and its nested capture-hide fixture must remove
 their scenes from the modern OBS main canvas before releasing them. Otherwise canvas ownership retains
 their sources until after module unload. Keep the weak-reference release assertions and pump deferred UI
 work during teardown, as in the existing MORPH_HOLDS and MAKE_ROOM fixtures.
