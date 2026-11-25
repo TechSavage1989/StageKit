@@ -1904,7 +1904,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     nothing when hidden) and driven in `OBS_TRANSITION_MODE_MANUAL` by the change's own clock,
     not eased (it eases itself). It is never driven to 1: at its end OBS's transition draws its
     first side again, which for a hide is the item, so the last frames are drawn by Morph itself;
-    it lets go of the item at the next start or stop (`let_go_fallback`). A Morph saved before
+    it lets go of the item at the next start or stop (`let_go_fallback`). **Never give it a manual time of exactly 0**: since OBS 32 `obs_transition_set_manual_time(..., 0)` cancels a manual transition back to its first side (a shown item drew nothing for the whole change, a hidden one stayed whole); its time starts at 0 by itself, and `draw_alone` gives at least `kFallbackLeast`. A Morph saved before
     reads `others` (Fade and zoom stays so; Slide, then a fade for an item, stays a fade). Which
     side is the item's is still read from the transition's sources (`alone_in_`). Tested in
     `[link visibility: show and hide transitions, and Morph's unpaired sources]`, each way in and
