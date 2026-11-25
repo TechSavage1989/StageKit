@@ -11084,7 +11084,7 @@ static void link_transitions_test(uint32_t w, uint32_t h)
 		obs_source_filter_remove(scene_src, link);
 		obs_source_release(link);
 		obs_set_output_source(0, before_out);
-		obs_scene_release(scene);
+		release_canvas_scene_fixture(scene);
 		for (obs_source_t *src : {a, b, c})
 			obs_source_release(src);
 	}
@@ -11276,7 +11276,7 @@ static void link_transitions_test(uint32_t w, uint32_t h)
 		// OBS found it all still there at shutdown ("Double destroy").
 		obs_weak_source_t *weak[4] = {obs_source_get_weak_source(scene_src), obs_source_get_weak_source(cam),
 					      obs_source_get_weak_source(grab), obs_source_get_weak_source(badge)};
-		obs_scene_release(scene);
+		release_canvas_scene_fixture(scene);
 		for (obs_source_t *src : {cam, grab, badge})
 			obs_source_release(src);
 		std::string left = item_morph_left_over(weak, 4);

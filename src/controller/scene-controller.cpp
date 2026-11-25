@@ -1111,16 +1111,31 @@ private:
 			origin_claims[uuid] = {this, group};
 		return true;
 	}
-	static void changed(void *opaque, calldata_t *) { static_cast<Controller *>(opaque)->dirty_ = true; }
+	// A scene being destroyed can no longer be reached through its weak
+	// reference, so unwatch cannot disconnect from it, yet it still signals
+	// item_remove for each item after this controller has been destroyed.
+	// The scene handlers therefore act only while the controller is still
+	// registered, holding the registry lock that the destructor takes first.
+	static void changed(void *opaque, calldata_t *)
+	{
+		auto *self = static_cast<Controller *>(opaque);
+		std::lock_guard lock(registry_mutex);
+		if (std::find(controllers.begin(), controllers.end(), self) != controllers.end())
+			self->dirty_ = true;
+	}
 	static void structure(void *opaque, calldata_t *cd)
 	{
 		auto *self = static_cast<Controller *>(opaque);
 		auto *item = static_cast<obs_sceneitem_t *>(calldata_ptr(cd, "item"));
 		if (item && !selectable_item_name(item))
 			return;
+		const bool group = item && obs_sceneitem_is_group(item);
+		std::lock_guard lock(registry_mutex);
+		if (std::find(controllers.begin(), controllers.end(), self) == controllers.end())
+			return;
 		self->dirty_ = true;
 		self->watch_dirty_ = true;
-		if (item && obs_sceneitem_is_group(item))
+		if (group)
 			self->rebuild_ = true;
 	}
 	static void source_changed(void *opaque, calldata_t *cd)
@@ -1790,6 +1805,21 @@ bool scene_controller_get(const char *controller_id, obs_data_t *response, std::
 	if (!self)
 		return false;
 	self->snapshot(response);
+	return true;
+}
+
+bool scene_controller_definition(const char *controller_id, obs_data_t *config, std::string &why)
+{
+	if (!config) {
+		why = "A config object is required";
+		return false;
+	}
+	SourceRef held(nullptr);
+	Controller *self = find_controller(controller_id, held, why);
+	if (!self)
+		return false;
+	auto definition = self->configuration(true);
+	obs_data_apply(config, definition.get());
 	return true;
 }
 

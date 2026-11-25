@@ -847,6 +847,18 @@ inline void visible_spacing(QStringList &issues)
 		expect(false, "creating the scene sources");
 		return;
 	}
+	// Modern OBS keeps a public scene on its main canvas. Give that ownership
+	// back before the fixture releases its scene, or the scene and its items
+	// outlive module unload and are destroyed after OBS has freed their data.
+	struct CanvasRelease {
+		obs_scene_t *scene;
+		~CanvasRelease()
+		{
+#if LIBOBS_API_VER >= MAKE_SEMANTIC_VERSION(31, 1, 0)
+			obs_canvas_scene_remove(scene);
+#endif
+		}
+	} canvas_release{scene};
 	auto *scene_source = obs_scene_get_source(scene);
 	auto *picture = obs_scene_add(scene, image);
 	auto *clock = obs_scene_add(scene, timer);

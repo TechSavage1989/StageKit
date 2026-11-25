@@ -1253,9 +1253,14 @@ void Morph::start_alone(const Settings &s, obs_source_t *from, obs_source_t *to,
 		obs_transition_set(fallback_, from);
 		obs_transition_start(fallback_, OBS_TRANSITION_MODE_MANUAL, 300, nullptr);
 	}
-	obs_transition_set_manual_time(fallback_, 0.0f);
+	// (Its time starts at 0 by itself. Never set it to 0 by hand: since OBS
+	// 32, a manual time of exactly 0 cancels the transition, taking it back
+	// to its first side alone, and it then drew that side whole all along.)
 	fallback_on_ = true;
 }
+
+// The least manual time the fallback transition is given (see start_alone).
+static constexpr float kFallbackLeast = 1e-6f;
 
 // One frame of an item by itself, `way` along its change (0 to 1, by the
 // clock, not eased: another transition eases itself).
@@ -1276,7 +1281,7 @@ void Morph::draw_alone(const Settings &s, double way, uint32_t cx, uint32_t cy, 
 			return;
 		}
 		obs_transition_set_size(fallback_, cx, cy);
-		obs_transition_set_manual_time(fallback_, (float)way);
+		obs_transition_set_manual_time(fallback_, std::max((float)way, kFallbackLeast));
 		// (Drawn as OBS would draw it in the item's place: in the state the
 		// scene drew this transition in.)
 		const bool linear = gs_set_linear_srgb(was_linear);

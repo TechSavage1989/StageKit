@@ -23,6 +23,19 @@ Read [AGENTS.md](AGENTS.md) first. This file is the current state.
 | `SHADOW_FLICKER`, `SHADOW_EACH`, `TOOLTIPS` | 32, 13, 12 |
 | The other nineteen gates (the test program's waiting changed for all of them) | all passed |
 
+## Item Morph on OBS 32, Views editor race, Scene Controller shutdown (beta263)
+
+The Linux CI test job failed on three item Morph checks after beta262. Cause: since OBS 32,
+`obs_transition_set_manual_time(t, 0)` cancels a manual transition, so Morph's unpaired fallback
+transition drew nothing; `draw_alone` now never goes below `kFallbackLeast`. The Link Visibility
+transitions fixture now releases its canvas scenes. The Views editor opens from and saves against
+`scene_controller_definition` (the newest accepted definition), not the snapshot. Scene Controller's
+scene signal handlers act only while the controller is registered (a dying scene still signals
+item_remove after the controller is freed; valgrind showed the write). The countdown spacing
+fixture gives its scene back to the main canvas before release. The Windows control panel fixture
+waits for the Scene selector to show Preview before choosing a scene in Studio Mode. All CI checks
+passed on PR #285, Windows frontend and Linux native included.
+
 ## Views: titles on image-only tiles, settings behind ⚙ (beta262)
 
 The owner: "in icon mode, the button label should be positioned in the black area, similar to

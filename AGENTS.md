@@ -76,6 +76,9 @@ state inside retained scene-enumeration callbacks; recursive lookup returns a bo
 unlocking, which can be removed before a later visibility read. Saved-view dock requests carry only
 viewId, not the same ID again as choiceId; the backend rejects mixed targets before making changes.
 
+A scene being destroyed still signals item_remove after the controller is gone, and its weak reference
+can no longer reach it to disconnect: the scene signal handlers (structure, changed) act only while the
+controller is still in the registry, under registry_mutex, which the destructor takes first.
 Emit SceneControllerChanged and stagekit_scene_controller_changed only after releasing engine locks.
 The event carries only controllerId; subscribers coalesce a later snapshot refresh. Native editing is
 on the frontend thread. The dock's scene selector must never change Program as a browsing side effect.
@@ -162,7 +165,9 @@ panel button labels across source/filter renames and refreshed fallback names.
 
 Nested group, mode and combined-view editors update the outer configuration draft. Their Done action
 does not publish native settings. Keep Apply changes on the outer editor, a pending-change notice,
-and atomic Cancel behavior. Exercise scope through the actual Applies to editor, then reopen it after
+and atomic Cancel behavior. The outer editor opens from and saves against `scene_controller_definition`
+(the newest accepted definition, queued or built), never a snapshot's `config`: between a save and the
+controller's next tick the snapshot is older, and its own save read as a foreign change. Exercise scope through the actual Applies to editor, then reopen it after
 applying. Scoped imported groups must be discoverable from each covered scene and accept choices with
 their owning scene offscreen. Test both controller choices and original pins saved before import;
 both apply to every covered scene without changing Program. Removing scope removes remote access.
@@ -252,7 +257,8 @@ the guide captures.
 The native control catalog's available value is the panel's readiness gate. The frontend collection
 event arrives before scenes_loaded allows a complete catalog; never enable Edit panel solely from
 the dock's loaded flag or the presence of saved fallback buttons. Check a fresh catalog before opening
-an editor. Collection and restart fixtures wait for that same ready state, and distinguish an empty
+an editor. While loaded and not yet ready, the dock looks again every 250 ms rather than
+waiting for its 2 s fallback refresh, which could miss a fixture's 4 s wait. Collection and restart fixtures wait for that same ready state, and distinguish an empty
 available inventory from an intentionally empty customized board.
 
 The Ubuntu CI package build and Linux native/frontend job use the checksum-pinned official OBS 32.2.2
@@ -267,7 +273,7 @@ supplement its dependencies with the verified OBS package version for the pinned
 actual DEB packaging on pull requests and inspect its OBS, libc and Qt dependencies before release;
 a passing tar archive build does not validate the Debian package metadata.
 
-The standalone LINK_FOLLOW settings and legacy fixtures and its nested capture-hide fixture must remove
+The countdown fixture's public spacing scene, and the standalone LINK_FOLLOW settings and legacy fixtures and its nested capture-hide fixture must remove
 their scenes from the modern OBS main canvas before releasing them. Otherwise canvas ownership retains
 their sources until after module unload. Keep the weak-reference release assertions and pump deferred UI
 work during teardown, as in the existing MORPH_HOLDS and MAKE_ROOM fixtures.
@@ -1904,7 +1910,7 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
     nothing when hidden) and driven in `OBS_TRANSITION_MODE_MANUAL` by the change's own clock,
     not eased (it eases itself). It is never driven to 1: at its end OBS's transition draws its
     first side again, which for a hide is the item, so the last frames are drawn by Morph itself;
-    it lets go of the item at the next start or stop (`let_go_fallback`). A Morph saved before
+    it lets go of the item at the next start or stop (`let_go_fallback`). **Never give it a manual time of exactly 0**: since OBS 32 `obs_transition_set_manual_time(..., 0)` cancels a manual transition back to its first side (a shown item drew nothing for the whole change, a hidden one stayed whole); its time starts at 0 by itself, and `draw_alone` gives at least `kFallbackLeast`. A Morph saved before
     reads `others` (Fade and zoom stays so; Slide, then a fade for an item, stays a fade). Which
     side is the item's is still read from the transition's sources (`alone_in_`). Tested in
     `[link visibility: show and hide transitions, and Morph's unpaired sources]`, each way in and
