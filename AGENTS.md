@@ -162,7 +162,9 @@ panel button labels across source/filter renames and refreshed fallback names.
 
 Nested group, mode and combined-view editors update the outer configuration draft. Their Done action
 does not publish native settings. Keep Apply changes on the outer editor, a pending-change notice,
-and atomic Cancel behavior. Exercise scope through the actual Applies to editor, then reopen it after
+and atomic Cancel behavior. The outer editor opens from and saves against `scene_controller_definition`
+(the newest accepted definition, queued or built), never a snapshot's `config`: between a save and the
+controller's next tick the snapshot is older, and its own save read as a foreign change. Exercise scope through the actual Applies to editor, then reopen it after
 applying. Scoped imported groups must be discoverable from each covered scene and accept choices with
 their owning scene offscreen. Test both controller choices and original pins saved before import;
 both apply to every covered scene without changing Program. Removing scope removes remote access.

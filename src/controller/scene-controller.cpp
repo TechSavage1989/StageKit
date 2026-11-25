@@ -1793,6 +1793,21 @@ bool scene_controller_get(const char *controller_id, obs_data_t *response, std::
 	return true;
 }
 
+bool scene_controller_definition(const char *controller_id, obs_data_t *config, std::string &why)
+{
+	if (!config) {
+		why = "A config object is required";
+		return false;
+	}
+	SourceRef held(nullptr);
+	Controller *self = find_controller(controller_id, held, why);
+	if (!self)
+		return false;
+	auto definition = self->configuration(true);
+	obs_data_apply(config, definition.get());
+	return true;
+}
+
 bool scene_controller_configure(const char *controller_id, obs_data_t *config, std::string &why)
 {
 	SourceRef held(nullptr);

@@ -100,6 +100,21 @@ QJsonObject snapshot(const QString &id, QString *error = nullptr)
 	return object(data);
 }
 
+// The definition an editor starts from and saves against (see
+// scene_controller_definition): newer than a snapshot's between a save and
+// the controller's next tick.
+QJsonObject definition(const QString &id, QString *error = nullptr)
+{
+	OBSDataAutoRelease data = obs_data_create();
+	std::string why;
+	if (!scene_controller_definition(id.toUtf8().constData(), data, why)) {
+		if (error)
+			*error = QString::fromStdString(why);
+		return {};
+	}
+	return object(data);
+}
+
 QJsonObject find_id(const QJsonArray &array, const QString &id)
 {
 	for (const QJsonValue value : array)
@@ -1082,14 +1097,14 @@ private:
 	void save()
 	{
 		QString error;
-		const auto current = snapshot(id_, &error);
+		const auto current = definition(id_, &error);
 		if (current.isEmpty()) {
 			error_->setText(error);
 			return;
 		}
 		// Key presses change the two runtime mode fields. Structural edits or
 		// source renames must not be overwritten by an older open draft.
-		if (editable_definition(current["config"].toObject()) != original_) {
+		if (editable_definition(current) != original_) {
 			error_->setText(text("Views.DraftChanged"));
 			return;
 		}
@@ -3495,11 +3510,13 @@ private:
 			return;
 		}
 		QString error;
-		const auto current = snapshot(selected_controller_, &error);
-		if (current.isEmpty()) {
+		auto current = snapshot(selected_controller_, &error);
+		const auto config = current.isEmpty() ? QJsonObject{} : definition(selected_controller_, &error);
+		if (config.isEmpty()) {
 			status_->setText(error);
 			return;
 		}
+		current["config"] = config;
 		editor_ = new ViewsEditor(this, current);
 		connect(editor_, &QDialog::finished, this, [this] {
 			editor_ = nullptr;
