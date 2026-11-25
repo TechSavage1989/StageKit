@@ -674,6 +674,16 @@ Use clang-format 19 (`pip install clang-format==19.1.7`) and `pip install gersem
   coming for `kLateSettleMs` (0.4 s), never while a mouse button is down. A dock the saved layout
   does not know stays where it was put. Tested in `[window layout: docks added late]`
   (`STAGEKIT_TEST_ONLY_WINDOW_LATE`, proc `stagekit_window_layout_late`). Not seen on Windows.
+  **Save when OBS closes saves on the main window's Close event** (`CloseWatch`, installed at
+  `FINISHED_LOADING`, beta264), never at `SCRIPTING_SHUTDOWN`: OBS sends that after it has saved its
+  own DockState and taken its browser and service docks down, so the docks beside them had their
+  room (the owner's file had the StageKit dock's group at position 0, the whole 1090 px column), and
+  that collapsed layout was put back over OBS's correct one 1.5 s after every start and again for
+  each late dock (the owner: "the stagekit dock keeps resizing after obs loads and ignores the
+  stored window layout"). Every save writes `format` 2; the automatic restores
+  (`window_layout_restore_auto`) refuse a file without it whose `at_exit` is on (written at
+  shutdown by beta263 or earlier) and log it once; the menu's restore still takes it. Tested in
+  `[window layout: saved as OBS closes, before its docks go]` (`STAGEKIT_TEST_ONLY_WINDOW_CLOSE`).
 - **The dock carries no explanatory paragraphs.** The owner wants it clean: controls and short labels
   only. Put explanations in tooltips and the README.
 - **The dock has no picture of the scene.** One was built (drag, wheel, zoom cross) and the owner
