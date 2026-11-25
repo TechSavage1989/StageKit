@@ -2755,8 +2755,11 @@ StageKit updates itself from inside OBS, on Windows.
   as it comes) does so shortly after OBS has loaded, and again after every change of scene
   collection (OBS puts the docks that belong to a collection up again then), once every plugin's
   docks are there; *Save it
-  when OBS closes* (unticked as it comes) keeps it up to date by itself. Nothing happens until a
-  layout has been saved once.
+  when OBS closes* (unticked as it comes) keeps it up to date by itself, saving the moment OBS is
+  asked to close, before it takes its browser docks down. A layout that an earlier version saved
+  as OBS closed was taken after those docks had gone (the docks beside them had their room), so it
+  is not brought back by itself: OBS's own layout is kept until OBS next closes and saves it
+  afresh. Nothing happens until a layout has been saved once.
 - On macOS and Linux it tells you about a newer release and opens its page; installing is by hand.
 
 To update by hand instead, close OBS and run a newer installer, or replace the plugin folder with a

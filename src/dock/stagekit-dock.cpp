@@ -3091,6 +3091,37 @@ void register_dock()
 						: window_layout_late_restores());
 		},
 		nullptr);
+	// For the tests: the save on closing. Watch `window` for its close (and
+	// read how often that saved), set a choice, pass an OBS event on, and
+	// bring the layout back as at start-up.
+	proc_handler_add(
+		obs_get_proc_handler(), "void stagekit_window_layout_close(in ptr window, out int n)",
+		[](void *, calldata_t *cd) {
+			calldata_set_int(
+				cd, "n",
+				window_layout_watch_close(static_cast<QMainWindow *>(calldata_ptr(cd, "window"))));
+		},
+		nullptr);
+	proc_handler_add(
+		obs_get_proc_handler(), "void stagekit_window_layout_choice(in string name, in bool on)",
+		[](void *, calldata_t *cd) {
+			window_layout_set_choice(calldata_string(cd, "name"), calldata_bool(cd, "on"));
+		},
+		nullptr);
+	proc_handler_add(
+		obs_get_proc_handler(), "void stagekit_window_layout_event(in int event)",
+		[](void *, calldata_t *cd) {
+			window_layout_event(static_cast<enum obs_frontend_event>(calldata_int(cd, "event")));
+		},
+		nullptr);
+	proc_handler_add(
+		obs_get_proc_handler(), "void stagekit_window_layout_auto(in ptr window, out bool ok)",
+		[](void *, calldata_t *cd) {
+			calldata_set_bool(
+				cd, "ok",
+				window_layout_restore_auto(static_cast<QMainWindow *>(calldata_ptr(cd, "window"))));
+		},
+		nullptr);
 	// For the tests: whether a layout saved comes back after this OBS event.
 	proc_handler_add(
 		obs_get_proc_handler(), "void stagekit_window_layout_after(in int event, out bool restores)",

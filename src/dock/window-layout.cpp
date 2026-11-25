@@ -46,6 +46,15 @@ constexpr int kLateDocksMs = 30000;
 // A late dock is waited on this long for others before the layout comes back,
 // so a burst of docks is one restore.
 constexpr int kLateSettleMs = 400;
+// Written beside every layout saved since the save on closing moved to OBS's
+// close event (beta264). Up to beta263 *Save it when OBS closes* saved at
+// OBS_FRONTEND_EVENT_SCRIPTING_SHUTDOWN, which OBS sends after it has taken
+// its browser and service docks down: the docks beside them had taken their
+// room, the StageKit dock's group often all of a column, and that collapsed
+// layout was put back over OBS's own (correct) one 1.5 s after the next start
+// and again whenever a dock came up late. The owner: "the stagekit dock keeps
+// resizing after obs loads and ignores the stored window layout".
+constexpr int kFormat = 2;
 
 std::string layout_file()
 {
@@ -114,6 +123,7 @@ bool window_layout_save(QMainWindow *window)
 		return false;
 	obs_data_t *data = read_file();
 	obs_data_set_string(data, "state", window->saveState().toBase64().constData());
+	obs_data_set_int(data, "format", kFormat);
 	const bool written = write_file(data);
 	obs_data_release(data);
 	obs_log(written ? LOG_INFO : LOG_WARNING, "Window layout: %s", written ? "saved" : "could not be saved");
@@ -126,6 +136,32 @@ bool window_layout_saved()
 	const bool there = *obs_data_get_string(data, "state") != '\0';
 	obs_data_release(data);
 	return there;
+}
+
+bool window_layout_trusted()
+{
+	obs_data_t *data = read_file();
+	const bool there = *obs_data_get_string(data, "state") != '\0';
+	// A layout written by an older version while *Save it when OBS closes*
+	// was ticked was written as OBS closed, after its browser docks had gone
+	// (see kFormat). One saved from the menu, with that unticked, is fine.
+	const bool old_close = obs_data_get_int(data, "format") < kFormat && obs_data_get_bool(data, "at_exit");
+	obs_data_release(data);
+	return there && !old_close;
+}
+
+bool window_layout_restore_auto(QMainWindow *window)
+{
+	if (!window_layout_trusted()) {
+		static bool said = false;
+		if (!said && window_layout_saved())
+			obs_log(LOG_INFO, "Window layout: the saved layout was taken as OBS closed, after its "
+					  "browser docks had gone; OBS's own layout is kept, and the layout is "
+					  "saved afresh when OBS next closes");
+		said = true;
+		return false;
+	}
+	return window_layout_restore(window);
 }
 
 bool window_layout_restore(QMainWindow *window)
@@ -191,7 +227,7 @@ private:
 			return;
 		}
 		obs_log(LOG_INFO, "Window layout: a dock was added after the layout came back; bringing it back again");
-		if (window_layout_restore(window_))
+		if (window_layout_restore_auto(window_))
 			++restores_;
 		if (left_.elapsed() > for_ms_)
 			deleteLater();
@@ -227,6 +263,55 @@ int window_layout_follow_late_docks(QMainWindow *window, int for_ms)
 int window_layout_late_restores()
 {
 	return g_late ? g_late->restores() : -1;
+}
+
+namespace {
+
+// Saves the layout when the main window is asked to close, before OBS's own
+// close handling runs: OBS saves its layout there too, then takes its browser
+// and service docks down, and only then says SCRIPTING_SHUTDOWN. A close
+// that is then called off (OBS asks while streaming) has saved the layout as
+// it is, which is harmless.
+class CloseWatch : public QObject {
+public:
+	explicit CloseWatch(QMainWindow *window) : QObject(window), window_(window)
+	{
+		window->installEventFilter(this);
+	}
+	int saves() const { return saves_; }
+
+protected:
+	bool eventFilter(QObject *watched, QEvent *event) override
+	{
+		if (watched == window_ && event->type() == QEvent::Close && choice("at_exit") &&
+		    window_layout_save(window_))
+			++saves_;
+		return QObject::eventFilter(watched, event);
+	}
+
+private:
+	QPointer<QMainWindow> window_;
+	int saves_ = 0;
+};
+
+QPointer<CloseWatch> g_close;
+
+} // namespace
+
+int window_layout_watch_close(QMainWindow *window)
+{
+	if (!window)
+		return g_close ? g_close->saves() : -1;
+	if (g_close && g_close->parent() == window)
+		return g_close->saves();
+	delete g_close.data();
+	g_close = new CloseWatch(window);
+	return 0;
+}
+
+void window_layout_set_choice(const char *name, bool on)
+{
+	set_choice(name, on);
 }
 
 void window_layout_menu(QMenu *menu)
@@ -276,6 +361,8 @@ bool window_layout_restores_after(enum obs_frontend_event event)
 
 void window_layout_event(enum obs_frontend_event event)
 {
+	if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING)
+		window_layout_watch_close(main_window());
 	if (window_layout_restores_after(event)) {
 		if (!choice("at_start") || !window_layout_saved())
 			return;
@@ -285,15 +372,14 @@ void window_layout_event(enum obs_frontend_event event)
 		QTimer::singleShot(kAfterLoadingMs, window, [window] {
 			if (!window)
 				return;
-			window_layout_restore(window);
-			window_layout_follow_late_docks(window, kLateDocksMs);
+			// (A layout not to be trusted is not followed either: each
+			// late dock would only be refused again.)
+			if (window_layout_restore_auto(window))
+				window_layout_follow_late_docks(window, kLateDocksMs);
 		});
-	} else if (event == OBS_FRONTEND_EVENT_SCRIPTING_SHUTDOWN) {
-		// (Sent before OBS takes its window apart: the docks are still
-		// where they were.)
-		if (choice("at_exit"))
-			window_layout_save(main_window());
 	}
+	// Nothing is saved at SCRIPTING_SHUTDOWN any more: OBS sends it after its
+	// browser docks are gone (see kFormat). The close watch saves instead.
 }
 
 } // namespace stagekit

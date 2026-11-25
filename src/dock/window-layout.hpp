@@ -31,6 +31,17 @@ bool window_layout_save(QMainWindow *window);
 // this window.
 bool window_layout_restore(QMainWindow *window);
 bool window_layout_saved();
+// Brings the saved layout back by itself (OBS started, a collection loaded, a
+// dock came late): only a layout that can be trusted, never one an older
+// version took as OBS closed, after OBS had taken its browser docks down.
+bool window_layout_restore_auto(QMainWindow *window);
+bool window_layout_trusted();
+// Saves the layout when `window` is asked to close, if *Save it when OBS
+// closes* is ticked: before OBS takes any dock down. Returns how many times
+// it saved (0 when just installed; -1 with no window and no watch).
+int window_layout_watch_close(QMainWindow *window);
+// Sets one of the two choices ("at_start", "at_exit"), as the menu does.
+void window_layout_set_choice(const char *name, bool on);
 // For `for_ms` after the layout came back, a dock added to `window` brings
 // the layout back again once docks stop coming (0.4 s), so docks that are
 // added late (a service's browser dock, Quick Access docks) are put where

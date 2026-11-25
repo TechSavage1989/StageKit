@@ -28,6 +28,7 @@
 #include <QAction>
 #include <QElapsedTimer>
 #include <QMainWindow>
+#include <QCloseEvent>
 #include <QDockWidget>
 #include <QMenu>
 #include <QContextMenuEvent>
@@ -13852,6 +13853,128 @@ static void window_late_test()
 	      "a new dock the layout does not know stays where it was put, and the others stay too");
 }
 
+// *Save it when OBS closes* saves as the main window is asked to close,
+// before OBS takes its browser docks down, never at SCRIPTING_SHUTDOWN
+// (after they are gone, the docks beside them have their room); and a layout
+// an older version saved that way is not brought back by itself. The owner:
+// "the stagekit dock keeps resizing after obs loads and ignores the stored
+// window layout". Run alone: STAGEKIT_TEST_ONLY_WINDOW_CLOSE.
+static void window_close_test()
+{
+	printf("\n[window layout: saved as OBS closes, before its docks go]\n");
+	auto call = [](const char *name, const std::function<void(calldata_t *)> &in,
+		       const std::function<void(calldata_t *)> &out) {
+		calldata_t cd = {};
+		in(&cd);
+		proc_handler_call(obs_get_proc_handler(), name, &cd);
+		out(&cd);
+		calldata_free(&cd);
+	};
+	auto choice = [&](const char *name, bool on) {
+		call(
+			"stagekit_window_layout_choice",
+			[&](calldata_t *cd) {
+				calldata_set_string(cd, "name", name);
+				calldata_set_bool(cd, "on", on);
+			},
+			[](calldata_t *) {});
+	};
+	auto event = [&](int e) {
+		call(
+			"stagekit_window_layout_event", [&](calldata_t *cd) { calldata_set_int(cd, "event", e); },
+			[](calldata_t *) {});
+	};
+	QMainWindow window;
+	window.setObjectName("closeTestWindow");
+	auto *kit = new QDockWidget("Kit", &window);
+	kit->setObjectName("closeTestKit");
+	window.addDockWidget(Qt::LeftDockWidgetArea, kit);
+	auto *browser = new QDockWidget("Browser", &window);
+	browser->setObjectName("closeTestBrowser");
+	window.addDockWidget(Qt::LeftDockWidgetArea, browser);
+	auto *other = new QDockWidget("Other", &window);
+	other->setObjectName("closeTestOther");
+	window.addDockWidget(Qt::RightDockWidgetArea, other);
+	const QByteArray at_close = window.saveState();
+
+	auto watch = [&]() {
+		int n = -2;
+		call(
+			"stagekit_window_layout_close",
+			[&](calldata_t *cd) { calldata_set_ptr(cd, "window", &window); },
+			[&](calldata_t *cd) { n = (int)calldata_int(cd, "n"); });
+		return n;
+	};
+	auto automatic = [&]() {
+		bool ok = false;
+		call(
+			"stagekit_window_layout_auto", [&](calldata_t *cd) { calldata_set_ptr(cd, "window", &window); },
+			[&](calldata_t *cd) { ok = calldata_bool(cd, "ok"); });
+		return ok;
+	};
+
+	// Unticked, a close saves nothing.
+	choice("at_exit", false);
+	const int installed = watch();
+	{
+		QCloseEvent close;
+		close.ignore(); // (as OBS does when it asks first)
+		QCoreApplication::sendEvent(&window, &close);
+	}
+	const int unticked = watch();
+	choice("at_exit", true);
+	{
+		QCloseEvent close;
+		close.ignore();
+		QCoreApplication::sendEvent(&window, &close);
+	}
+	const int ticked = watch();
+	CHECK(installed == 0 && unticked == 0 && ticked == 1,
+	      "with *Save it when OBS closes* ticked the layout is saved as the window is asked to close, unticked not (%d %d %d)",
+	      installed, unticked, ticked);
+
+	// OBS then takes its browser docks down and says SCRIPTING_SHUTDOWN: the
+	// layout saved stays the one from the close.
+	delete browser;
+	window.addDockWidget(Qt::BottomDockWidgetArea, other);
+	event(OBS_FRONTEND_EVENT_SCRIPTING_SHUTDOWN);
+	browser = new QDockWidget("Browser", &window);
+	browser->setObjectName("closeTestBrowser");
+	window.addDockWidget(Qt::TopDockWidgetArea, browser);
+	const bool back = automatic();
+	CHECK(back && window.dockWidgetArea(other) == Qt::RightDockWidgetArea &&
+		      window.dockWidgetArea(browser) == Qt::LeftDockWidgetArea &&
+		      window.dockWidgetArea(kit) == Qt::LeftDockWidgetArea,
+	      "nothing is saved at SCRIPTING_SHUTDOWN, after the browser docks are gone: the layout from the close comes back (back %d)",
+	      (int)back);
+
+	// A layout an older version saved as OBS closed (no format, *Save it when
+	// OBS closes* ticked) is not brought back by itself.
+	char *path = obs_module_get_config_path(obs_get_module("stagekit"), "window-layout.json");
+	bool refused = false, menu_ok = false;
+	if (path) {
+		obs_data_t *data = obs_data_create();
+		obs_data_set_string(data, "state", at_close.toBase64().constData());
+		obs_data_set_bool(data, "at_exit", true);
+		obs_data_save_json(data, path);
+		window.addDockWidget(Qt::BottomDockWidgetArea, other);
+		refused = !automatic() && window.dockWidgetArea(other) == Qt::BottomDockWidgetArea;
+		// One saved from the menu with the box unticked is still brought back.
+		obs_data_set_bool(data, "at_exit", false);
+		obs_data_save_json(data, path);
+		menu_ok = automatic() && window.dockWidgetArea(other) == Qt::RightDockWidgetArea;
+		obs_data_release(data);
+		bfree(path);
+	}
+	CHECK(refused && menu_ok,
+	      "an older version's layout saved as OBS closed is not brought back by itself; one saved from the menu is (refused %d, menu %d)",
+	      (int)refused, (int)menu_ok);
+	choice("at_exit", false);
+	call(
+		"stagekit_window_layout_close", [](calldata_t *cd) { calldata_set_ptr(cd, "window", nullptr); },
+		[](calldata_t *) {});
+}
+
 // The dock's Bounds list and its Auto-fit switch, at both levels. Run
 // alone: STAGEKIT_TEST_ONLY_DOCK_BOUNDS.
 static void dock_bounds_test()
@@ -22178,6 +22301,13 @@ int main(int argc, char **argv)
 		return g_failures ? 1 : 0;
 	}
 
+	if (getenv("STAGEKIT_TEST_ONLY_WINDOW_CLOSE")) { // to try that section alone
+		window_close_test();
+		obs_shutdown();
+		printf("\n%s (%d failure%s)\n", g_failures ? "FAILED" : "ALL PASSED", g_failures,
+		       g_failures == 1 ? "" : "s");
+		return g_failures ? 1 : 0;
+	}
 	if (getenv("STAGEKIT_TEST_ONLY_WINDOW_LATE")) { // to try that section alone
 		window_late_test();
 		obs_shutdown();
@@ -22811,6 +22941,7 @@ int main(int argc, char **argv)
 	fit_tool_test(w, h);                                         // (alone: STAGEKIT_TEST_ONLY_FIT_TOOL)
 	dock_bounds_test();                                          // (alone: STAGEKIT_TEST_ONLY_DOCK_BOUNDS)
 	window_late_test();                                          // (alone: STAGEKIT_TEST_ONLY_WINDOW_LATE)
+	window_close_test();                                         // (alone: STAGEKIT_TEST_ONLY_WINDOW_CLOSE)
 
 	// ==== scene-filters:blur ====
 	// ------------------------------------------------------------ scene blur
