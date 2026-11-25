@@ -1877,6 +1877,15 @@ inline void check(QStringList &issues, bool restart)
 		       "an external scene change did not update the selector without navigating back");
 		obs_frontend_set_preview_program_mode(true);
 		obs_frontend_set_current_preview_scene(destination_scene);
+		// The Studio Mode and Preview events reach the panel as one coalesced
+		// refresh. Choose a scene only after it has synchronized to Preview, or
+		// that refresh can land on top of the choice.
+		expect(until([&] {
+			       return scene_is(destination_scene, true) &&
+				      scene_selector->currentIndex() ==
+					      scene_selector_index(scene_selector, destination_scene);
+		       }),
+		       "the direct scene selector did not synchronize to Preview in Studio Mode");
 		expect(select_scene(scene_selector, scene) && until([&] {
 			       return scene_is(scene, true) && scene_is(first_scene) &&
 				      scene_selector->currentIndex() == scene_selector_index(scene_selector, scene);
